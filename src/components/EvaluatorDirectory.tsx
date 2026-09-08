@@ -27,6 +27,8 @@ export const EvaluatorDirectory: React.FC = () => {
     deleteEvaluator,
     isSyncingSheets,
     syncGoogleSheets,
+    isSyncingEvaluators,
+    syncEvaluatorsDirectory,
     lastSheetSync,
     isAdmin,
     currentRole,
@@ -129,7 +131,19 @@ export const EvaluatorDirectory: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Simulated Google Sheets Sync */}
+          {/* Sync Evaluators Master Directory */}
+          <button
+            onClick={syncEvaluatorsDirectory}
+            disabled={isSyncingEvaluators}
+            id="sync-evaluators-master-btn"
+            className="flex items-center gap-2 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer disabled:opacity-50"
+            title="Fetch latest approved evaluators from Evaluators_Master in Google Sheets"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingEvaluators ? 'animate-spin text-indigo-600' : 'text-indigo-600'}`} />
+            <span>{isSyncingEvaluators ? 'Syncing Evaluators...' : 'Sync Evaluators Directory'}</span>
+          </button>
+
+          {/* Full Google Sheets Sync */}
           <button
             onClick={syncGoogleSheets}
             disabled={isSyncingSheets}
@@ -138,7 +152,7 @@ export const EvaluatorDirectory: React.FC = () => {
             title="Simulate synchronization with official IGNOU Google Sheets evaluator roster"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin text-emerald-600' : ''}`} />
-            <span>{isSyncingSheets ? 'Syncing Google Sheets...' : 'Sync with Google Sheets'}</span>
+            <span>{isSyncingSheets ? 'Syncing Google Sheets...' : 'Sync All Sheets'}</span>
           </button>
 
           {isAdmin && (
@@ -286,8 +300,8 @@ export const EvaluatorDirectory: React.FC = () => {
                   </span>
                   <span className="font-mono font-semibold text-zinc-800">
                     {isAdmin && showFullBankDetails
-                      ? evaluator.accountNumber
-                      : maskAccountNumber(evaluator.accountNumber)}
+                      ? (evaluator.bankAccountNo || evaluator.accountNumber)
+                      : maskAccountNumber(evaluator.bankAccountNo || evaluator.accountNumber)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-zinc-500">
