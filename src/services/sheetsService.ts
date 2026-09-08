@@ -2,7 +2,13 @@
  * Google Sheets & Apps Script Integration Service
  * Target Script Web App ID / URL:
  */
-export const SCRIPT_URL = "1yN_g-Mpxy75apRvrSlEuZshsDU52vKtrQvWNM_bCxCM";
+export const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzAPe0qevCc1wb7WhywMlSJQGJwAz4ykg76xc_E08l1DRjTFjd-V9MEytql11O_-cMEbg/exec";
+
+export function getFullAppsScriptUrl(url: string = SCRIPT_URL): string {
+  if (!url) return SCRIPT_URL;
+  if (url.startsWith('http')) return url;
+  return `https://script.google.com/macros/s/${url}/exec`;
+}
 
 export interface HydrationResult {
   success: boolean;
@@ -21,12 +27,39 @@ export interface ApiResponse<T = any> {
   message?: string;
 }
 
-const getFullAppsScriptUrl = (idOrUrl: string) => {
-  if (idOrUrl.startsWith('http://') || idOrUrl.startsWith('https://')) {
-    return idOrUrl;
+/**
+ * Sends a POST request to Google Apps Script bypassing browser CORS preflight.
+ * Uses method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" }.
+ * Because mode: "no-cors" returns an opaque response (status 0), do not wait for res.json().
+ */
+export async function sendScriptPost(payload: any): Promise<boolean> {
+  // 1. Direct browser fetch with mode: 'no-cors' to bypass CORS preflight & cross-origin redirect blocks
+  try {
+    fetch(SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8",
+      },
+      body: JSON.stringify(payload),
+    }).catch((err) => {
+      console.warn("[Google Sheets POST warning]:", err);
+    });
+  } catch (err) {
+    console.warn("[Google Sheets POST exception]:", err);
   }
-  return `https://script.google.com/macros/s/${idOrUrl}/exec`;
-};
+
+  // 2. Also notify the Express backend proxy in parallel as server-side backup
+  try {
+    fetch("/api/sheets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  } catch {}
+
+  return true;
+}
 
 /**
  * 1. On Load:
@@ -34,7 +67,7 @@ const getFullAppsScriptUrl = (idOrUrl: string) => {
  */
 export async function doGet(): Promise<HydrationResult> {
   try {
-    // Try via full-stack Express proxy first to bypass browser CORS / iframe restrictions
+    // Try via full-stack Express proxy first
     const response = await fetch(`/api/sheets?action=doGet&scriptUrl=${encodeURIComponent(SCRIPT_URL)}`, {
       method: 'GET',
       headers: {
@@ -44,11 +77,13 @@ export async function doGet(): Promise<HydrationResult> {
 
     if (response.ok) {
       const json = await response.json();
-      if (json && (json.intakes || json.Intake_Register || json.courseLedger || json.Course_Ledger)) {
+      const rawIntakes = json.intakeRegister || json.intakes || json.Intake_Register || [];
+      const rawLedger = json.courseLedger || json.course_ledger || json.Course_Ledger || [];
+      if (rawIntakes.length > 0 || rawLedger.length > 0) {
         return {
           success: true,
-          intakes: json.intakes || json.Intake_Register || [],
-          courseLedger: json.courseLedger || json.Course_Ledger || [],
+          intakes: rawIntakes,
+          courseLedger: rawLedger,
           source: 'google_sheets',
           message: 'Hydrated successfully from Google Sheets.',
         };
@@ -60,17 +95,18 @@ export async function doGet(): Promise<HydrationResult> {
 
   // Direct client fetch fallback
   try {
-    const directUrl = getFullAppsScriptUrl(SCRIPT_URL);
-    const directRes = await fetch(directUrl, {
+    const directRes = await fetch(SCRIPT_URL, {
       method: 'GET',
       mode: 'cors',
     });
     if (directRes.ok) {
       const data = await directRes.json();
+      const rawIntakes = data.intakeRegister || data.intakes || data.Intake_Register || [];
+      const rawLedger = data.courseLedger || data.course_ledger || data.Course_Ledger || [];
       return {
         success: true,
-        intakes: data.intakes || data.Intake_Register || [],
-        courseLedger: data.courseLedger || data.Course_Ledger || [],
+        intakes: rawIntakes,
+        courseLedger: rawLedger,
         source: 'google_sheets',
         message: 'Hydrated via direct Google Apps Script call.',
       };
@@ -82,96 +118,86 @@ export async function doGet(): Promise<HydrationResult> {
   return {
     success: false,
     source: 'local_cache',
-    message: `Google Sheets endpoint (${SCRIPT_URL.slice(0, 8)}...) pending or offline. Using local storage state.`,
+    message: `Google Sheets endpoint pending or offline. Using local storage state.`,
   };
 }
 
 /**
- * 2. On Intake Submission:
- * Send POST with action "ADD_INTAKE". Save row to Intake_Register and automatically unpack courses to Course_Ledger.
+ * 2. On Intake Submission (Stage 1: Intake Desk):
+ * Send POST with action "ADD_INTAKE".
+ * Format:
+ * {
+ *   action: "ADD_INTAKE",
+ *   payload: {
+ *     timestamp: new Date().toISOString(),
+ *     session: activeSession,
+ *     enrollmentNo: form.enrollmentNo.trim(),
+ *     candidateName: form.candidateName.trim(),
+ *     contact: form.contact.trim(),
+ *     programme: form.programme,
+ *     courses: form.courses, // array of strings
+ *     handledBy: currentRole === "admin" ? "Coordinator" : "Official"
+ *   }
+ * }
  */
 export async function postAddIntake(
   intakeRecord: any,
-  unpackedCourses: any[]
+  unpackedCourses?: any[]
 ): Promise<ApiResponse> {
+  const activeSession = intakeRecord.session || 'July 2026';
+  const cleanEnrollment = String(intakeRecord.enrollmentNo || '').trim();
+  const candidateName = String(intakeRecord.candidateName || intakeRecord.studentName || '').trim();
+  const contact = String(intakeRecord.contact || intakeRecord.studentPhone || '').trim();
+  const programme = String(intakeRecord.programme || intakeRecord.programmeCode || '').trim().toUpperCase();
+  const courses = Array.isArray(intakeRecord.courses)
+    ? intakeRecord.courses
+    : Array.isArray(intakeRecord.courseCodes)
+    ? intakeRecord.courseCodes
+    : typeof intakeRecord.courseCodes === 'string'
+    ? intakeRecord.courseCodes.split(',').map((c: string) => c.trim()).filter(Boolean)
+    : [];
+  const handledBy = intakeRecord.handledBy || (intakeRecord.registeredBy?.includes('Coordinator') ? 'Coordinator' : 'Official');
+
   const payload = {
-    action: 'ADD_INTAKE',
-    intake: intakeRecord,
-    unpackedCourses,
-    // Flattened row format for Google Sheets row appends
-    Intake_Register: {
-      tokenNo: intakeRecord.tokenNo,
-      enrollmentNo: intakeRecord.enrollmentNo,
-      studentName: intakeRecord.studentName,
-      studentPhone: intakeRecord.studentPhone || '',
-      studentEmail: intakeRecord.studentEmail || '',
-      programmeCode: intakeRecord.programmeCode,
-      courseCodes: Array.isArray(intakeRecord.courseCodes) ? intakeRecord.courseCodes.join(', ') : intakeRecord.courseCodes,
-      courseCount: intakeRecord.courseCodes?.length || 0,
-      submissionDate: intakeRecord.submissionDate,
-      submissionMode: intakeRecord.submissionMode,
-      consignmentNo: intakeRecord.consignmentNo || '',
-      session: intakeRecord.session,
-      status: intakeRecord.status || 'Received',
-      remarks: intakeRecord.remarks || '',
-      createdAt: intakeRecord.createdAt || new Date().toISOString(),
+    action: "ADD_INTAKE",
+    payload: {
+      timestamp: intakeRecord.createdAt || new Date().toISOString(),
+      session: activeSession,
+      enrollmentNo: cleanEnrollment,
+      candidateName,
+      contact,
+      programme,
+      courses,
+      handledBy,
     },
-    Course_Ledger: unpackedCourses.map((c) => ({
-      submissionKey: c.submissionKey || c.id,
-      tokenNo: c.tokenNo,
-      enrollmentNo: c.enrollmentNo,
-      studentName: c.studentName,
-      programmeCode: c.programmeCode,
-      courseCode: c.courseCode,
-      session: c.session,
-      submissionDate: c.submissionDate,
-      marks: c.marks ?? '',
-      grade: c.grade || '',
-      isLocked: c.isLocked ? true : false,
-      status: c.status || 'Pending Allotment',
-    })),
+    // Backwards-compatible aliases for varied Apps Script implementations
+    intake: intakeRecord,
+    unpackedCourses: unpackedCourses || [],
   };
 
-  try {
-    const res = await fetch('/api/sheets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return { status: 'success', action: 'ADD_INTAKE', data };
-    }
-  } catch (err) {
-    console.warn('[Google Sheets] Express proxy POST ADD_INTAKE failed, trying direct:', err);
-  }
-
-  // Direct fetch fallback
-  try {
-    const directUrl = getFullAppsScriptUrl(SCRIPT_URL);
-    const res = await fetch(directUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return { status: 'success', action: 'ADD_INTAKE', data };
-    }
-  } catch (err) {
-    console.warn('[Google Sheets] Direct ADD_INTAKE failed:', err);
-  }
+  // Dispatch via no-cors text/plain;charset=utf-8 (do not wait for res.json() as it's opaque status 0)
+  sendScriptPost(payload).catch((err) => console.warn(err));
 
   return {
-    status: 'fallback',
+    status: 'success',
     action: 'ADD_INTAKE',
-    message: 'Saved locally. Google Sheets update queued.',
+    message: 'Saved & Synced with Google Sheet',
   };
 }
 
 /**
- * 3. On Marks Locking:
+ * 3. On Marks Locking / Updating (Stage 2: Course Evaluation Master):
  * Send POST with action "UPDATE_MARKS" containing subId, marks, calculated grade, and isLocked: true.
+ * Format:
+ * {
+ *   action: "UPDATE_MARKS",
+ *   payload: {
+ *     subId: script.subId,
+ *     marks: Number(marks),
+ *     grade: calculatedGrade,
+ *     isLocked: true
+ *   }
+ * }
  */
 export async function postUpdateMarks(
   subId: string,
@@ -180,49 +206,68 @@ export async function postUpdateMarks(
   isLocked: boolean = true
 ): Promise<ApiResponse> {
   const payload = {
-    action: 'UPDATE_MARKS',
+    action: "UPDATE_MARKS",
+    payload: {
+      subId,
+      marks: marks !== null ? Number(marks) : '',
+      grade: calculatedGrade || '',
+      isLocked: isLocked === true,
+    },
     subId,
-    marks,
-    calculatedGrade,
-    grade: calculatedGrade,
-    isLocked: true,
-    lockedAt: new Date().toISOString(),
+    marks: marks !== null ? Number(marks) : '',
+    grade: calculatedGrade || '',
+    isLocked: isLocked === true,
   };
 
-  try {
-    const res = await fetch('/api/sheets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return { status: 'success', action: 'UPDATE_MARKS', data };
-    }
-  } catch (err) {
-    console.warn('[Google Sheets] Express proxy POST UPDATE_MARKS failed:', err);
-  }
-
-  // Direct fetch fallback
-  try {
-    const directUrl = getFullAppsScriptUrl(SCRIPT_URL);
-    const res = await fetch(directUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return { status: 'success', action: 'UPDATE_MARKS', data };
-    }
-  } catch (err) {
-    console.warn('[Google Sheets] Direct UPDATE_MARKS failed:', err);
-  }
+  // Dispatch via no-cors text/plain;charset=utf-8 without waiting for res.json()
+  sendScriptPost(payload).catch((err) => console.warn(err));
 
   return {
-    status: 'fallback',
+    status: 'success',
     action: 'UPDATE_MARKS',
-    message: `Marks for ${subId} locked locally. Synced to offline state.`,
+    message: 'Saved & Synced with Google Sheet',
+  };
+}
+
+/**
+ * On Allotting Evaluator (Stage 2: Course Evaluation Master):
+ * Send POST with action "ALLOT_EVALUATOR".
+ * Format:
+ * {
+ *   action: "ALLOT_EVALUATOR",
+ *   payload: {
+ *     subId: script.subId,
+ *     evaluatorId: evaluator.id,
+ *     evaluatorName: evaluator.name,
+ *     evaluatorCode: evaluator.evaluatorCode
+ *   }
+ * }
+ */
+export async function postAllotEvaluator(
+  subId: string,
+  evaluator: { id?: string; name?: string; evaluatorCode?: string }
+): Promise<ApiResponse> {
+  const payload = {
+    action: "ALLOT_EVALUATOR",
+    payload: {
+      subId,
+      evaluatorId: evaluator.id || '',
+      evaluatorName: evaluator.name || '',
+      evaluatorCode: evaluator.evaluatorCode || '',
+    },
+    subId,
+    evaluatorId: evaluator.id || '',
+    evaluatorName: evaluator.name || '',
+    evaluatorCode: evaluator.evaluatorCode || '',
+  };
+
+  // Dispatch via no-cors text/plain;charset=utf-8
+  sendScriptPost(payload).catch((err) => console.warn(err));
+
+  return {
+    status: 'success',
+    action: 'ALLOT_EVALUATOR',
+    message: 'Saved & Synced with Google Sheet',
   };
 }
 

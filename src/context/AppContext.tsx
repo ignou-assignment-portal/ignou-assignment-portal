@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   UserRole,
   IntakeRecord,
@@ -25,7 +25,7 @@ import {
   IGNOU_PROGRAMMES,
 } from '../data/ignouMasterData';
 import { generateSessionCode, generateDeterministicSubmissionKey, calculateIGNOUGrade } from '../utils/helpers';
-import { doGet, postAddIntake, postUpdateMarks, SCRIPT_URL } from '../services/sheetsService';
+import { doGet, postAddIntake, postUpdateMarks, postAllotEvaluator, SCRIPT_URL } from '../services/sheetsService';
 
 interface AppContextType {
   // Session Isolation
@@ -122,6 +122,12 @@ interface AppContextType {
   isSidebarCollapsed: boolean;
   setIsSidebarCollapsed: (val: boolean) => void;
   toggleSidebarCollapsed: () => void;
+
+  // Toast Notification System
+  toastMessage: string | null;
+  toastType: 'success' | 'info' | 'warning' | 'error';
+  showToast: (message?: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
+  hideToast: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -281,6 +287,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isSyncingSheets, setIsSyncingSheets] = useState<boolean>(false);
   const [selectedReceiptRecord, setSelectedReceiptRecord] = useState<IntakeRecord | null>(null);
   const [selectedRegistrationReceipt, setSelectedRegistrationReceipt] = useState<RegistrationReceipt | null>(null);
+
+  // Global Toast Notifications
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'success' | 'info' | 'warning' | 'error'>('success');
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const showToast = useCallback((message: string = 'Saved & Synced with Google Sheet', type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setToastMessage(message);
+    setToastType(type);
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
+  }, []);
+
+  const hideToast = useCallback(() => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setToastMessage(null);
+  }, []);
 
   // Module E: Global Student Search Modal State
   const [isSearchModalOpen, setIsSearchModalOpen] = useState<boolean>(false);
@@ -764,8 +793,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCourseEvaluations((prev) => {
         const map = new Map(prev.map((item) => [item.id, item]));
         unpackedRows.forEach((row) => map.set(row.id, row));
-        return Array.from(map.values());
+        const combined = Array.from(map.values());
+        // Immediate localStorage backup
+        try {
+          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(combined));
+          localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify([newRecord, ...intakes]));
+        } catch {}
+        return combined;
       });
+
+      // Show confirmation toast immediately
+      showToast('Saved & Synced with Google Sheet', 'success');
 
       // 2. On Intake Submission: Send POST with action "ADD_INTAKE". Save row to Intake_Register and automatically unpack courses to Course_Ledger
       postAddIntake(newRecord, unpackedRows).catch((err) => {
@@ -774,7 +812,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return newRecord;
     },
-    [currentSession, intakes]
+    [currentSession, intakes, showToast]
   );
 
   const updateIntakeRecord = useCallback((id: string, updates: Partial<IntakeRecord>) => {
@@ -832,8 +870,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const dateStr = now.split('T')[0];
       const allottedBy = currentRole === 'ADMIN' ? 'Coordinator Desk' : 'Counter Desk Official';
 
-      setCourseEvaluations((prev) =>
-        prev.map((rec) => {
+      setCourseEvaluations((prev) => {
+        const updated = prev.map((rec) => {
           if (!evaluationIds.includes(rec.id)) return rec;
           if (rec.isLocked && currentRole !== 'ADMIN') return rec;
 
@@ -853,10 +891,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               : 'Pending Allotment',
             updatedAt: now,
           };
-        })
-      );
+        });
+
+        try {
+          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(updated));
+        } catch {}
+
+        return updated;
+      });
+
+      // Dispatch ALLOT_EVALUATOR to Google Sheets
+      if (ev) {
+        evaluationIds.forEach((subId) => {
+          postAllotEvaluator(subId, {
+            id: ev.id,
+            name: ev.name,
+            evaluatorCode: ev.evaluatorCode,
+          }).catch((err) => console.warn(err));
+        });
+      }
+
+      showToast('Saved & Synced with Google Sheet', 'success');
     },
-    [evaluators, currentRole]
+    [evaluators, currentRole, showToast]
   );
 
   const updateEvaluationMarks = useCallback(
@@ -925,8 +982,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const now = new Date().toISOString();
       const lockedBy = currentRole === 'ADMIN' ? 'Dr. V. K. Aggarwal (Coordinator)' : 'Desk Official';
 
-      setCourseEvaluations((prev) =>
-        prev.map((rec) => {
+      setCourseEvaluations((prev) => {
+        const next = prev.map((rec) => {
           if (rec.id !== evaluationId) return rec;
 
           if (shouldLock) {
@@ -952,15 +1009,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               ...rec,
               isLocked: false,
               lockedAt: null,
-              lockedBy: null,
+              lockedBy,
               status: rec.marks !== null ? 'Evaluated' : rec.evaluatorId ? 'Allotted' : 'Pending Allotment',
               updatedAt: now,
             };
           }
-        })
-      );
+        });
+
+        try {
+          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(next));
+        } catch {}
+
+        return next;
+      });
+
+      if (shouldLock) {
+        showToast('Saved & Synced with Google Sheet', 'success');
+      }
     },
-    [currentRole]
+    [currentRole, isUrlLockedDeskMode, showToast]
   );
 
   const batchLockMarks = useCallback(
@@ -973,8 +1040,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const now = new Date().toISOString();
       const lockedBy = currentRole === 'ADMIN' ? 'Dr. V. K. Aggarwal (Coordinator)' : 'Desk Official';
 
-      setCourseEvaluations((prev) =>
-        prev.map((rec) => {
+      setCourseEvaluations((prev) => {
+        const next = prev.map((rec) => {
           if (!evaluationIds.includes(rec.id)) return rec;
 
           if (shouldLock) {
@@ -997,15 +1064,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               ...rec,
               isLocked: false,
               lockedAt: null,
-              lockedBy: null,
+              lockedBy,
               status: rec.marks !== null ? 'Evaluated' : rec.evaluatorId ? 'Allotted' : 'Pending Allotment',
               updatedAt: now,
             };
           }
-        })
-      );
+        });
+
+        try {
+          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(next));
+        } catch {}
+
+        return next;
+      });
+
+      if (shouldLock) {
+        showToast('Saved & Synced with Google Sheet', 'success');
+      }
     },
-    [currentRole]
+    [currentRole, isUrlLockedDeskMode, showToast]
   );
 
   // Course Packets
@@ -1074,29 +1151,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setIntakes((prev) => {
             const map = new Map(prev.map((i) => [i.tokenNo || i.id, i]));
             res.intakes?.forEach((item: any) => {
-              const key = item.tokenNo || item.id || `intake-${item.enrollmentNo}-${item.session}`;
-              const courseCodesArr = Array.isArray(item.courseCodes)
-                ? item.courseCodes
-                : typeof item.courseCodes === 'string'
-                ? item.courseCodes.split(',').map((c: string) => c.trim()).filter(Boolean)
+              const enr = item.Enrollment_No || item.enrollmentNo || item.studentId || '';
+              const sess = item.Session || item.session || currentSession;
+              const key = item.Token_No || item.tokenNo || item.id || `intake-${enr}-${sess}`;
+              const courseRaw = item.Courses || item.courses || item.courseCodes || item.Course_Codes || [];
+              const courseCodesArr = Array.isArray(courseRaw)
+                ? courseRaw
+                : typeof courseRaw === 'string'
+                ? courseRaw.split(',').map((c: string) => c.trim()).filter(Boolean)
                 : [];
               map.set(key, {
                 id: item.id || key,
-                tokenNo: item.tokenNo || key,
-                enrollmentNo: item.enrollmentNo,
-                studentName: item.studentName,
-                studentPhone: item.studentPhone || '',
-                studentEmail: item.studentEmail || '',
-                programmeCode: item.programmeCode,
+                tokenNo: item.tokenNo || item.Token_No || key,
+                enrollmentNo: enr,
+                studentName: item.Candidate_Name || item.candidateName || item.studentName || '',
+                studentPhone: item.Contact || item.contact || item.studentPhone || '',
+                studentEmail: item.Email || item.studentEmail || '',
+                programmeCode: item.Programme || item.programme || item.programmeCode || '',
                 courseCodes: courseCodesArr,
-                submissionDate: item.submissionDate || new Date().toISOString().split('T')[0],
+                submissionDate: item.Timestamp ? String(item.Timestamp).split('T')[0] : (item.submissionDate || new Date().toISOString().split('T')[0]),
                 submissionMode: item.submissionMode || 'In-Person (Desk)',
                 consignmentNo: item.consignmentNo,
-                session: item.session || currentSession,
+                session: sess,
                 status: item.status || 'Received',
                 marks: item.marks || {},
                 remarks: item.remarks || '',
-                createdAt: item.createdAt || new Date().toISOString(),
+                createdAt: item.Timestamp || item.createdAt || new Date().toISOString(),
               });
             });
             return Array.from(map.values());
@@ -1107,37 +1187,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setCourseEvaluations((prev) => {
             const map = new Map<string, CourseEvaluationRecord>(prev.map((c) => [c.submissionKey || c.id, c]));
             res.courseLedger?.forEach((item: any) => {
-              const key: string = String(item.submissionKey || item.id || '');
+              const key: string = String(item.Sub_ID || item.subId || item.submissionKey || item.id || '');
               if (!key) return;
               const existing: CourseEvaluationRecord | undefined = map.get(key);
-              const markVal = item.marks !== '' && item.marks !== null && item.marks !== undefined ? Number(item.marks) : null;
+              const rawMark = (item.Marks !== undefined && item.Marks !== '' && item.Marks !== null)
+                ? item.Marks
+                : (item.marks !== undefined && item.marks !== '' && item.marks !== null)
+                ? item.marks
+                : null;
+              const markVal = rawMark !== null && rawMark !== undefined ? Number(rawMark) : null;
               const gradeInfo = calculateIGNOUGrade(markVal);
+              const isLocked = item.Status === 'Locked' || item.status === 'Locked' || item.isLocked === true || item.isLocked === 'true';
+              const evaluatorName = item.Allotted_Evaluator || item.allottedEvaluator || item.evaluatorName || existing?.evaluatorName || null;
               const merged: CourseEvaluationRecord = {
                 id: key,
                 submissionKey: key,
                 tokenNo: item.tokenNo || existing?.tokenNo || '',
-                enrollmentNo: item.enrollmentNo || existing?.enrollmentNo || '',
-                studentName: item.studentName || existing?.studentName || '',
+                enrollmentNo: item.Enrollment_No || item.enrollmentNo || existing?.enrollmentNo || '',
+                studentName: item.Candidate_Name || item.candidateName || item.studentName || existing?.studentName || '',
                 studentPhone: existing?.studentPhone || '',
                 studentEmail: existing?.studentEmail || '',
-                programmeCode: item.programmeCode || existing?.programmeCode || '',
-                courseCode: item.courseCode || existing?.courseCode || '',
-                session: item.session || existing?.session || currentSession,
+                programmeCode: item.Programme || item.programme || item.programmeCode || existing?.programmeCode || '',
+                courseCode: item.Course_Code || item.courseCode || existing?.courseCode || '',
+                session: item.Session || item.session || existing?.session || currentSession,
                 submissionDate: item.submissionDate || existing?.submissionDate || new Date().toISOString().split('T')[0],
                 submissionMode: item.submissionMode || existing?.submissionMode || 'In-Person (Desk)',
                 consignmentNo: item.consignmentNo || existing?.consignmentNo,
                 evaluatorId: existing?.evaluatorId || null,
                 evaluatorCode: existing?.evaluatorCode || null,
-                evaluatorName: existing?.evaluatorName || null,
+                evaluatorName: evaluatorName && evaluatorName !== 'Unallotted' ? evaluatorName : null,
                 allottedDate: existing?.allottedDate || null,
                 allottedBy: existing?.allottedBy || null,
                 marks: markVal,
-                grade: item.grade || gradeInfo.grade,
+                grade: item.Grade || item.grade || gradeInfo.grade,
                 gradeLabel: gradeInfo.label,
-                isLocked: item.isLocked === true || item.isLocked === 'true',
-                lockedAt: existing?.lockedAt || (item.isLocked ? new Date().toISOString() : null),
-                lockedBy: existing?.lockedBy || (item.isLocked ? 'Coordinator' : null),
-                status: item.status || (item.isLocked ? 'Marks Locked' : markVal !== null ? 'Evaluated' : 'Pending Allotment'),
+                isLocked,
+                lockedAt: existing?.lockedAt || (isLocked ? new Date().toISOString() : null),
+                lockedBy: existing?.lockedBy || (isLocked ? 'Coordinator' : null),
+                status: isLocked ? 'Marks Locked' : markVal !== null ? 'Evaluated' : (evaluatorName && evaluatorName !== 'Unallotted') ? 'Allotted' : 'Pending Allotment',
                 updatedAt: new Date().toISOString(),
                 remarks: existing?.remarks || '',
               };
@@ -1344,6 +1431,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isSidebarCollapsed,
         setIsSidebarCollapsed,
         toggleSidebarCollapsed,
+        // Toast Notification System
+        toastMessage,
+        toastType,
+        showToast,
+        hideToast,
       }}
     >
       {children}

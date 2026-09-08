@@ -6,7 +6,7 @@ const app = express();
 const PORT = 3000;
 
 // Configured Google Apps Script Backend URL / ID
-const SCRIPT_URL = "1yN_g-Mpxy75apRvrSlEuZshsDU52vKtrQvWNM_bCxCM";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzAPe0qevCc1wb7WhywMlSJQGJwAz4ykg76xc_E08l1DRjTFjd-V9MEytql11O_-cMEbg/exec";
 
 const getTargetAppsScriptUrl = (input?: string) => {
   const urlOrId = input || SCRIPT_URL;
@@ -81,7 +81,7 @@ app.post("/api/sheets", async (req, res) => {
     const remoteResponse = await fetch(targetUrl, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "text/plain;charset=utf-8",
       },
       body: JSON.stringify(req.body),
       redirect: "follow",

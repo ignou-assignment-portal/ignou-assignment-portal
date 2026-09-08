@@ -16,10 +16,11 @@ import { ReceiptModal } from './components/ReceiptModal';
 import { RegistrationReceiptModal } from './components/RegistrationReceiptModal';
 import { StudentSearchModal } from './components/StudentSearchModal';
 import { AdminPinModal } from './components/AdminPinModal';
+import { Toast } from './components/Toast';
 
 const DashboardContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('INTAKE_DESK');
-  const { currentSession, isAdmin, isUrlLockedDeskMode, settings } = useApp();
+  const { currentSession, isAdmin, isUrlLockedDeskMode, settings, toastMessage, toastType, hideToast } = useApp();
 
   // Ensure restricted tabs are redirected in URL locked mode
   React.useEffect(() => {
@@ -95,6 +96,9 @@ const DashboardContent: React.FC = () => {
 
       {/* Administrator PIN Verification Modal */}
       <AdminPinModal />
+
+      {/* Global Toast Notification */}
+      <Toast message={toastMessage} type={toastType} onClose={hideToast} />
     </div>
   );
 };

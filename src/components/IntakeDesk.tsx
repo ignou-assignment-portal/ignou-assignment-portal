@@ -284,6 +284,8 @@ export const IntakeDesk: React.FC = () => {
     }
   };
 
+  const handleIntakeSubmit = handleSubmitAndGenerateReceipt;
+
   return (
     <div className="space-y-6">
       {/* Top Banner Notice */}

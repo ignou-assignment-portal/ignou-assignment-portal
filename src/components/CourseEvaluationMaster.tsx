@@ -119,6 +119,16 @@ export const CourseEvaluationMaster: React.FC = () => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
   };
 
+  // Evaluator allotment handler
+  const handleAllotEvaluator = (evaluationIds: string[], evaluatorId: string | null) => {
+    allotEvaluatorToEvaluations(evaluationIds, evaluatorId);
+  };
+
+  // Lock marks handler
+  const handleLockMarks = (evaluationId: string, shouldLock: boolean) => {
+    toggleLockMarks(evaluationId, shouldLock);
+  };
+
   // Batch Allotment Action
   const handleBatchAllot = () => {
     if (selectedIds.length === 0) {
@@ -613,7 +623,7 @@ export const CourseEvaluationMaster: React.FC = () => {
                             <select
                               value={record.evaluatorId || ''}
                               onChange={(e) =>
-                                allotEvaluatorToEvaluations([record.id], e.target.value || null)
+                                handleAllotEvaluator([record.id], e.target.value || null)
                               }
                               className={`w-full max-w-[210px] text-xs py-1 px-2 rounded-lg border focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer ${
                                 record.evaluatorId
@@ -730,7 +740,7 @@ export const CourseEvaluationMaster: React.FC = () => {
                         {record.isLocked ? (
                           isAdmin ? (
                             <button
-                              onClick={() => toggleLockMarks(record.id, false)}
+                              onClick={() => handleLockMarks(record.id, false)}
                               className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer mx-auto shadow-2xs"
                               title="Administrator Override: Click to Unlock"
                             >
@@ -748,7 +758,7 @@ export const CourseEvaluationMaster: React.FC = () => {
                           )
                         ) : (
                           <button
-                            onClick={() => toggleLockMarks(record.id, true)}
+                            onClick={() => handleLockMarks(record.id, true)}
                             disabled={record.marks === null || record.marks === undefined}
                             className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer mx-auto shadow-2xs ${
                               record.marks !== null && record.marks !== undefined
