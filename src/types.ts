@@ -46,17 +46,21 @@ export interface Evaluator {
   id: string;
   evaluatorCode: string; // e.g. EV-101
   name: string;
+  evaluatorName?: string; // alias for name
   designation: string; // e.g. Associate Professor
   department: string; // e.g. Department of English
   collegeInstitution: string; // e.g. Hindu College, University of Delhi
   contactPhone: string;
+  contactNumber?: string; // alias for contactPhone
   email: string;
+  emailId?: string; // alias for email
   eligibleCourses: string[]; // e.g. ['MEG-01', 'MEG-02', 'BEGC-131']
   bankName: string;
   accountNumber: string;
+  bankAccountNo?: string; // alias for accountNumber
   ifscCode: string;
   panNumber: string;
-  status: 'Active' | 'On Leave' | 'Inactive';
+  status: 'Active' | 'On Leave' | 'Inactive' | string;
   lastSyncedAt: string;
 }
 
@@ -82,6 +86,13 @@ export interface RemunerationBill {
   evaluatorId: string;
   evaluatorCode: string;
   evaluatorName: string;
+  bankAccountNo?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  bankName?: string;
+  panNumber?: string;
+  department?: string;
+  designation?: string;
   courseCodes: string[];
   totalScripts: number;
   ratePerScript: number;

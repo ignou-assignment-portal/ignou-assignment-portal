@@ -15,6 +15,7 @@ import {
   Search,
   Menu,
   Lock,
+  RefreshCw,
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -35,6 +36,8 @@ export const Header: React.FC = () => {
     toggleSidebarHidden,
     isSyncingSheets,
     syncGoogleSheets,
+    isSyncingEvaluators,
+    syncEvaluatorsDirectory,
     lastSheetSync,
   } = useApp();
 
@@ -263,6 +266,18 @@ export const Header: React.FC = () => {
           >
             <span className={`w-2 h-2 rounded-full bg-emerald-500 ${isSyncingSheets ? 'animate-ping' : ''}`}></span>
             <span className="font-mono text-[11px]">{isSyncingSheets ? 'Syncing...' : 'Sheets Connected'}</span>
+          </button>
+
+          {/* Sync Evaluators Directory Button */}
+          <button
+            id="btn-sync-evaluators-header"
+            onClick={() => syncEvaluatorsDirectory()}
+            disabled={isSyncingEvaluators}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+            title="Reload latest Academic Counselors / Evaluators Master Directory from Google Sheets"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingEvaluators ? 'animate-spin text-indigo-600' : 'text-indigo-600'}`} />
+            <span className="font-mono text-[11px]">{isSyncingEvaluators ? 'Syncing...' : 'Sync Evaluators'}</span>
           </button>
         </div>
       </div>

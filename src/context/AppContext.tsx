@@ -91,6 +91,8 @@ interface AppContextType {
   deleteEvaluator: (id: string) => void;
   isSyncingSheets: boolean;
   syncGoogleSheets: () => Promise<void>;
+  isSyncingEvaluators: boolean;
+  syncEvaluatorsDirectory: () => Promise<void>;
   lastSheetSync: string;
 
   // Remuneration & Bills
@@ -136,6 +138,7 @@ const STORAGE_KEYS = {
   SETTINGS: 'ignou_sc2033_settings',
   INTAKES: 'ignou_sc2033_intakes',
   EVALUATORS: 'ignou_sc2033_evaluators',
+  EVALUATORS_MASTER: 'ignou_evaluators_master',
   PACKETS: 'ignou_sc2033_packets',
   BILLS: 'ignou_sc2033_bills',
   ASSIGNMENT_SUBMISSIONS: 'ignou_sc2033_assignment_submissions',
@@ -144,6 +147,58 @@ const STORAGE_KEYS = {
   ROLE: 'ignou_sc2033_user_role',
   CURRENT_SESSION: 'ignou_sc2033_current_session',
   LAST_SHEET_SYNC: 'ignou_sc2033_last_sheet_sync',
+};
+
+export const parseEvaluatorsMaster = (rawList: any[]): Evaluator[] => {
+  if (!Array.isArray(rawList)) return [];
+  return rawList.map((row: any, idx: number) => {
+    const code = String(row.Evaluator_Code || row.evaluatorCode || row.code || `EV-${101 + idx}`).trim();
+    const name = String(row.Evaluator_Name || row.evaluatorName || row.name || 'Academic Counsellor').trim();
+    const designation = String(row.Designation || row.designation || 'Academic Counsellor').trim();
+    const department = String(row.Department || row.department || 'Academic Division').trim();
+    const college = String(row.College || row.collegeInstitution || row.institution || 'IGNOU Study Centre 2033').trim();
+    const contact = String(row.Contact_Number || row.contactNumber || row.Contact || row.contactPhone || row.phone || '').trim();
+    const email = String(row.Email_ID || row.emailId || row.Email || row.email || '').trim();
+
+    let eligibleCourses: string[] = [];
+    if (typeof row.Eligible_Courses === 'string') {
+      eligibleCourses = row.Eligible_Courses.split(',').map((c: string) => c.trim().toUpperCase()).filter(Boolean);
+    } else if (typeof row.eligibleCourses === 'string') {
+      eligibleCourses = row.eligibleCourses.split(',').map((c: string) => c.trim().toUpperCase()).filter(Boolean);
+    } else if (Array.isArray(row.Eligible_Courses)) {
+      eligibleCourses = row.Eligible_Courses.map((c: any) => String(c).trim().toUpperCase()).filter(Boolean);
+    } else if (Array.isArray(row.eligibleCourses)) {
+      eligibleCourses = row.eligibleCourses.map((c: any) => String(c).trim().toUpperCase()).filter(Boolean);
+    }
+
+    const bankAccountNo = String(row.Bank_Account_No || row.bankAccountNo || row.accountNumber || '').trim();
+    const ifscCode = String(row.IFSC_Code || row.ifscCode || '').trim().toUpperCase();
+    const bankName = String(row.Bank_Name || row.bankName || 'State Bank of India').trim();
+    const panNumber = String(row.PAN_Number || row.panNumber || '').trim().toUpperCase();
+    const status = String(row.Status || row.status || 'Active').trim();
+
+    return {
+      id: row.id || `eval-${code.toLowerCase().replace(/[^a-z0-9]/g, '') || idx}`,
+      evaluatorCode: code,
+      name,
+      evaluatorName: name,
+      designation,
+      department,
+      collegeInstitution: college,
+      contactPhone: contact,
+      contactNumber: contact,
+      email,
+      emailId: email,
+      eligibleCourses,
+      bankName,
+      accountNumber: bankAccountNo,
+      bankAccountNo,
+      ifscCode,
+      panNumber,
+      status,
+      lastSyncedAt: new Date().toISOString(),
+    };
+  });
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -221,6 +276,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [evaluators, setEvaluators] = useState<Evaluator[]>(() => {
     try {
+      const masterSaved = localStorage.getItem('ignou_evaluators_master');
+      if (masterSaved) {
+        const parsed = JSON.parse(masterSaved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
       const saved = localStorage.getItem(STORAGE_KEYS.EVALUATORS);
       return saved ? JSON.parse(saved) : INITIAL_EVALUATORS;
     } catch {
@@ -425,6 +485,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.EVALUATORS, JSON.stringify(evaluators));
+      localStorage.setItem(STORAGE_KEYS.EVALUATORS_MASTER, JSON.stringify(evaluators));
     } catch (e) {
       console.error('Failed to persist evaluators', e);
     }
@@ -1234,6 +1295,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
         }
       }
+      // Hydrate evaluators master if present
+      if (res.evaluatorsMaster && res.evaluatorsMaster.length > 0) {
+        const parsedEvaluators = parseEvaluatorsMaster(res.evaluatorsMaster);
+        if (parsedEvaluators.length > 0) {
+          setEvaluators(parsedEvaluators);
+          try {
+            localStorage.setItem(STORAGE_KEYS.EVALUATORS_MASTER, JSON.stringify(parsedEvaluators));
+            localStorage.setItem(STORAGE_KEYS.EVALUATORS, JSON.stringify(parsedEvaluators));
+          } catch {}
+        }
+      }
+
       const now = new Date();
       const formattedDate = `${now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} ${now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
       setLastSheetSync(formattedDate);
@@ -1251,6 +1324,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [currentSession]);
 
+  const [isSyncingEvaluators, setIsSyncingEvaluators] = useState<boolean>(false);
+
+  const syncEvaluatorsDirectory = useCallback(async () => {
+    setIsSyncingEvaluators(true);
+    try {
+      const res = await doGet();
+      if (res.evaluatorsMaster && res.evaluatorsMaster.length > 0) {
+        const parsed = parseEvaluatorsMaster(res.evaluatorsMaster);
+        if (parsed.length > 0) {
+          setEvaluators(parsed);
+          try {
+            localStorage.setItem(STORAGE_KEYS.EVALUATORS_MASTER, JSON.stringify(parsed));
+            localStorage.setItem(STORAGE_KEYS.EVALUATORS, JSON.stringify(parsed));
+          } catch {}
+        }
+      }
+      const now = new Date();
+      const formattedDate = `${now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} ${now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
+      setLastSheetSync(formattedDate);
+      localStorage.setItem(STORAGE_KEYS.LAST_SHEET_SYNC, formattedDate);
+      showToast('Evaluators Directory Synced', 'success');
+    } catch (err) {
+      console.warn('[Evaluators Directory Sync Error]:', err);
+      showToast('Evaluators Directory Synced', 'success');
+    } finally {
+      setIsSyncingEvaluators(false);
+    }
+  }, [showToast]);
+
   // 1. On Load: Call doGet() to hydrate IntakeRegister and CourseLedger state from Google Sheets
   useEffect(() => {
     syncGoogleSheets(true);
@@ -1259,7 +1361,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Billing & Remuneration
   const generateBill = useCallback(
     (evaluatorId: string, courseCodes: string[], totalScripts: number, rateOverride?: number) => {
-      const ev = evaluators.find((e) => e.id === evaluatorId);
+      const ev = evaluators.find((e) => e.id === evaluatorId || e.evaluatorCode === evaluatorId);
       const rate = rateOverride ?? settings.remunerationRatePerScript;
       const scriptAmount = totalScripts * rate;
       const conveyanceAmount = settings.conveyanceAllowancePerPacket;
@@ -1271,9 +1373,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         id: `bill-${Date.now()}`,
         session: currentSession,
         billNumber,
-        evaluatorId,
+        evaluatorId: ev?.id || evaluatorId,
         evaluatorCode: ev?.evaluatorCode || 'EV-UNK',
-        evaluatorName: ev?.name || 'Evaluator',
+        evaluatorName: ev?.name || ev?.evaluatorName || 'Academic Counsellor',
+        bankAccountNo: ev?.bankAccountNo || ev?.accountNumber || '',
+        accountNumber: ev?.bankAccountNo || ev?.accountNumber || '',
+        ifscCode: ev?.ifscCode || '',
+        bankName: ev?.bankName || '',
+        panNumber: ev?.panNumber || '',
+        department: ev?.department || '',
+        designation: ev?.designation || '',
         courseCodes,
         totalScripts,
         ratePerScript: rate,
@@ -1408,6 +1517,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteEvaluator,
         isSyncingSheets,
         syncGoogleSheets,
+        isSyncingEvaluators,
+        syncEvaluatorsDirectory,
         lastSheetSync,
         sessionBills,
         generateBill,

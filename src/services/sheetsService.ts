@@ -14,6 +14,7 @@ export interface HydrationResult {
   success: boolean;
   intakes?: any[];
   courseLedger?: any[];
+  evaluatorsMaster?: any[];
   source: 'google_sheets' | 'local_cache' | 'offline_fallback';
   message?: string;
 }
@@ -79,11 +80,13 @@ export async function doGet(): Promise<HydrationResult> {
       const json = await response.json();
       const rawIntakes = json.intakeRegister || json.intakes || json.Intake_Register || [];
       const rawLedger = json.courseLedger || json.course_ledger || json.Course_Ledger || [];
-      if (rawIntakes.length > 0 || rawLedger.length > 0) {
+      const rawEvaluators = json.evaluatorsMaster || json.evaluators_master || json.Evaluators_Master || json.evaluators || [];
+      if (rawIntakes.length > 0 || rawLedger.length > 0 || rawEvaluators.length > 0) {
         return {
           success: true,
           intakes: rawIntakes,
           courseLedger: rawLedger,
+          evaluatorsMaster: rawEvaluators,
           source: 'google_sheets',
           message: 'Hydrated successfully from Google Sheets.',
         };
@@ -103,10 +106,12 @@ export async function doGet(): Promise<HydrationResult> {
       const data = await directRes.json();
       const rawIntakes = data.intakeRegister || data.intakes || data.Intake_Register || [];
       const rawLedger = data.courseLedger || data.course_ledger || data.Course_Ledger || [];
+      const rawEvaluators = data.evaluatorsMaster || data.evaluators_master || data.Evaluators_Master || data.evaluators || [];
       return {
         success: true,
         intakes: rawIntakes,
         courseLedger: rawLedger,
+        evaluatorsMaster: rawEvaluators,
         source: 'google_sheets',
         message: 'Hydrated via direct Google Apps Script call.',
       };
@@ -344,6 +349,7 @@ export async function postGenerateSedPdf(details: {
 export async function postGenerateClaimPdf(details: {
   billId?: string;
   evaluatorId?: string;
+  evaluatorCode?: string;
   evaluatorName?: string;
   session: string;
   grossAmount: number;
@@ -352,12 +358,27 @@ export async function postGenerateClaimPdf(details: {
   ratePerScript?: number;
   conveyanceAmount?: number;
   courses?: string[];
+  bankAccountNo?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  bankName?: string;
+  panNumber?: string;
+  department?: string;
+  designation?: string;
 }): Promise<string> {
   const payload = {
     action: 'GENERATE_CLAIM_PDF',
     billId: details.billId || 'STATUTORY-CLAIM-VOUCHER',
-    evaluatorId: details.evaluatorId || 'EV-SC2033',
+    evaluatorId: details.evaluatorId || details.evaluatorCode || 'EV-SC2033',
+    evaluatorCode: details.evaluatorCode || details.evaluatorId || 'EV-SC2033',
     evaluatorName: details.evaluatorName || 'Academic Counsellor',
+    bankAccountNo: details.bankAccountNo || details.accountNumber || '',
+    accountNumber: details.bankAccountNo || details.accountNumber || '',
+    ifscCode: details.ifscCode || '',
+    bankName: details.bankName || '',
+    panNumber: details.panNumber || '',
+    department: details.department || '',
+    designation: details.designation || '',
     session: details.session,
     grossAmount: details.grossAmount,
     netPayable: details.netPayable || details.grossAmount,
@@ -538,6 +559,7 @@ function createFallbackSedAwardPdfBlob(details: {
 function createFallbackClaimBillPdfBlob(details: {
   billId?: string;
   evaluatorId?: string;
+  evaluatorCode?: string;
   evaluatorName?: string;
   session: string;
   grossAmount: number;
@@ -546,6 +568,13 @@ function createFallbackClaimBillPdfBlob(details: {
   ratePerScript?: number;
   conveyanceAmount?: number;
   courses?: string[];
+  bankAccountNo?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  bankName?: string;
+  panNumber?: string;
+  department?: string;
+  designation?: string;
 }): string {
   const coursesStr = (details.courses && details.courses.length > 0)
     ? details.courses.join(', ')
@@ -556,6 +585,11 @@ function createFallbackClaimBillPdfBlob(details: {
   const conveyance = details.conveyanceAmount || 150;
   const gross = details.grossAmount || (scriptAmount + conveyance);
   const net = details.netPayable || gross;
+  const evalCode = details.evaluatorCode || details.evaluatorId || 'EV-SC2033-01';
+  const bankAcc = details.bankAccountNo || details.accountNumber || '—';
+  const ifsc = details.ifscCode || '—';
+  const bank = details.bankName || 'State Bank of India';
+  const pan = details.panNumber || 'XXXXX1234X';
 
   const html = `<!DOCTYPE html>
 <html>
@@ -608,13 +642,23 @@ function createFallbackClaimBillPdfBlob(details: {
       <td class="meta-label">Academic Counsellor:</td>
       <td><strong style="color: #1e3a8a;">${details.evaluatorName || 'Academic Evaluator'}</strong></td>
       <td class="meta-label">Evaluator Code:</td>
-      <td><strong>${details.evaluatorId || 'EV-SC2033-01'}</strong></td>
+      <td><strong style="font-family: monospace;">${evalCode}</strong></td>
     </tr>
     <tr>
+      <td class="meta-label">Designation & Dept:</td>
+      <td><strong>${details.designation || 'Academic Counsellor'} ${details.department ? `(${details.department})` : ''}</strong></td>
       <td class="meta-label">Term-End Session:</td>
       <td><strong>${details.session}</strong></td>
+    </tr>
+    <tr>
+      <td class="meta-label">Bank Account Number:</td>
+      <td><strong style="font-family: monospace;">${bankAcc}</strong></td>
+      <td class="meta-label">Bank & IFSC:</td>
+      <td><strong>${bank}</strong> (IFSC: <strong style="font-family: monospace;">${ifsc}</strong>)</td>
+    </tr>
+    <tr>
       <td class="meta-label">Assigned Courses:</td>
-      <td><strong>${coursesStr}</strong></td>
+      <td colspan="3"><strong>${coursesStr}</strong></td>
     </tr>
   </table>
 
@@ -663,7 +707,7 @@ function createFallbackClaimBillPdfBlob(details: {
     <div class="sign-block">
       <strong>Signature of Academic Counsellor (Claimant)</strong><br/>
       Name: ${details.evaluatorName || 'Academic Evaluator'}<br/>
-      PAN: XXXXX1234X | A/C: ••••••••8912
+      Code: ${evalCode} | PAN: ${pan} | A/C: ${bankAcc}
     </div>
     <div class="sign-block">
       <strong>Verified & Sanctioned by Coordinator</strong><br/>

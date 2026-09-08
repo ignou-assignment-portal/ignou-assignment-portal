@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { CourseEvaluationRecord } from '../types';
+import { CourseEvaluationRecord, Evaluator } from '../types';
 import { calculateIGNOUGrade, formatDate } from '../utils/helpers';
 import {
   Layers,
@@ -24,6 +24,7 @@ import {
   Stamp,
   ArrowUpDown,
   BookOpen,
+  RefreshCw,
 } from 'lucide-react';
 
 export const CourseEvaluationMaster: React.FC = () => {
@@ -39,6 +40,8 @@ export const CourseEvaluationMaster: React.FC = () => {
     isAdmin,
     currentRole,
     settings,
+    isSyncingEvaluators,
+    syncEvaluatorsDirectory,
   } = useApp();
 
   // Filters & Search
@@ -46,6 +49,7 @@ export const CourseEvaluationMaster: React.FC = () => {
   const [selectedCourseFilter, setSelectedCourseFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [lockFilter, setLockFilter] = useState<string>('ALL');
+  const [bypassCourseFilter, setBypassCourseFilter] = useState<boolean>(false);
 
   // Batch Selection State
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -98,12 +102,54 @@ export const CourseEvaluationMaster: React.FC = () => {
   // Evaluator lookup
   const getEvaluator = (id: string | null | undefined) => {
     if (!id) return null;
-    return evaluators.find((e) => e.id === id);
+    return evaluators.find((e) => e.id === id || e.evaluatorCode === id);
   };
 
-  // Get evaluators eligible for a given course
-  const getEligibleEvaluators = (courseCode: string) => {
-    return evaluators.filter((ev) => ev.eligibleCourses.includes(courseCode));
+  // Helper to check if an evaluator is eligible for a course
+  const isEvaluatorEligible = (
+    ev: Evaluator,
+    courseCode: string,
+    programmeCode?: string,
+    bypass: boolean = bypassCourseFilter
+  ): boolean => {
+    // If admin enabled bypass, show all active evaluators
+    if (bypass) {
+      return (ev.status || 'Active').toLowerCase() === 'active';
+    }
+
+    // Must be Active status
+    if ((ev.status || 'Active').toLowerCase() !== 'active') {
+      return false;
+    }
+
+    if (!ev.eligibleCourses || ev.eligibleCourses.length === 0) {
+      return false;
+    }
+
+    const cleanCourse = courseCode.toUpperCase().replace(/[-\s]/g, '');
+    const cleanProg = (programmeCode || '').toUpperCase().replace(/[-\s]/g, '');
+
+    return ev.eligibleCourses.some((raw) => {
+      const cleanElig = String(raw).toUpperCase().replace(/[-\s]/g, '');
+      if (!cleanElig) return false;
+      // Exact course code match (e.g. MEG-01 vs MEG01 or MEG-01)
+      if (cleanElig === cleanCourse) return true;
+      // Programme code match (e.g. MEG matches MEG-01 or MEG)
+      if (cleanProg && (cleanElig === cleanProg || cleanProg.startsWith(cleanElig) || cleanElig.startsWith(cleanProg))) return true;
+      // Course code prefix match (e.g. MEG-01 matches MEG)
+      if (cleanCourse.startsWith(cleanElig) || cleanElig.startsWith(cleanCourse)) return true;
+      return false;
+    });
+  };
+
+  // Get evaluators eligible for a given course & programme
+  const getEligibleEvaluators = (courseCode: string, programmeCode?: string, currentEvaluatorId?: string | null) => {
+    return evaluators.filter((ev) => {
+      if (currentEvaluatorId && (ev.id === currentEvaluatorId || ev.evaluatorCode === currentEvaluatorId)) {
+        return true;
+      }
+      return isEvaluatorEligible(ev, courseCode, programmeCode);
+    });
   };
 
   // Checkbox selection handlers
@@ -251,6 +297,17 @@ export const CourseEvaluationMaster: React.FC = () => {
 
           <div className="flex items-center gap-2 flex-wrap">
             <button
+              onClick={syncEvaluatorsDirectory}
+              disabled={isSyncingEvaluators}
+              id="sync-evaluators-stage2-btn"
+              className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+              title="Reload latest Academic Counsellors / Evaluators Master Directory from Google Sheets"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingEvaluators ? 'animate-spin text-emerald-600' : 'text-emerald-700'}`} />
+              <span>{isSyncingEvaluators ? 'Syncing Evaluators...' : 'Sync Evaluators Directory'}</span>
+            </button>
+
+            <button
               onClick={() => {
                 setPrintCourseCode(selectedCourseFilter !== 'ALL' ? selectedCourseFilter : distinctCourses[0] || '');
                 setIsPrintModalOpen(true);
@@ -378,11 +435,23 @@ export const CourseEvaluationMaster: React.FC = () => {
                 <option value="" className="text-zinc-800">
                   Select Counsellor...
                 </option>
-                {evaluators.map((ev) => (
-                  <option key={ev.id} value={ev.id} className="text-zinc-800">
-                    {ev.name} ({ev.evaluatorCode}) - [{ev.eligibleCourses.join(', ')}]
-                  </option>
-                ))}
+                {evaluators
+                  .filter((ev) => {
+                    if (bypassCourseFilter) return (ev.status || 'Active').toLowerCase() === 'active';
+                    if (selectedCourseFilter !== 'ALL') {
+                      return isEvaluatorEligible(ev, selectedCourseFilter, undefined, false);
+                    }
+                    return (ev.status || 'Active').toLowerCase() === 'active';
+                  })
+                  .map((ev) => {
+                    const evalName = ev.evaluatorName || ev.name;
+                    const evalDept = ev.department || 'Academic Division';
+                    return (
+                      <option key={ev.id} value={ev.id} className="text-zinc-800">
+                        {evalName} ({ev.evaluatorCode} - {evalDept})
+                      </option>
+                    );
+                  })}
               </select>
               <button
                 onClick={handleBatchAllot}
@@ -493,6 +562,19 @@ export const CourseEvaluationMaster: React.FC = () => {
               <option value="UNLOCKED">Editable / Unlocked Only</option>
             </select>
           </div>
+
+          {/* Admin Override: Bypass course eligibility filter */}
+          {isAdmin && (
+            <label className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-xl text-xs text-amber-900 font-medium cursor-pointer select-none hover:bg-amber-100 transition">
+              <input
+                type="checkbox"
+                checked={bypassCourseFilter}
+                onChange={(e) => setBypassCourseFilter(e.target.checked)}
+                className="rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+              />
+              <span>Show All Evaluators (Bypass course filter)</span>
+            </label>
+          )}
         </div>
 
         <div className="text-xs text-zinc-500 font-mono">
@@ -543,7 +625,7 @@ export const CourseEvaluationMaster: React.FC = () => {
               ) : (
                 filteredRecords.map((record) => {
                   const isSelected = selectedIds.includes(record.id);
-                  const eligibleEvaluators = getEligibleEvaluators(record.courseCode);
+                  const eligibleEvaluators = getEligibleEvaluators(record.courseCode, record.programmeCode, record.evaluatorId);
                   const currentEvaluator = getEvaluator(record.evaluatorId);
                   const gradeInfo = calculateIGNOUGrade(record.marks);
 
@@ -632,11 +714,15 @@ export const CourseEvaluationMaster: React.FC = () => {
                               }`}
                             >
                               <option value="">— Choose Counsellor —</option>
-                              {eligibleEvaluators.map((ev) => (
-                                <option key={ev.id} value={ev.id}>
-                                  {ev.name} ({ev.evaluatorCode})
-                                </option>
-                              ))}
+                              {eligibleEvaluators.map((ev) => {
+                                const evalName = ev.evaluatorName || ev.name;
+                                const evalDept = ev.department || 'Academic Division';
+                                return (
+                                  <option key={ev.id} value={ev.id}>
+                                    {evalName} ({ev.evaluatorCode} - {evalDept})
+                                  </option>
+                                );
+                              })}
                             </select>
 
                             {eligibleEvaluators.length === 0 && (

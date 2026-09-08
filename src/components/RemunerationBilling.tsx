@@ -197,10 +197,18 @@ export const RemunerationBilling: React.FC = () => {
     try {
       let payload;
       if (customBillData) {
+        const ev = evaluators.find((e) => e.id === customBillData.evaluatorId || e.evaluatorCode === customBillData.evaluatorCode);
         payload = {
           billNumber: customBillData.billNumber,
           evaluatorName: customBillData.evaluatorName,
           evaluatorCode: customBillData.evaluatorCode,
+          bankAccountNo: customBillData.bankAccountNo || customBillData.accountNumber || ev?.bankAccountNo || ev?.accountNumber || '',
+          accountNumber: customBillData.bankAccountNo || customBillData.accountNumber || ev?.bankAccountNo || ev?.accountNumber || '',
+          ifscCode: customBillData.ifscCode || ev?.ifscCode || '',
+          bankName: customBillData.bankName || ev?.bankName || 'State Bank of India',
+          panNumber: customBillData.panNumber || ev?.panNumber || '',
+          department: customBillData.department || ev?.department || '',
+          designation: customBillData.designation || ev?.designation || '',
           courseCodes: customBillData.courseCodes,
           totalScripts: customBillData.totalScripts,
           ratePerScript: customBillData.ratePerScript,
@@ -211,12 +219,17 @@ export const RemunerationBilling: React.FC = () => {
           centreCode: settings.centreCode,
         };
       } else if (activeClaimDraft) {
+        const ev = activeClaimDraft.evaluator;
         payload = {
-          evaluatorName: activeClaimDraft.evaluator.name,
-          evaluatorCode: activeClaimDraft.evaluator.evaluatorCode,
-          panNumber: activeClaimDraft.evaluator.panNumber,
-          bankName: activeClaimDraft.evaluator.bankName,
-          accountNumber: activeClaimDraft.evaluator.accountNumber,
+          evaluatorName: ev.evaluatorName || ev.name,
+          evaluatorCode: ev.evaluatorCode,
+          bankAccountNo: ev.bankAccountNo || ev.accountNumber || '',
+          accountNumber: ev.bankAccountNo || ev.accountNumber || '',
+          ifscCode: ev.ifscCode || '',
+          bankName: ev.bankName || 'State Bank of India',
+          panNumber: ev.panNumber || '',
+          department: ev.department || '',
+          designation: ev.designation || '',
           courseCodes: activeClaimDraft.courseBreakdown.map((c) => c.courseCode),
           totalScripts: activeClaimDraft.totalEvaluated > 0 ? activeClaimDraft.totalEvaluated : 1,
           ratePerScript: draftRate,
@@ -229,10 +242,18 @@ export const RemunerationBilling: React.FC = () => {
         };
       } else if (sessionBills.length > 0) {
         const firstBill = sessionBills[0];
+        const ev = evaluators.find((e) => e.id === firstBill.evaluatorId || e.evaluatorCode === firstBill.evaluatorCode);
         payload = {
           billNumber: firstBill.billNumber,
           evaluatorName: firstBill.evaluatorName,
           evaluatorCode: firstBill.evaluatorCode,
+          bankAccountNo: firstBill.bankAccountNo || firstBill.accountNumber || ev?.bankAccountNo || ev?.accountNumber || '',
+          accountNumber: firstBill.bankAccountNo || firstBill.accountNumber || ev?.bankAccountNo || ev?.accountNumber || '',
+          ifscCode: firstBill.ifscCode || ev?.ifscCode || '',
+          bankName: firstBill.bankName || ev?.bankName || 'State Bank of India',
+          panNumber: firstBill.panNumber || ev?.panNumber || '',
+          department: firstBill.department || ev?.department || '',
+          designation: firstBill.designation || ev?.designation || '',
           courseCodes: firstBill.courseCodes,
           totalScripts: firstBill.totalScripts,
           ratePerScript: firstBill.ratePerScript,
@@ -243,9 +264,17 @@ export const RemunerationBilling: React.FC = () => {
           centreCode: settings.centreCode,
         };
       } else {
+        const ev = evaluators[0];
         payload = {
-          evaluatorName: evaluators[0]?.name || 'Approved Academic Counsellor',
-          evaluatorCode: evaluators[0]?.evaluatorCode || 'SC-2033',
+          evaluatorName: ev?.name || ev?.evaluatorName || 'Approved Academic Counsellor',
+          evaluatorCode: ev?.evaluatorCode || 'SC-2033',
+          bankAccountNo: ev?.bankAccountNo || ev?.accountNumber || '',
+          accountNumber: ev?.bankAccountNo || ev?.accountNumber || '',
+          ifscCode: ev?.ifscCode || '',
+          bankName: ev?.bankName || 'State Bank of India',
+          panNumber: ev?.panNumber || '',
+          department: ev?.department || '',
+          designation: ev?.designation || '',
           courseCodes: ['ALL COURSES'],
           totalScripts: totalEvaluatedScriptsAcrossCentre || 1,
           ratePerScript: settings.remunerationRatePerScript,
@@ -842,7 +871,7 @@ export const RemunerationBilling: React.FC = () => {
                       5. Bank Name & Branch
                     </span>
                     <span className="font-semibold text-zinc-900">
-                      {activeClaimDraft.evaluator.bankName}
+                      {activeClaimDraft.evaluator.bankName || 'State Bank of India'}
                     </span>
                   </div>
                   <div>
@@ -850,7 +879,7 @@ export const RemunerationBilling: React.FC = () => {
                       6. Bank Account Number
                     </span>
                     <span className="font-mono font-bold text-zinc-900">
-                      {activeClaimDraft.evaluator.accountNumber}
+                      {activeClaimDraft.evaluator.bankAccountNo || activeClaimDraft.evaluator.accountNumber || '—'}
                     </span>
                   </div>
                   <div>
@@ -858,7 +887,7 @@ export const RemunerationBilling: React.FC = () => {
                       7. IFSC Code
                     </span>
                     <span className="font-mono font-bold text-zinc-900">
-                      {activeClaimDraft.evaluator.ifscCode}
+                      {activeClaimDraft.evaluator.ifscCode || '—'}
                     </span>
                   </div>
                 </div>
@@ -1156,26 +1185,51 @@ export const RemunerationBilling: React.FC = () => {
               </div>
 
               {/* Bill Details */}
-              <div className="grid grid-cols-2 gap-2 bg-zinc-50 p-3 rounded-lg border border-zinc-200">
-                <div>
-                  <span className="text-[10px] text-zinc-400 uppercase font-bold block">Bill Number</span>
-                  <span className="font-mono font-bold text-indigo-950 text-xs">{selectedPrintBill.billNumber}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-zinc-400 uppercase font-bold block">Sanction Date</span>
-                  <span className="font-semibold text-zinc-800">
-                    {selectedPrintBill.sanctionedDate ? formatDate(selectedPrintBill.sanctionedDate) : 'Pending Sanction'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-zinc-400 uppercase font-bold block">Evaluator Name</span>
-                  <span className="font-bold text-zinc-900">{selectedPrintBill.evaluatorName}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-zinc-400 uppercase font-bold block">Evaluator Code</span>
-                  <span className="font-mono font-semibold text-zinc-700">{selectedPrintBill.evaluatorCode}</span>
-                </div>
-              </div>
+              {(() => {
+                const billEvaluator = evaluators.find(
+                  (e) => e.id === selectedPrintBill.evaluatorId || e.evaluatorCode === selectedPrintBill.evaluatorCode
+                );
+                return (
+                  <div className="grid grid-cols-2 gap-2 bg-zinc-50 p-3 rounded-lg border border-zinc-200">
+                    <div>
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold block">Bill Number</span>
+                      <span className="font-mono font-bold text-indigo-950 text-xs">{selectedPrintBill.billNumber}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold block">Sanction Date</span>
+                      <span className="font-semibold text-zinc-800">
+                        {selectedPrintBill.sanctionedDate ? formatDate(selectedPrintBill.sanctionedDate) : 'Pending Sanction'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold block">Evaluator Name & Code</span>
+                      <span className="font-bold text-zinc-900">{selectedPrintBill.evaluatorName}</span>
+                      <span className="font-mono text-xs text-indigo-700 ml-1">({selectedPrintBill.evaluatorCode})</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold block">Department / Institution</span>
+                      <span className="font-semibold text-zinc-700">
+                        {selectedPrintBill.department || billEvaluator?.department || billEvaluator?.collegeInstitution || 'IGNOU Study Centre 2033'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold block">Bank Name</span>
+                      <span className="font-semibold text-zinc-800">
+                        {selectedPrintBill.bankName || billEvaluator?.bankName || 'State Bank of India'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold block">Account No & IFSC</span>
+                      <span className="font-mono font-bold text-zinc-900">
+                        {selectedPrintBill.bankAccountNo || selectedPrintBill.accountNumber || billEvaluator?.bankAccountNo || billEvaluator?.accountNumber || '—'}
+                      </span>
+                      <span className="font-mono text-[11px] text-zinc-500 ml-1">
+                        (IFSC: {selectedPrintBill.ifscCode || billEvaluator?.ifscCode || '—'})
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Table */}
               <table className="w-full border-collapse border border-zinc-400 text-xs">
