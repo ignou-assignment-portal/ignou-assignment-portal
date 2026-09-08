@@ -191,6 +191,82 @@ export async function postAddIntake(
 }
 
 /**
+ * Edit Intake Receipt (Stage 1: Intake & Desk Submissions):
+ * Dispatch POST to Google Apps Script:
+ * action: "EDIT_INTAKE",
+ * payload: { originalEnrollmentNo, enrollmentNo, candidateName, contact, programme, courses, session: activeSession }
+ * using mode: 'no-cors'.
+ */
+export async function postEditIntake(payloadData: {
+  originalEnrollmentNo: string;
+  enrollmentNo: string;
+  candidateName: string;
+  contact: string;
+  programme: string;
+  courses: string[];
+  session: string;
+}): Promise<ApiResponse> {
+  const payload = {
+    action: "EDIT_INTAKE",
+    payload: {
+      originalEnrollmentNo: String(payloadData.originalEnrollmentNo || '').trim(),
+      enrollmentNo: String(payloadData.enrollmentNo || '').trim(),
+      candidateName: String(payloadData.candidateName || '').trim(),
+      contact: String(payloadData.contact || '').trim(),
+      programme: String(payloadData.programme || '').trim().toUpperCase(),
+      courses: payloadData.courses || [],
+      session: payloadData.session || 'July 2026',
+    },
+    // Top-level aliases for flexible Apps Script handlers
+    originalEnrollmentNo: String(payloadData.originalEnrollmentNo || '').trim(),
+    enrollmentNo: String(payloadData.enrollmentNo || '').trim(),
+    candidateName: String(payloadData.candidateName || '').trim(),
+    contact: String(payloadData.contact || '').trim(),
+    programme: String(payloadData.programme || '').trim().toUpperCase(),
+    courses: payloadData.courses || [],
+    session: payloadData.session || 'July 2026',
+  };
+
+  sendScriptPost(payload).catch((err) => console.warn('[postEditIntake error]:', err));
+
+  return {
+    status: 'success',
+    action: 'EDIT_INTAKE',
+    message: 'Intake entry updated & synced',
+  };
+}
+
+/**
+ * Delete Intake Receipt (Stage 1: Intake & Desk Submissions):
+ * Dispatch POST to Google Apps Script:
+ * action: "DELETE_INTAKE",
+ * payload: { enrollmentNo, session: activeSession }
+ * using mode: 'no-cors'.
+ */
+export async function postDeleteIntake(payloadData: {
+  enrollmentNo: string;
+  session: string;
+}): Promise<ApiResponse> {
+  const payload = {
+    action: "DELETE_INTAKE",
+    payload: {
+      enrollmentNo: String(payloadData.enrollmentNo || '').trim(),
+      session: payloadData.session || 'July 2026',
+    },
+    enrollmentNo: String(payloadData.enrollmentNo || '').trim(),
+    session: payloadData.session || 'July 2026',
+  };
+
+  sendScriptPost(payload).catch((err) => console.warn('[postDeleteIntake error]:', err));
+
+  return {
+    status: 'success',
+    action: 'DELETE_INTAKE',
+    message: 'Intake receipt and ledger rows deleted',
+  };
+}
+
+/**
  * 3. On Marks Locking / Updating (Stage 2: Course Evaluation Master):
  * Send POST with action "UPDATE_MARKS" containing subId, marks, calculated grade, and isLocked: true.
  * Format:
@@ -204,24 +280,97 @@ export async function postAddIntake(
  *   }
  * }
  */
+export interface UpdateMarksPayload {
+  subId: string;
+  enrollmentNo: string;
+  courseCode: string;
+  marks: number | null;
+  grade: string;
+  isLocked: boolean;
+}
+
+/**
+ * 3. On Marks Locking / Updating (Stage 2: Course Evaluation Master):
+ * Send POST with action "UPDATE_MARKS" containing subId, enrollmentNo, courseCode, marks, calculated grade, and isLocked.
+ * Format:
+ * {
+ *   action: "UPDATE_MARKS",
+ *   payload: {
+ *     subId,
+ *     enrollmentNo,
+ *     courseCode,
+ *     marks,
+ *     grade,
+ *     isLocked
+ *   }
+ * }
+ */
 export async function postUpdateMarks(
-  subId: string,
-  marks: number | null,
-  calculatedGrade: string,
-  isLocked: boolean = true
+  params:
+    | UpdateMarksPayload
+    | {
+        subId: string;
+        enrollmentNo?: string;
+        courseCode?: string;
+        marks?: number | null;
+        grade?: string;
+        isLocked?: boolean;
+      }
+    | string,
+  marksParam?: number | null,
+  gradeParam?: string,
+  isLockedParam?: boolean,
+  compositeParams?: { enrollmentNo?: string; courseCode?: string }
 ): Promise<ApiResponse> {
+  let subId = '';
+  let enrollmentNo = '';
+  let courseCode = '';
+  let marks: number | null = null;
+  let grade = '';
+  let isLocked = true;
+
+  if (typeof params === 'object' && params !== null) {
+    subId = params.subId || '';
+    enrollmentNo = params.enrollmentNo || '';
+    courseCode = params.courseCode || '';
+    marks = params.marks !== undefined ? params.marks : null;
+    grade = params.grade || '';
+    isLocked = params.isLocked !== undefined ? Boolean(params.isLocked) : true;
+  } else {
+    subId = String(params || '');
+    marks = marksParam !== undefined ? marksParam : null;
+    grade = gradeParam || '';
+    isLocked = isLockedParam !== undefined ? Boolean(isLockedParam) : true;
+    enrollmentNo = compositeParams?.enrollmentNo || '';
+    courseCode = compositeParams?.courseCode || '';
+  }
+
+  // Fallback parsing if composite keys not explicitly provided
+  if ((!enrollmentNo || !courseCode) && subId) {
+    const parts = subId.split('_');
+    if (parts.length >= 3) {
+      if (!enrollmentNo) enrollmentNo = parts[1];
+      if (!courseCode) courseCode = parts[2];
+    }
+  }
+
   const payload = {
     action: "UPDATE_MARKS",
     payload: {
       subId,
-      marks: marks !== null ? Number(marks) : '',
-      grade: calculatedGrade || '',
-      isLocked: isLocked === true,
+      enrollmentNo,
+      courseCode,
+      marks: marks !== null ? Number(marks) : null,
+      grade,
+      isLocked,
     },
+    // Top-level mirrors for backward compatibility
     subId,
-    marks: marks !== null ? Number(marks) : '',
-    grade: calculatedGrade || '',
-    isLocked: isLocked === true,
+    enrollmentNo,
+    courseCode,
+    marks: marks !== null ? Number(marks) : null,
+    grade,
+    isLocked,
   };
 
   // Dispatch via no-cors text/plain;charset=utf-8 without waiting for res.json()
@@ -543,7 +692,8 @@ function createFallbackSedAwardPdfBlob(details: {
     </div>
     <div class="sign-block">
       Signature & Seal of Coordinator<br/>
-      Dr. V. K. Aggarwal (SC-2033)
+      Dr. Sant K. Gupta<br/>
+      Coordinator, IGNOU SC-2033
     </div>
   </div>
 </body>
@@ -711,8 +861,8 @@ function createFallbackClaimBillPdfBlob(details: {
     </div>
     <div class="sign-block">
       <strong>Verified & Sanctioned by Coordinator</strong><br/>
-      Dr. V. K. Aggarwal (Coordinator, SC-2033)<br/>
-      IGNOU Study Centre 2033, Al-Ameen College
+      Dr. Sant K. Gupta<br/>
+      Coordinator, IGNOU SC-2033
     </div>
   </div>
 </body>

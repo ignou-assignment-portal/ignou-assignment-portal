@@ -25,7 +25,7 @@ import {
   IGNOU_PROGRAMMES,
 } from '../data/ignouMasterData';
 import { generateSessionCode, generateDeterministicSubmissionKey, calculateIGNOUGrade } from '../utils/helpers';
-import { doGet, postAddIntake, postUpdateMarks, postAllotEvaluator, SCRIPT_URL } from '../services/sheetsService';
+import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, SCRIPT_URL } from '../services/sheetsService';
 
 interface AppContextType {
   // Session Isolation
@@ -52,7 +52,17 @@ interface AppContextType {
   allIntakes: IntakeRecord[];
   addIntakeRecord: (record: Omit<IntakeRecord, 'id' | 'session' | 'tokenNo' | 'createdAt' | 'marks'> & { marks?: Record<string, number | null> }) => IntakeRecord;
   updateIntakeRecord: (id: string, updates: Partial<IntakeRecord>) => void;
-  deleteIntakeRecord: (id: string) => void;
+  editIntakeEntry: (params: {
+    id: string;
+    originalEnrollmentNo: string;
+    enrollmentNo: string;
+    candidateName: string;
+    contact: string;
+    programme: string;
+    courses: string[];
+    session?: string;
+  }) => void;
+  deleteIntakeRecord: (id: string) => boolean;
   updateMarks: (intakeId: string, courseCode: string, marks: number | null) => void;
 
   // Module B: 2_Course_Evaluation_Master (Automated Ledger Unpacking & Marks Engine)
@@ -206,7 +216,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [settings, setSettings] = useState<SystemSettings>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-      return saved ? JSON.parse(saved) : INITIAL_SETTINGS;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.coordinatorName === 'Dr. V. K. Aggarwal' || !parsed.coordinatorName) {
+          parsed.coordinatorName = 'Dr. Sant K. Gupta';
+        }
+        if (!parsed.coordinatorDesignation) {
+          parsed.coordinatorDesignation = 'Coordinator, IGNOU SC-2033';
+        }
+        if (parsed.remunerationRatePerScript === 30 || !parsed.remunerationRatePerScript) {
+          parsed.remunerationRatePerScript = 27.50;
+        }
+        return { ...INITIAL_SETTINGS, ...parsed };
+      }
+      return INITIAL_SETTINGS;
     } catch {
       return INITIAL_SETTINGS;
     }
@@ -330,7 +353,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [courseEvaluations, setCourseEvaluations] = useState<CourseEvaluationRecord[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.COURSE_EVALUATIONS);
-      return saved ? JSON.parse(saved) : INITIAL_COURSE_EVALUATIONS;
+      const data: CourseEvaluationRecord[] = saved ? JSON.parse(saved) : INITIAL_COURSE_EVALUATIONS;
+      return data.map((rec) => ({
+        ...rec,
+        lockedBy: rec.lockedBy?.includes('Aggarwal') ? 'Dr. Sant K. Gupta (Coordinator)' : rec.lockedBy,
+      }));
     } catch {
       return INITIAL_COURSE_EVALUATIONS;
     }
@@ -794,9 +821,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Intake Actions
   const addIntakeRecord = useCallback(
     (data: Omit<IntakeRecord, 'id' | 'session' | 'tokenNo' | 'createdAt' | 'marks'> & { marks?: Record<string, number | null> }) => {
+      // Composite Duplicate Check: Block if SAME student submits EXACT SAME course code for this session
+      const cleanEnr = data.enrollmentNo.trim();
+      const existingInSession = intakes.filter((r) => r.session === currentSession);
+      const duplicateCourses = data.courseCodes.filter((cc) => {
+        const normCC = cc.trim().toUpperCase();
+        return (
+          courseEvaluations.some(
+            (ce) =>
+              ce.enrollmentNo.trim() === cleanEnr &&
+              ce.session.trim().toLowerCase() === currentSession.trim().toLowerCase() &&
+              ce.courseCode.trim().toUpperCase() === normCC
+          ) ||
+          existingInSession.some(
+            (it) =>
+              it.enrollmentNo.trim() === cleanEnr &&
+              it.courseCodes.some((c) => c.trim().toUpperCase() === normCC)
+          )
+        );
+      });
+
+      if (duplicateCourses.length > 0) {
+        throw new Error(
+          `Duplicate Submission Blocked: Student ${cleanEnr} has already submitted course ${duplicateCourses.join(', ')} in session "${currentSession}".`
+        );
+      }
+
       const sessionCode = generateSessionCode(currentSession);
       // Count current session intakes to build deterministic sequential token
-      const existingInSession = intakes.filter((r) => r.session === currentSession);
       const nextSequence = existingInSession.length + 1;
       const paddedSeq = String(nextSequence).padStart(4, '0');
       const tokenNo = `SC2033-${sessionCode}-${paddedSeq}`;
@@ -880,13 +932,283 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIntakes((prev) => prev.map((item) => (item.id === id ? { ...item, ...updates } : item)));
   }, []);
 
-  const deleteIntakeRecord = useCallback((id: string) => {
-    const target = intakes.find((i) => i.id === id);
-    setIntakes((prev) => prev.filter((item) => item.id !== id));
-    if (target) {
-      setCourseEvaluations((prev) => prev.filter((e) => e.intakeId !== id && e.tokenNo !== target.tokenNo));
-    }
-  }, [intakes]);
+  const editIntakeEntry = useCallback(
+    (data: {
+      id: string;
+      originalEnrollmentNo: string;
+      enrollmentNo: string;
+      candidateName: string;
+      contact: string;
+      programme: string;
+      courses: string[];
+      session?: string;
+    }) => {
+      const targetIntake = intakes.find((i) => i.id === data.id);
+      const activeSession = data.session || targetIntake?.session || currentSession;
+      const cleanOrigEnr = data.originalEnrollmentNo.trim();
+      const cleanNewEnr = data.enrollmentNo.trim();
+      const cleanName = data.candidateName.trim();
+      const cleanContact = data.contact.trim();
+      const cleanProg = data.programme.trim().toUpperCase();
+      const cleanCourses = Array.from(new Set(data.courses.map((c) => c.trim().toUpperCase()).filter(Boolean)));
+
+      // Check if any course removed by this edit was already locked in courseLedger
+      const matchingCurrentStudentEvals = courseEvaluations.filter(
+        (e) =>
+          (e.intakeId === data.id || e.enrollmentNo.trim() === cleanOrigEnr) &&
+          e.session.trim().toLowerCase() === activeSession.trim().toLowerCase()
+      );
+      for (const ce of matchingCurrentStudentEvals) {
+        if (
+          !cleanCourses.includes(ce.courseCode.toUpperCase()) &&
+          (ce.isLocked || ce.status === 'Locked' || ce.status === 'Marks Locked')
+        ) {
+          alert(`Cannot remove course ${ce.courseCode}: Marks have already been locked.`);
+          return;
+        }
+      }
+
+      // 1. Optimistic state update across intakeRegister (intakes)
+      let updatedIntakeRecord: IntakeRecord | null = null;
+      setIntakes((prev) => {
+        const next = prev.map((item) => {
+          if (item.id === data.id || (item.enrollmentNo.trim() === cleanOrigEnr && item.session === activeSession)) {
+            const newMarks: Record<string, number | null> = {};
+            cleanCourses.forEach((c) => {
+              newMarks[c] = item.marks?.[c] ?? null;
+            });
+            const allEntered = cleanCourses.length > 0 && cleanCourses.every((c) => newMarks[c] !== null && newMarks[c] !== undefined);
+            const hasSomeMarks = cleanCourses.some((c) => newMarks[c] !== null && newMarks[c] !== undefined);
+            const newStatus = allEntered ? 'Evaluated' : hasSomeMarks ? 'Under Evaluation' : item.status;
+
+            const updated: IntakeRecord = {
+              ...item,
+              enrollmentNo: cleanNewEnr,
+              studentName: cleanName,
+              studentPhone: cleanContact,
+              programmeCode: cleanProg,
+              courseCodes: cleanCourses,
+              marks: newMarks,
+              status: newStatus,
+            };
+            updatedIntakeRecord = updated;
+            return updated;
+          }
+          return item;
+        });
+        try {
+          localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // 2. Optimistic state update across courseLedger (courseEvaluations)
+      setCourseEvaluations((prev) => {
+        const studentEvals = prev.filter(
+          (e) =>
+            (e.intakeId === data.id || e.enrollmentNo.trim() === cleanOrigEnr) &&
+            e.session.trim().toLowerCase() === activeSession.trim().toLowerCase()
+        );
+        const existingCodes = studentEvals.map((e) => e.courseCode.toUpperCase());
+        const otherEvals = prev.filter(
+          (e) =>
+            !(
+              (e.intakeId === data.id || e.enrollmentNo.trim() === cleanOrigEnr) &&
+              e.session.trim().toLowerCase() === activeSession.trim().toLowerCase()
+            )
+        );
+
+        // Update existing evaluations that are kept
+        const updatedExisting = studentEvals
+          .filter((e) => cleanCourses.includes(e.courseCode.toUpperCase()))
+          .map((e) => ({
+            ...e,
+            enrollmentNo: cleanNewEnr,
+            studentName: cleanName,
+            studentPhone: cleanContact,
+            programmeCode: cleanProg,
+            submissionKey: generateDeterministicSubmissionKey(cleanNewEnr, e.courseCode, activeSession),
+            updatedAt: new Date().toISOString(),
+          }));
+
+        // Create new unpacked rows for newly added courses
+        const addedCodes = cleanCourses.filter((c) => !existingCodes.includes(c));
+        const newUnpackedRows: CourseEvaluationRecord[] = addedCodes.map((c) => {
+          const detKey = generateDeterministicSubmissionKey(cleanNewEnr, c, activeSession);
+          return {
+            id: detKey,
+            submissionKey: detKey,
+            intakeId: data.id,
+            tokenNo: targetIntake?.tokenNo || `SC2033-${generateSessionCode(activeSession)}-MOD`,
+            session: activeSession,
+            enrollmentNo: cleanNewEnr,
+            studentName: cleanName,
+            studentPhone: cleanContact,
+            programmeCode: cleanProg,
+            courseCode: c,
+            courseTitle: `${cleanProg} Course ${c}`,
+            submissionDate: targetIntake?.submissionDate || new Date().toISOString().split('T')[0],
+            submissionMode: targetIntake?.submissionMode || 'In-Person (Desk)',
+            consignmentNo: targetIntake?.consignmentNo || null,
+            evaluatorId: null,
+            evaluatorCode: null,
+            evaluatorName: null,
+            allottedDate: null,
+            allottedBy: null,
+            marks: null,
+            grade: null,
+            gradeLabel: null,
+            isLocked: false,
+            lockedAt: null,
+            lockedBy: null,
+            status: 'Pending Allotment',
+            updatedAt: new Date().toISOString(),
+            remarks: targetIntake?.remarks,
+          };
+        });
+
+        const combined = [...otherEvals, ...updatedExisting, ...newUnpackedRows];
+        try {
+          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(combined));
+        } catch {}
+        return combined;
+      });
+
+      // 3. Keep registration receipts in sync
+      setRegistrationReceipts((prev) => {
+        const next = prev.map((rcpt) => {
+          if (rcpt.studentId.trim() === cleanOrigEnr && rcpt.session.trim().toLowerCase() === activeSession.trim().toLowerCase()) {
+            return {
+              ...rcpt,
+              studentId: cleanNewEnr,
+              studentName: cleanName,
+              studentPhone: cleanContact,
+              programmeCode: cleanProg,
+              registeredCourses: cleanCourses,
+            };
+          }
+          return rcpt;
+        });
+        try {
+          localStorage.setItem(STORAGE_KEYS.REGISTRATION_RECEIPTS, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // 4. Dispatch POST to Google Apps Script:
+      // action: "EDIT_INTAKE",
+      // payload: { originalEnrollmentNo, enrollmentNo, candidateName, contact, programme, courses, session: activeSession }
+      // using mode: 'no-cors'.
+      postEditIntake({
+        originalEnrollmentNo: cleanOrigEnr,
+        enrollmentNo: cleanNewEnr,
+        candidateName: cleanName,
+        contact: cleanContact,
+        programme: cleanProg,
+        courses: cleanCourses,
+        session: activeSession,
+      }).catch((err) => {
+        console.warn('Google Sheets EDIT_INTAKE notification warning:', err);
+      });
+
+      // 5. Close modal & Toast: "Intake entry updated & synced"
+      showToast('Intake entry updated & synced', 'success');
+    },
+    [intakes, courseEvaluations, currentSession, showToast]
+  );
+
+  const deleteIntakeRecord = useCallback(
+    (id: string): boolean => {
+      const target = intakes.find((i) => i.id === id);
+      if (!target) return false;
+
+      const targetSession = target.session || currentSession;
+      const cleanEnr = target.enrollmentNo.trim();
+
+      // Check if any course for this student in courseLedger has status === "Locked" or isLocked:
+      const hasLocked = courseEvaluations.some(
+        (ce) =>
+          ce.enrollmentNo.trim() === cleanEnr &&
+          ce.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
+          (ce.isLocked || ce.status === 'Locked' || ce.status === 'Marks Locked')
+      );
+
+      if (hasLocked) {
+        alert('Cannot delete intake. Marks have already been locked for one or more courses.');
+        return false;
+      }
+
+      // Optimistically remove the row from intakeRegister
+      setIntakes((prev) => {
+        const next = prev.filter((item) => item.id !== id);
+        try {
+          localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // Remove corresponding scripts from courseLedger
+      setCourseEvaluations((prev) => {
+        const next = prev.filter(
+          (e) =>
+            !(
+              (e.intakeId === id || e.enrollmentNo.trim() === cleanEnr) &&
+              e.session.trim().toLowerCase() === targetSession.trim().toLowerCase()
+            )
+        );
+        try {
+          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // Also remove from registrationReceipts
+      setRegistrationReceipts((prev) => {
+        const next = prev.filter(
+          (rcpt) =>
+            !(
+              (rcpt.studentId.trim() === cleanEnr || rcpt.receiptNumber === target.tokenNo) &&
+              rcpt.session.trim().toLowerCase() === targetSession.trim().toLowerCase()
+            )
+        );
+        try {
+          localStorage.setItem(STORAGE_KEYS.REGISTRATION_RECEIPTS, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // Also remove from assignmentSubmissions
+      setAssignmentSubmissions((prev) => {
+        const next = prev.filter(
+          (sub) =>
+            !(
+              sub.studentId.trim() === cleanEnr &&
+              sub.session.trim().toLowerCase() === targetSession.trim().toLowerCase()
+            )
+        );
+        try {
+          localStorage.setItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // Dispatch POST to Google Apps Script:
+      // action: "DELETE_INTAKE",
+      // payload: { enrollmentNo, session: activeSession }
+      // using mode: 'no-cors'.
+      postDeleteIntake({
+        enrollmentNo: cleanEnr,
+        session: targetSession,
+      }).catch((err) => {
+        console.warn('Google Sheets DELETE_INTAKE notification warning:', err);
+      });
+
+      // Toast: "Intake receipt and ledger rows deleted"
+      showToast('Intake receipt and ledger rows deleted', 'success');
+      return true;
+    },
+    [intakes, courseEvaluations, currentSession, showToast]
+  );
 
   const updateMarks = useCallback((intakeId: string, courseCode: string, marksValue: number | null) => {
     setIntakes((prev) =>
@@ -983,6 +1305,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       let updatedEnr = '';
       let targetSession = '';
       let targetIntakeId = '';
+      let subKey = '';
+      let isRecLocked = false;
+
+      const gradeInfo = calculateIGNOUGrade(marksValue);
+      const now = new Date().toISOString();
 
       setCourseEvaluations((prev) =>
         prev.map((rec) => {
@@ -996,9 +1323,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           updatedEnr = rec.enrollmentNo;
           targetSession = rec.session;
           targetIntakeId = rec.intakeId || '';
-
-          const gradeInfo = calculateIGNOUGrade(marksValue);
-          const now = new Date().toISOString();
+          subKey = rec.submissionKey || rec.id;
+          isRecLocked = rec.isLocked;
 
           return {
             ...rec,
@@ -1011,7 +1337,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         })
       );
 
-      // Keep intakes table in sync
+      // Keep intakes table in sync and dispatch fail-safe UPDATE_MARKS writeback
       if (updatedCourse) {
         setIntakes((prev) =>
           prev.map((item) => {
@@ -1028,6 +1354,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             };
           })
         );
+
+        // Fail-safe Google Sheets writeback with subId + composite keys (enrollmentNo + courseCode) via mode: 'no-cors'
+        postUpdateMarks({
+          subId: subKey || evaluationId,
+          enrollmentNo: updatedEnr,
+          courseCode: updatedCourse,
+          marks: marksValue,
+          grade: gradeInfo.grade,
+          isLocked: isRecLocked,
+        }).catch((err) => {
+          console.warn('Google Sheets UPDATE_MARKS writeback warning:', err);
+        });
       }
     },
     []
@@ -1041,7 +1379,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const now = new Date().toISOString();
-      const lockedBy = currentRole === 'ADMIN' ? 'Dr. V. K. Aggarwal (Coordinator)' : 'Desk Official';
+      const lockedBy = currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Dr. Sant K. Gupta'} (Coordinator)` : 'Desk Official';
 
       setCourseEvaluations((prev) => {
         const next = prev.map((rec) => {
@@ -1053,8 +1391,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               return rec;
             }
             const gradeInfo = calculateIGNOUGrade(rec.marks);
-            // 3. On Marks Locking: Send POST with action "UPDATE_MARKS" containing subId, marks, calculated grade, and isLocked: true
-            postUpdateMarks(rec.submissionKey || rec.id, rec.marks, gradeInfo.grade, true).catch((err) => {
+            // 3. On Marks Locking: Send POST with action "UPDATE_MARKS" containing subId, enrollmentNo, courseCode, marks, calculated grade, and isLocked: true
+            postUpdateMarks({
+              subId: rec.submissionKey || rec.id,
+              enrollmentNo: rec.enrollmentNo,
+              courseCode: rec.courseCode,
+              marks: rec.marks,
+              grade: gradeInfo.grade,
+              isLocked: true,
+            }).catch((err) => {
               console.warn('Google Sheets UPDATE_MARKS notification:', err);
             });
             return {
@@ -1066,6 +1411,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               updatedAt: now,
             };
           } else {
+            const gradeInfo = calculateIGNOUGrade(rec.marks);
+            postUpdateMarks({
+              subId: rec.submissionKey || rec.id,
+              enrollmentNo: rec.enrollmentNo,
+              courseCode: rec.courseCode,
+              marks: rec.marks,
+              grade: gradeInfo.grade,
+              isLocked: false,
+            }).catch((err) => {
+              console.warn('Google Sheets UPDATE_MARKS notification:', err);
+            });
             return {
               ...rec,
               isLocked: false,
@@ -1088,7 +1444,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast('Saved & Synced with Google Sheet', 'success');
       }
     },
-    [currentRole, isUrlLockedDeskMode, showToast]
+    [currentRole, isUrlLockedDeskMode, settings.coordinatorName, showToast]
   );
 
   const batchLockMarks = useCallback(
@@ -1099,7 +1455,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const now = new Date().toISOString();
-      const lockedBy = currentRole === 'ADMIN' ? 'Dr. V. K. Aggarwal (Coordinator)' : 'Desk Official';
+      const lockedBy = currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Dr. Sant K. Gupta'} (Coordinator)` : 'Desk Official';
 
       setCourseEvaluations((prev) => {
         const next = prev.map((rec) => {
@@ -1108,8 +1464,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (shouldLock) {
             if (rec.marks === null || rec.marks === undefined) return rec;
             const gradeInfo = calculateIGNOUGrade(rec.marks);
-            // 3. On Marks Locking: Send POST with action "UPDATE_MARKS" containing subId, marks, calculated grade, and isLocked: true
-            postUpdateMarks(rec.submissionKey || rec.id, rec.marks, gradeInfo.grade, true).catch((err) => {
+            // 3. On Marks Locking: Send POST with action "UPDATE_MARKS" containing subId, enrollmentNo, courseCode, marks, calculated grade, and isLocked: true
+            postUpdateMarks({
+              subId: rec.submissionKey || rec.id,
+              enrollmentNo: rec.enrollmentNo,
+              courseCode: rec.courseCode,
+              marks: rec.marks,
+              grade: gradeInfo.grade,
+              isLocked: true,
+            }).catch((err) => {
               console.warn('Google Sheets UPDATE_MARKS notification:', err);
             });
             return {
@@ -1121,6 +1484,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               updatedAt: now,
             };
           } else {
+            const gradeInfo = calculateIGNOUGrade(rec.marks);
+            postUpdateMarks({
+              subId: rec.submissionKey || rec.id,
+              enrollmentNo: rec.enrollmentNo,
+              courseCode: rec.courseCode,
+              marks: rec.marks,
+              grade: gradeInfo.grade,
+              isLocked: false,
+            }).catch((err) => {
+              console.warn('Google Sheets UPDATE_MARKS notification:', err);
+            });
             return {
               ...rec,
               isLocked: false,
@@ -1143,7 +1517,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast('Saved & Synced with Google Sheet', 'success');
       }
     },
-    [currentRole, isUrlLockedDeskMode, showToast]
+    [currentRole, isUrlLockedDeskMode, settings.coordinatorName, showToast]
   );
 
   // Course Packets
@@ -1362,9 +1736,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const generateBill = useCallback(
     (evaluatorId: string, courseCodes: string[], totalScripts: number, rateOverride?: number) => {
       const ev = evaluators.find((e) => e.id === evaluatorId || e.evaluatorCode === evaluatorId);
-      const rate = rateOverride ?? settings.remunerationRatePerScript;
+      const rate = rateOverride !== undefined ? Number(rateOverride) : Number(settings.remunerationRatePerScript || 27.50);
       const scriptAmount = totalScripts * rate;
-      const conveyanceAmount = settings.conveyanceAllowancePerPacket;
+      const conveyanceAmount = Number(settings.conveyanceAllowancePerPacket || 150);
       const grossAmount = scriptAmount + conveyanceAmount;
       const sessionCode = generateSessionCode(currentSession);
       const billNumber = `BILL-SC2033-${sessionCode}-${String(bills.length + 1).padStart(3, '0')}`;
@@ -1487,6 +1861,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         allIntakes: intakes,
         addIntakeRecord,
         updateIntakeRecord,
+        editIntakeEntry,
         deleteIntakeRecord,
         updateMarks,
         // Module B: Course Evaluations

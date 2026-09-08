@@ -3,11 +3,8 @@
  */
 
 export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-  }).format(amount);
+  const num = Number(amount || 0);
+  return `₹${num.toFixed(2)}`;
 }
 
 export function formatDate(dateString: string | null | undefined): string {
@@ -178,9 +175,11 @@ export function amountToIndianWords(amount: number): string {
     return str.trim();
   }
 
-  const rounded = Math.round(amount);
-  const thousands = Math.floor(rounded / 1000);
-  const remainder = rounded % 1000;
+  const integerPart = Math.floor(amount);
+  const paisePart = Math.round((amount - integerPart) * 100);
+
+  const thousands = Math.floor(integerPart / 1000);
+  const remainder = integerPart % 1000;
 
   let result = '';
   if (thousands > 0) {
@@ -190,5 +189,11 @@ export function amountToIndianWords(amount: number): string {
     result += convertBelowThousand(remainder) + ' ';
   }
 
-  return `Rupees ${result.trim()} Only`;
+  const rupeesStr = result.trim() ? `Rupees ${result.trim()}` : 'Rupees Zero';
+  if (paisePart > 0) {
+    const paiseWords = convertBelowThousand(paisePart);
+    return `${rupeesStr} and ${paiseWords} Paise Only`;
+  }
+
+  return `${rupeesStr} Only`;
 }

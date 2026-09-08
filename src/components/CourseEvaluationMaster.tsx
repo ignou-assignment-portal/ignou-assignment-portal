@@ -789,16 +789,16 @@ export const CourseEvaluationMaster: React.FC = () => {
                       {/* Status & Official Verification Seal */}
                       <td className="p-3.5">
                         {record.isLocked ? (
-                          <div className="bg-purple-50 border border-purple-200 p-2 rounded-xl text-[11px] space-y-1">
-                            <div className="flex items-center gap-1.5 text-purple-900 font-bold">
+                          <div className="bg-purple-50 border border-purple-200 p-2 rounded-xl text-[11px] space-y-0.5">
+                            <div className="flex items-center gap-1.5 text-purple-900 font-bold tracking-tight">
                               <Stamp className="w-3.5 h-3.5 text-purple-700" />
                               <span>LOCKED & VERIFIED</span>
                             </div>
-                            <div className="text-[10px] text-purple-700 font-mono">
-                              By: {record.lockedBy || 'Coordinator'}
+                            <div className="text-[10px] text-purple-800 font-mono font-medium">
+                              By:{settings.coordinatorName || 'Dr. Sant K. Gupta'} (Coordinator)
                             </div>
                             <div className="text-[10px] text-purple-600 font-mono">
-                              {record.lockedAt ? formatDate(record.lockedAt) : 'Cycle Approved'}
+                              {formatDate(record.lockedAt || new Date().toISOString())}
                             </div>
                           </div>
                         ) : (
@@ -987,11 +987,14 @@ export const CourseEvaluationMaster: React.FC = () => {
                 <div className="text-center space-y-8">
                   <div className="h-10 flex items-center justify-center">
                     <span className="font-serif italic font-bold text-indigo-900">
-                      Dr. V. K. Aggarwal
+                      {settings.coordinatorName || 'Dr. Sant K. Gupta'}
                     </span>
                   </div>
                   <div className="border-t border-zinc-700 pt-1 font-bold">
                     Coordinator Signature & Centre Stamp (SC-2033)
+                  </div>
+                  <div className="text-[10px] text-zinc-500 font-medium">
+                    {settings.coordinatorDesignation || 'Coordinator, IGNOU SC-2033'}
                   </div>
                 </div>
               </div>

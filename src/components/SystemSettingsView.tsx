@@ -32,6 +32,7 @@ export const SystemSettingsView: React.FC = () => {
     institutionName: settings.institutionName,
     regionalCentreCode: settings.regionalCentreCode,
     coordinatorName: settings.coordinatorName,
+    coordinatorDesignation: settings.coordinatorDesignation || 'Coordinator, IGNOU SC-2033',
     coordinatorContact: settings.coordinatorContact,
     remunerationRatePerScript: settings.remunerationRatePerScript,
     conveyanceAllowancePerPacket: settings.conveyanceAllowancePerPacket,
@@ -154,6 +155,17 @@ export const SystemSettingsView: React.FC = () => {
             </div>
 
             <div>
+              <label className="block font-semibold text-zinc-700 mb-1">Coordinator Official Designation</label>
+              <input
+                type="text"
+                disabled={!isAdmin}
+                value={formData.coordinatorDesignation}
+                onChange={(e) => setFormData({ ...formData, coordinatorDesignation: e.target.value })}
+                className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75"
+              />
+            </div>
+
+            <div>
               <label className="block font-semibold text-zinc-700 mb-1">Coordinator Contact Phone / Email</label>
               <input
                 type="text"
@@ -181,6 +193,8 @@ export const SystemSettingsView: React.FC = () => {
                 </label>
                 <input
                   type="number"
+                  step="0.50"
+                  min="0"
                   disabled={!isAdmin}
                   value={formData.remunerationRatePerScript}
                   onChange={(e) =>

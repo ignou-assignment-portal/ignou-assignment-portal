@@ -772,7 +772,8 @@ export const RemunerationBilling: React.FC = () => {
                 </label>
                 <input
                   type="number"
-                  step="0.5"
+                  step="0.50"
+                  min="0"
                   value={draftRate}
                   onChange={(e) => setDraftRate(parseFloat(e.target.value) || 0)}
                   className="w-full px-2.5 py-1.5 bg-white border border-zinc-300 rounded-lg font-bold text-zinc-900"
@@ -1069,10 +1070,13 @@ export const RemunerationBilling: React.FC = () => {
                   </div>
                   <div className="text-center">
                     <div className="font-serif italic text-indigo-950 font-bold">
-                      {settings.coordinatorName}
+                      {settings.coordinatorName || 'Dr. Sant K. Gupta'}
                     </div>
                     <div className="border-t border-zinc-400 pt-0.5 font-bold text-zinc-900">
                       Coordinator Signature & Institutional Seal
+                    </div>
+                    <div className="text-[10px] text-zinc-500 font-medium">
+                      {settings.coordinatorDesignation || 'Coordinator, IGNOU SC-2033'}
                     </div>
                   </div>
                 </div>
@@ -1274,8 +1278,8 @@ export const RemunerationBilling: React.FC = () => {
                 </div>
 
                 <div className="text-center">
-                  <div className="font-serif italic text-indigo-950 font-bold">{settings.coordinatorName}</div>
-                  <div className="border-t border-zinc-400 pt-1 font-bold text-zinc-900 text-[11px]">Coordinator SC-2033</div>
+                  <div className="font-serif italic text-indigo-950 font-bold">{settings.coordinatorName || 'Dr. Sant K. Gupta'}</div>
+                  <div className="border-t border-zinc-400 pt-1 font-bold text-zinc-900 text-[11px]">{settings.coordinatorDesignation || 'Coordinator, IGNOU SC-2033'}</div>
                 </div>
               </div>
             </div>

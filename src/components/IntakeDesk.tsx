@@ -27,7 +27,12 @@ import {
   ChevronDown,
   Edit3,
   Check,
+  TableProperties,
+  Trash2,
+  Pencil,
 } from 'lucide-react';
+import { IntakeRegister } from './IntakeRegister';
+import { EditIntakeModal } from './EditIntakeModal';
 
 export const IntakeDesk: React.FC = () => {
   const {
@@ -35,9 +40,14 @@ export const IntakeDesk: React.FC = () => {
     setSession,
     availableSessions,
     addIntakeRecord,
+    deleteIntakeRecord,
     sessionIntakes,
+    allIntakes,
+    allCourseEvaluations,
     openReceiptModal,
     currentRole,
+    isAdmin,
+    verifyAndSetAdminRole,
     settings,
     addRegistrationReceipt,
     openRegistrationReceiptModal,
@@ -70,7 +80,53 @@ export const IntakeDesk: React.FC = () => {
   const progDropdownRef = useRef<HTMLDivElement>(null);
 
   // Sub-view toggle for Desk Official
-  const [deskView, setDeskView] = useState<'REGISTER' | 'RECEIPTS'>('REGISTER');
+  const [deskView, setDeskView] = useState<'REGISTER' | 'SUBMISSIONS_REGISTER' | 'RECEIPTS'>('REGISTER');
+  const [editingRecord, setEditingRecord] = useState<any | null>(null);
+
+  const handleEditClick = (record: any) => {
+    setEditingRecord(record);
+  };
+
+  const handleDeleteClick = (record: any) => {
+    // 4. Access Guard: Require Coordinator Mode (PIN 2033) for Delete actions
+    if (!isAdmin) {
+      const enteredPin = window.prompt('Coordinator PIN Required: Enter PIN 2033 to authorize deletion of intake records:');
+      if (!enteredPin) return;
+      if (enteredPin.trim() === '2033') {
+        const authorized = verifyAndSetAdminRole('2033');
+        if (!authorized) {
+          alert('Coordinator PIN verification failed.');
+          return;
+        }
+      } else {
+        alert('Unauthorized: Incorrect Coordinator PIN.');
+        return;
+      }
+    }
+
+    // 3. Check if any course for this student in courseLedger has status === "Locked" or isLocked
+    const activeSession = record.session || currentSession;
+    const isAnyCourseLocked = allCourseEvaluations.some(
+      (ce) =>
+        (ce.intakeId === record.id || ce.enrollmentNo.trim() === record.enrollmentNo.trim()) &&
+        ce.session.trim().toLowerCase() === activeSession.trim().toLowerCase() &&
+        (ce.isLocked || ce.status === 'Locked' || ce.status === 'Marks Locked')
+    );
+
+    if (isAnyCourseLocked) {
+      alert('Cannot delete intake. Marks have already been locked for one or more courses.');
+      return;
+    }
+
+    // Confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete intake receipt for ${record.studentName} (${record.enrollmentNo})? This will also remove unpacked pending scripts from Course Ledger.`
+    );
+
+    if (confirmed) {
+      deleteIntakeRecord(record.id);
+    }
+  };
 
   // Keep selectedSession in sync if currentSession changes
   useEffect(() => {
@@ -148,7 +204,7 @@ export const IntakeDesk: React.FC = () => {
     setErrorMsg('');
   };
 
-  // Course addition with strict max 8 limit
+  // Course addition with strict max 8 limit and duplicate check
   const handleAddCourse = (courseCode: string) => {
     const clean = courseCode.trim().toUpperCase();
     if (!clean) return;
@@ -156,6 +212,33 @@ export const IntakeDesk: React.FC = () => {
     if (selectedCourses.length >= 8) {
       setErrorMsg('Maximum 8 course codes allowed per registration cycle in IGNOU academic term.');
       return;
+    }
+
+    const cleanEnrollment = enrollmentNo.trim();
+    const targetSession = selectedSession || currentSession;
+
+    // Check if this student has already submitted this course code in this session
+    if (cleanEnrollment) {
+      const isDuplicate =
+        allCourseEvaluations.some(
+          (ce) =>
+            ce.enrollmentNo.trim() === cleanEnrollment &&
+            ce.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
+            ce.courseCode.trim().toUpperCase() === clean
+        ) ||
+        allIntakes.some(
+          (it) =>
+            it.enrollmentNo.trim() === cleanEnrollment &&
+            it.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
+            it.courseCodes.some((c) => c.trim().toUpperCase() === clean)
+        );
+
+      if (isDuplicate) {
+        const msg = `Duplicate Submission Blocked: Student ${cleanEnrollment} has already submitted course ${clean} for session "${targetSession}". Each course may only be submitted once per academic cycle.`;
+        alert(msg);
+        setErrorMsg(msg);
+        return;
+      }
     }
 
     if (!selectedCourses.includes(clean)) {
@@ -211,9 +294,44 @@ export const IntakeDesk: React.FC = () => {
       return;
     }
 
+    const targetSession = selectedSession || currentSession;
+
+    // Composite Duplicate Check:
+    // If the SAME student submits the EXACT SAME course code already recorded for this session:
+    // BLOCK submission and trigger an alert.
+    // Allow different course codes for the same student in the same session.
+    const cleanCourses = selectedCourses.map((c) => c.trim().toUpperCase());
+    const existingDuplicates: string[] = [];
+
+    cleanCourses.forEach((course) => {
+      const alreadySubmitted =
+        allCourseEvaluations.some(
+          (ce) =>
+            ce.enrollmentNo.trim() === cleanEnrollment &&
+            ce.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
+            ce.courseCode.trim().toUpperCase() === course
+        ) ||
+        allIntakes.some(
+          (it) =>
+            it.enrollmentNo.trim() === cleanEnrollment &&
+            it.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
+            it.courseCodes.some((cc) => cc.trim().toUpperCase() === course)
+        );
+
+      if (alreadySubmitted && !existingDuplicates.includes(course)) {
+        existingDuplicates.push(course);
+      }
+    });
+
+    if (existingDuplicates.length > 0) {
+      const alertMessage = `Duplicate Submission Blocked: Student ${cleanEnrollment} (${studentName.trim()}) has already submitted assignment script(s) for course ${existingDuplicates.join(', ')} in session "${targetSession}". Each course assignment may only be submitted once per academic session.`;
+      alert(alertMessage);
+      setErrorMsg(alertMessage);
+      return;
+    }
+
     try {
       const registeredBy = currentRole === 'ADMIN' ? 'Coordinator Desk' : 'Desk Official - Counter 1';
-      const targetSession = selectedSession || currentSession;
 
       // Ensure global session matches selected session if user switched it
       if (targetSession !== currentSession) {
@@ -325,8 +443,9 @@ export const IntakeDesk: React.FC = () => {
       </div>
 
       {/* Desk Official Sub-Navigation Tabs */}
-      <div className="flex items-center gap-2 p-1 bg-zinc-200/80 rounded-xl max-w-fit text-xs font-semibold">
+      <div className="flex flex-wrap items-center gap-2 p-1 bg-zinc-200/80 rounded-xl max-w-fit text-xs font-semibold">
         <button
+          id="desk-view-register-tab"
           type="button"
           onClick={() => setDeskView('REGISTER')}
           className={`px-4 py-2 rounded-lg transition flex items-center gap-2 cursor-pointer ${
@@ -340,6 +459,24 @@ export const IntakeDesk: React.FC = () => {
         </button>
 
         <button
+          id="desk-view-submissions-tab"
+          type="button"
+          onClick={() => setDeskView('SUBMISSIONS_REGISTER')}
+          className={`px-4 py-2 rounded-lg transition flex items-center gap-2 cursor-pointer ${
+            deskView === 'SUBMISSIONS_REGISTER'
+              ? 'bg-white text-zinc-950 shadow-xs font-bold'
+              : 'text-zinc-600 hover:text-zinc-900'
+          }`}
+        >
+          <TableProperties className="w-3.5 h-3.5 text-indigo-600" />
+          <span>Submissions Register</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-100 text-indigo-800 font-bold">
+            {sessionIntakes.length}
+          </span>
+        </button>
+
+        <button
+          id="desk-view-receipts-tab"
           type="button"
           onClick={() => setDeskView('RECEIPTS')}
           className={`px-4 py-2 rounded-lg transition flex items-center gap-2 cursor-pointer ${
@@ -959,14 +1096,38 @@ export const IntakeDesk: React.FC = () => {
                             </div>
                           </div>
 
-                          <button
-                            onClick={() => openReceiptModal(record)}
-                            className="px-2.5 py-1 bg-white hover:bg-indigo-600 hover:text-white border border-zinc-300 text-zinc-700 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 shrink-0 shadow-2xs cursor-pointer"
-                            title="Print Official Acknowledgment Receipt"
-                          >
-                            <Printer className="w-3 h-3" />
-                            <span>Receipt</span>
-                          </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {/* Edit Intake Receipt */}
+                            <button
+                              id={`recent-edit-btn-${record.id}`}
+                              onClick={() => handleEditClick(record)}
+                              className="p-1.5 text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 border border-zinc-200 rounded-lg text-xs font-semibold transition cursor-pointer"
+                              title="Edit Intake Receipt"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-indigo-600" />
+                            </button>
+
+                            {/* Delete Intake Record */}
+                            <button
+                              id={`recent-delete-btn-${record.id}`}
+                              onClick={() => handleDeleteClick(record)}
+                              className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 border border-zinc-200 rounded-lg text-xs font-semibold transition cursor-pointer"
+                              title="Delete Intake Record (Coordinator PIN 2033 Required)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Print Receipt */}
+                            <button
+                              id={`recent-receipt-btn-${record.id}`}
+                              onClick={() => openReceiptModal(record)}
+                              className="px-2 py-1 bg-white hover:bg-indigo-600 hover:text-white border border-zinc-300 text-zinc-700 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 shrink-0 shadow-2xs cursor-pointer"
+                              title="Print Official Acknowledgment Receipt"
+                            >
+                              <Printer className="w-3 h-3" />
+                              <span>Receipt</span>
+                            </button>
+                          </div>
                         </div>
 
                         <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -1012,7 +1173,12 @@ export const IntakeDesk: React.FC = () => {
         </div>
       )}
 
-      {/* View 2: Registration Receipts Register (Completely Non-Financial) */}
+      {/* View 2: Submissions Register (Stage 1 Master Table with Edit and Delete Actions) */}
+      {deskView === 'SUBMISSIONS_REGISTER' && (
+        <IntakeRegister />
+      )}
+
+      {/* View 3: Registration Receipts Register (Completely Non-Financial) */}
       {deskView === 'RECEIPTS' && (
         <div className="bg-white rounded-2xl border border-zinc-200 shadow-2xs overflow-hidden">
           <div className="p-5 border-b border-zinc-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1118,6 +1284,13 @@ export const IntakeDesk: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Edit Intake Receipt Modal */}
+      <EditIntakeModal
+        isOpen={!!editingRecord}
+        record={editingRecord}
+        onClose={() => setEditingRecord(null)}
+      />
     </div>
   );
 };

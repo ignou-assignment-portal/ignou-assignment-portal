@@ -9,6 +9,7 @@ import {
   Printer,
   Trash2,
   Edit2,
+  Pencil,
   CheckCircle2,
   AlertCircle,
   Clock,
@@ -18,22 +19,71 @@ import {
   ChevronRight,
   ShieldAlert,
 } from 'lucide-react';
+import { EditIntakeModal } from './EditIntakeModal';
 
 export const IntakeRegister: React.FC = () => {
   const {
     currentSession,
     sessionIntakes,
     allIntakes,
+    allCourseEvaluations,
     updateIntakeRecord,
     deleteIntakeRecord,
     openReceiptModal,
     isAdmin,
+    verifyAndSetAdminRole,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedMode, setSelectedMode] = useState<string>('ALL');
   const [selectedProgramme, setSelectedProgramme] = useState<string>('ALL');
+  const [editingRecord, setEditingRecord] = useState<any | null>(null);
+
+  const handleEditClick = (record: any) => {
+    setEditingRecord(record);
+  };
+
+  const handleDeleteClick = (record: any) => {
+    // 4. Access Guard: Require Coordinator Mode (PIN 2033) for Delete actions
+    if (!isAdmin) {
+      const enteredPin = window.prompt('Coordinator PIN Required: Enter PIN 2033 to authorize deletion of intake records:');
+      if (!enteredPin) return;
+      if (enteredPin.trim() === '2033') {
+        const authorized = verifyAndSetAdminRole('2033');
+        if (!authorized) {
+          alert('Coordinator PIN verification failed.');
+          return;
+        }
+      } else {
+        alert('Unauthorized: Incorrect Coordinator PIN.');
+        return;
+      }
+    }
+
+    // 3. Check if any course for this student in courseLedger has status === "Locked" or isLocked
+    const activeSession = record.session || currentSession;
+    const isAnyCourseLocked = allCourseEvaluations.some(
+      (ce) =>
+        (ce.intakeId === record.id || ce.enrollmentNo.trim() === record.enrollmentNo.trim()) &&
+        ce.session.trim().toLowerCase() === activeSession.trim().toLowerCase() &&
+        (ce.isLocked || ce.status === 'Locked' || ce.status === 'Marks Locked')
+    );
+
+    if (isAnyCourseLocked) {
+      alert('Cannot delete intake. Marks have already been locked for one or more courses.');
+      return;
+    }
+
+    // Confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete intake receipt for ${record.studentName} (${record.enrollmentNo})? This will also remove unpacked pending scripts from Course Ledger.`
+    );
+
+    if (confirmed) {
+      deleteIntakeRecord(record.id);
+    }
+  };
 
   // Filtered records strictly for active session
   const filteredRecords = useMemo(() => {
@@ -381,27 +431,37 @@ export const IntakeRegister: React.FC = () => {
                       {/* Actions */}
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {/* Edit Button */}
                           <button
-                            onClick={() => openReceiptModal(record)}
-                            className="p-1.5 text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
-                            title="Print / View Official Acknowledgment Slip"
+                            id={`edit-btn-${record.id}`}
+                            onClick={() => handleEditClick(record)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-zinc-700 hover:text-indigo-700 bg-zinc-100 hover:bg-indigo-50 border border-zinc-200 hover:border-indigo-300 rounded-lg transition shadow-2xs cursor-pointer"
+                            title="Edit Intake Receipt"
                           >
-                            <Printer className="w-4 h-4" />
+                            <Pencil className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Edit</span>
                           </button>
 
-                          {isAdmin && (
-                            <button
-                              onClick={() => {
-                                if (window.confirm(`Delete intake entry for ${record.studentName} (${record.tokenNo})?`)) {
-                                  deleteIntakeRecord(record.id);
-                                }
-                              }}
-                              className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                              title="Delete Record (Coordinator Only)"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
+                          {/* Delete Button */}
+                          <button
+                            id={`delete-btn-${record.id}`}
+                            onClick={() => handleDeleteClick(record)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-lg transition shadow-2xs cursor-pointer"
+                            title="Delete Intake Record (Coordinator PIN 2033 Required)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete</span>
+                          </button>
+
+                          {/* Print / View Acknowledgment Slip */}
+                          <button
+                            id={`print-slip-${record.id}`}
+                            onClick={() => openReceiptModal(record)}
+                            className="p-1.5 text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
+                            title="Print / View Official Acknowledgment Slip"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -412,6 +472,13 @@ export const IntakeRegister: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Edit Intake Receipt Modal */}
+      <EditIntakeModal
+        isOpen={!!editingRecord}
+        record={editingRecord}
+        onClose={() => setEditingRecord(null)}
+      />
     </div>
   );
 };

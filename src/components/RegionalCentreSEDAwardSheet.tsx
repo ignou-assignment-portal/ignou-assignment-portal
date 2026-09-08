@@ -497,9 +497,9 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
             </div>
             <div className="border-t border-dashed border-zinc-400 pt-2 text-center">
               <div className="font-serif italic text-indigo-900 font-bold">
-                {settings.coordinatorName}
+                {settings.coordinatorName || 'Dr. Sant K. Gupta'}
               </div>
-              <div className="font-bold text-[11px] text-zinc-900">Coordinator Signature & Seal</div>
+              <div className="font-bold text-[11px] text-zinc-900">{settings.coordinatorDesignation || 'Coordinator, IGNOU SC-2033'}</div>
               <div className="text-[10px] font-mono text-zinc-500">
                 Study Centre {settings.centreCode}
               </div>

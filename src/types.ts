@@ -112,8 +112,9 @@ export interface SystemSettings {
   institutionName: string; // 'Shri Ram College of Commerce / DAV PG College'
   regionalCentreCode: string; // 'RC-07 Delhi-2'
   coordinatorName: string;
+  coordinatorDesignation?: string;
   coordinatorContact: string;
-  remunerationRatePerScript: number; // default Rs 30
+  remunerationRatePerScript: number; // default Rs 27.50
   conveyanceAllowancePerPacket: number; // default Rs 150
   coordinationChargesPerScript: number; // default Rs 5
   availableSessions: string[];
