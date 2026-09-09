@@ -30,6 +30,7 @@ import {
   TableProperties,
   Trash2,
   Pencil,
+  Loader2,
 } from 'lucide-react';
 import { IntakeRegister } from './IntakeRegister';
 import { EditIntakeModal } from './EditIntakeModal';
@@ -71,6 +72,7 @@ export const IntakeDesk: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [justSubmittedToken, setJustSubmittedToken] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Programme Combobox & Custom Override states
   const [progSearchQuery, setProgSearchQuery] = useState('');
@@ -269,6 +271,8 @@ export const IntakeDesk: React.FC = () => {
   // Primary action: "Submit & Generate Receipt" (Strictly Non-Financial)
   const handleSubmitAndGenerateReceipt = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (isSubmitting) return;
+
     setErrorMsg('');
     setSuccessMsg('');
 
@@ -286,10 +290,20 @@ export const IntakeDesk: React.FC = () => {
       setErrorMsg('Candidate Name is required.');
       return;
     }
-    if (!studentPhone.trim()) {
-      setErrorMsg('Contact Number is required for SMS acknowledgment.');
+
+    // 1. Strict 10-Digit Mobile Number Validation:
+    const cleanPhone = studentPhone.replace(/\D/g, '').slice(0, 10);
+    if (studentPhone && studentPhone.length !== 10) {
+      alert("Contact number must be exactly 10 digits.");
+      setErrorMsg("Contact number must be exactly 10 digits.");
       return;
     }
+    if (!cleanPhone || cleanPhone.length !== 10) {
+      alert("Contact number must be exactly 10 digits.");
+      setErrorMsg("Contact number must be exactly 10 digits.");
+      return;
+    }
+
     if (!selectedProgramme.trim()) {
       setErrorMsg('Please select or specify a Programme Code (e.g. BAG, MEG, BCA, MPS).');
       return;
@@ -360,6 +374,7 @@ export const IntakeDesk: React.FC = () => {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const registeredBy = currentRole === 'ADMIN' ? 'Coordinator Desk' : 'Desk Official - Counter 1';
 
@@ -372,7 +387,7 @@ export const IntakeDesk: React.FC = () => {
       const newRecord = addIntakeRecord({
         enrollmentNo: cleanEnrollment,
         studentName: studentName.trim(),
-        studentPhone: studentPhone.trim() || undefined,
+        studentPhone: cleanPhone,
         studentEmail: studentEmail.trim() || undefined,
         programmeCode: selectedProgramme.trim().toUpperCase(),
         courseCodes: coursesArray,
@@ -402,7 +417,7 @@ export const IntakeDesk: React.FC = () => {
       addRegistrationReceipt({
         studentId: cleanEnrollment,
         studentName: studentName.trim(),
-        studentPhone: studentPhone.trim() || undefined,
+        studentPhone: cleanPhone,
         studentEmail: studentEmail.trim() || undefined,
         programmeCode: selectedProgramme.trim().toUpperCase(),
         session: targetSession,
@@ -429,6 +444,8 @@ export const IntakeDesk: React.FC = () => {
     } catch (err) {
       console.error(err);
       setErrorMsg('Failed to complete registration and store receipt. Please try again.');
+    } finally {
+      setTimeout(() => setIsSubmitting(false), 1500); // Debounce protection
     }
   };
 
@@ -612,13 +629,25 @@ export const IntakeDesk: React.FC = () => {
                       <Phone className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-2.5" />
                       <input
                         type="tel"
-                        placeholder="e.g. 9876543210"
+                        id="contact-phone-input"
+                        maxLength={10}
+                        pattern="[6-9][0-9]{9}"
+                        placeholder="10-digit mobile (e.g. 9436013686)"
                         value={studentPhone}
-                        onChange={(e) => setStudentPhone(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                          setStudentPhone(val);
+                        }}
+                        onInput={(e: any) => {
+                          e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
+                        }}
                         className="w-full pl-8 pr-3 py-2 text-xs border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
                         required
                       />
                     </div>
+                    <span className="text-[10px] text-zinc-500 mt-0.5 block">
+                      {studentPhone.length}/10 digits
+                    </span>
                   </div>
 
                   <div>
@@ -1067,10 +1096,24 @@ export const IntakeDesk: React.FC = () => {
                   <button
                     type="submit"
                     id="submit-and-generate-receipt-btn"
-                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                    disabled={isSubmitting}
+                    className={`px-6 py-2.5 font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 ${
+                      isSubmitting
+                        ? 'bg-indigo-400 text-white cursor-not-allowed opacity-80'
+                        : 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer active:scale-98'
+                    }`}
                   >
-                    <Printer className="w-4 h-4" />
-                    <span>Submit & Generate Receipt</span>
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Recording...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Printer className="w-4 h-4" />
+                        <span>Confirm Intake & Save</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

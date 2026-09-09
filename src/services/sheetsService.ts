@@ -36,32 +36,31 @@ export interface ApiResponse<T = any> {
  * Because mode: "no-cors" returns an opaque response (status 0), do not wait for res.json().
  */
 export async function sendScriptPost(payload: any): Promise<boolean> {
-  // 1. Direct browser fetch with mode: 'no-cors' to bypass CORS preflight & cross-origin redirect blocks
+  // Single dispatch to bypass CORS preflight & prevent duplicate records in Google Sheets
   try {
-    fetch(SCRIPT_URL, {
+    await fetch(SCRIPT_URL, {
       method: "POST",
       mode: "no-cors",
       headers: {
         "Content-Type": "text/plain;charset=utf-8",
       },
       body: JSON.stringify(payload),
-    }).catch((err) => {
-      console.warn("[Google Sheets POST warning]:", err);
     });
+    return true;
   } catch (err) {
-    console.warn("[Google Sheets POST exception]:", err);
+    console.warn("[Google Sheets direct POST error, attempting proxy fallback]:", err);
+    try {
+      await fetch("/api/sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return true;
+    } catch (proxyErr) {
+      console.warn("[Google Sheets proxy error]:", proxyErr);
+      return false;
+    }
   }
-
-  // 2. Also notify the Express backend proxy in parallel as server-side backup
-  try {
-    fetch("/api/sheets", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }).catch(() => {});
-  } catch {}
-
-  return true;
 }
 
 /**
@@ -197,20 +196,8 @@ export async function postAddIntake(
     unpackedCourses: unpackedCourses || [],
   };
 
-  // Direct fetch POST to SCRIPT_URL with mode: "no-cors"
-  try {
-    await fetch(SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payload),
-    });
-  } catch (err) {
-    console.warn('[ADD_INTAKE fetch error]:', err);
-  }
-
-  // Backup dispatch to backend proxy
-  sendScriptPost(payload).catch((err) => console.warn(err));
+  // Dispatch once to SCRIPT_URL with no-cors to prevent duplicate recordings in Intake_Register
+  await sendScriptPost(payload);
 
   return {
     status: 'success',

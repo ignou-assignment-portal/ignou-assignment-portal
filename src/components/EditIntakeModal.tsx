@@ -104,6 +104,12 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
       return;
     }
 
+    if (cleanContact && cleanContact.length !== 10) {
+      alert("Contact number must be exactly 10 digits.");
+      setFormError("Contact number must be exactly 10 digits.");
+      return;
+    }
+
     if (!cleanProg) {
       setFormError('Please enter or select a Programme code (e.g., MEG, BAG, MPS).');
       return;
@@ -274,10 +280,18 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
                 <Phone className="w-4 h-4 text-zinc-400 absolute left-3 top-2.5" />
                 <input
                   id="edit-contact-input"
-                  type="text"
+                  type="tel"
+                  maxLength={10}
+                  pattern="[6-9][0-9]{9}"
                   value={contact}
-                  onChange={(e) => setContact(e.target.value)}
-                  placeholder="10-digit mobile number"
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                    setContact(val);
+                  }}
+                  onInput={(e: any) => {
+                    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
+                  }}
+                  placeholder="10-digit mobile (e.g. 9436013686)"
                   className="w-full pl-9 pr-3 py-2 text-xs border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
                 />
               </div>

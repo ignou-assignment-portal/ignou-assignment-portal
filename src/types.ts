@@ -195,6 +195,19 @@ export interface RegistrationReceipt {
 export type EvaluationStatus = 'Pending Allotment' | 'Allotted' | 'Evaluated' | 'Marks Locked';
 
 export interface CourseEvaluationRecord {
+  // Clean Google Sheets Course_Ledger keys
+  Sub_ID?: string;
+  subId?: string;
+  Session?: string;
+  Enrollment_No?: string;
+  Candidate_Name?: string;
+  Programme?: string;
+  Course_Code?: string;
+  Allotted_Evaluator?: string | null;
+  Marks?: number | null;
+  Grade?: string | null;
+  Status?: string;
+
   id: string; // Deterministic Primary Key format: SUB_ENR_COURSE_TERM (e.g. SUB_2401928371_MEG01_JUL2026)
   submissionKey: string; // Same as id
   intakeId?: string; // Linked Intake Token / Id
@@ -205,10 +218,11 @@ export interface CourseEvaluationRecord {
   studentEmail?: string;
   programmeCode: string;
   courseCode: string; // e.g. MEG-01
+  courseTitle?: string;
   session: string; // e.g. July 2026
   submissionDate: string; // YYYY-MM-DD
   submissionMode: SubmissionMode;
-  consignmentNo?: string;
+  consignmentNo?: string | null;
 
   // Academic Evaluator Allotment
   evaluatorId: string | null;
@@ -219,8 +233,8 @@ export interface CourseEvaluationRecord {
 
   // Marks Engine
   marks: number | null; // Numeric 0 to 100
-  grade: string; // 'A' | 'B' | 'C' | 'D' | 'E' | '—'
-  gradeLabel: string; // 'Excellent' | 'Very Good' | 'Good' | 'Satisfactory' | 'Unsatisfactory / Failed' | 'Pending'
+  grade: string | null; // 'A' | 'B' | 'C' | 'D' | 'E' | '—'
+  gradeLabel: string | null; // 'Excellent' | 'Very Good' | 'Good' | 'Satisfactory' | 'Unsatisfactory / Failed' | 'Pending'
 
   // Marks Locking & Verification
   isLocked: boolean;

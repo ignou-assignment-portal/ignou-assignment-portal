@@ -12,6 +12,7 @@ import {
   RegistrationReceipt,
   RegistrationReceiptFees,
   CourseEvaluationRecord,
+  EvaluationStatus,
 } from '../types';
 import {
   INITIAL_SETTINGS,
@@ -918,21 +919,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Deterministic Ledger Unpacking:
       // When a student registers with N courses, automatically split the entry into N individual ledger rows.
       // Primary Key format: SUB_ENR_COURSE_TERM (e.g., SUB_2401928371_MEG01_JUL2026)
+      const cleanEnrollment = data.enrollmentNo.trim();
+      const cleanName = data.studentName.trim();
+      const cleanProgramme = data.programmeCode.trim().toUpperCase();
+
       const unpackedRows: CourseEvaluationRecord[] = data.courseCodes.map((courseCode) => {
-        const deterministicKey = generateDeterministicSubmissionKey(data.enrollmentNo, courseCode, currentSession);
+        const cleanCourse = courseCode.trim().toUpperCase();
+        const deterministicKey = generateDeterministicSubmissionKey(cleanEnrollment, cleanCourse, currentSession);
         const markVal = data.marks?.[courseCode] ?? null;
         const gradeInfo = calculateIGNOUGrade(markVal);
+        const statusVal: EvaluationStatus = markVal !== null ? 'Evaluated' : 'Pending Allotment';
+
         return {
+          // Clean Google Sheets Course_Ledger keys
+          Sub_ID: deterministicKey,
+          subId: deterministicKey,
+          Session: currentSession,
+          Enrollment_No: cleanEnrollment,
+          Candidate_Name: cleanName,
+          Programme: cleanProgramme,
+          Course_Code: cleanCourse,
+          Allotted_Evaluator: '',
+          Marks: markVal,
+          Grade: gradeInfo.grade,
+          Status: statusVal,
+
+          // Application properties
           id: deterministicKey,
           submissionKey: deterministicKey,
           intakeId: newRecord.id,
           tokenNo,
-          enrollmentNo: data.enrollmentNo,
-          studentName: data.studentName,
-          studentPhone: data.studentPhone,
-          studentEmail: data.studentEmail,
-          programmeCode: data.programmeCode,
-          courseCode,
+          enrollmentNo: cleanEnrollment,
+          studentName: cleanName,
+          studentPhone: data.studentPhone?.trim() || '',
+          studentEmail: data.studentEmail?.trim() || '',
+          programmeCode: cleanProgramme,
+          courseCode: cleanCourse,
           session: currentSession,
           submissionDate: data.submissionDate,
           submissionMode: data.submissionMode,
@@ -948,7 +970,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           isLocked: false,
           lockedAt: null,
           lockedBy: null,
-          status: markVal !== null ? 'Evaluated' : 'Pending Allotment',
+          status: statusVal,
           updatedAt: new Date().toISOString(),
           remarks: data.remarks,
         };
@@ -1091,21 +1113,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Update existing evaluations that are kept
         const updatedExisting = studentEvals
           .filter((e) => cleanCourses.includes(e.courseCode.toUpperCase()))
-          .map((e) => ({
-            ...e,
-            enrollmentNo: cleanNewEnr,
-            studentName: cleanName,
-            studentPhone: cleanContact,
-            programmeCode: cleanProg,
-            submissionKey: generateDeterministicSubmissionKey(cleanNewEnr, e.courseCode, activeSession),
-            updatedAt: new Date().toISOString(),
-          }));
+          .map((e) => {
+            const detKey = generateDeterministicSubmissionKey(cleanNewEnr, e.courseCode, activeSession);
+            return {
+              ...e,
+              Sub_ID: detKey,
+              subId: detKey,
+              Session: activeSession,
+              Enrollment_No: cleanNewEnr,
+              Candidate_Name: cleanName,
+              Programme: cleanProg,
+              Course_Code: e.courseCode.toUpperCase(),
+              enrollmentNo: cleanNewEnr,
+              studentName: cleanName,
+              studentPhone: cleanContact,
+              programmeCode: cleanProg,
+              submissionKey: detKey,
+              updatedAt: new Date().toISOString(),
+            };
+          });
 
         // Create new unpacked rows for newly added courses
         const addedCodes = cleanCourses.filter((c) => !existingCodes.includes(c));
         const newUnpackedRows: CourseEvaluationRecord[] = addedCodes.map((c) => {
           const detKey = generateDeterministicSubmissionKey(cleanNewEnr, c, activeSession);
           return {
+            Sub_ID: detKey,
+            subId: detKey,
+            Session: activeSession,
+            Enrollment_No: cleanNewEnr,
+            Candidate_Name: cleanName,
+            Programme: cleanProg,
+            Course_Code: c.toUpperCase(),
+            Allotted_Evaluator: '',
+            Marks: null,
+            Grade: '—',
+            Status: 'Pending Allotment',
+
             id: detKey,
             submissionKey: detKey,
             intakeId: data.id,
