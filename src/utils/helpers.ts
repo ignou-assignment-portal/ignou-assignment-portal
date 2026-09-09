@@ -55,20 +55,29 @@ export function calculateIGNOUGrade(marks: number | null | undefined): {
   if (marks === null || marks === undefined) {
     return { grade: '—', label: 'Pending', badgeClass: 'bg-zinc-100 text-zinc-600' };
   }
-  if (marks >= 80) {
+  const numericVal = Number(marks);
+  if (isNaN(numericVal)) {
+    return { grade: '—', label: 'Pending', badgeClass: 'bg-zinc-100 text-zinc-600' };
+  }
+  if (numericVal >= 80) {
     return { grade: 'A', label: 'Excellent', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
   }
-  if (marks >= 60) {
+  if (numericVal >= 60) {
     return { grade: 'B', label: 'Very Good', badgeClass: 'bg-blue-100 text-blue-800 border-blue-300' };
   }
-  if (marks >= 50) {
+  if (numericVal >= 50) {
     return { grade: 'C', label: 'Good', badgeClass: 'bg-amber-100 text-amber-800 border-amber-300' };
   }
-  if (marks >= 40) {
+  if (numericVal >= 40) {
     return { grade: 'D', label: 'Satisfactory', badgeClass: 'bg-orange-100 text-orange-800 border-orange-300' };
   }
   return { grade: 'E', label: 'Unsatisfactory / Failed', badgeClass: 'bg-rose-100 text-rose-800 border-rose-300' };
 }
+
+/**
+ * Standard IGNOU grade getter alias
+ */
+export const getIgnouGrade = calculateIGNOUGrade;
 
 /**
  * Generates deterministic primary key format: SUB_ENR_COURSE_TERM

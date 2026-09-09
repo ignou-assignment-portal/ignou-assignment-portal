@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { calculateIGNOUGrade, formatDate } from '../utils/helpers';
+import { calculateIGNOUGrade, formatDate, getIgnouGrade } from '../utils/helpers';
+import { SCRIPT_URL } from '../services/sheetsService';
 import {
   Award,
   BookOpen,
@@ -27,6 +28,8 @@ export const MarksEntry: React.FC = () => {
     settings,
     sessionCourseEvaluations,
     toggleLockMarks,
+    saveOrUpdateMarksAndLock,
+    showToast,
     isAdmin,
   } = useApp();
 
@@ -93,6 +96,17 @@ export const MarksEntry: React.FC = () => {
     return { total, evaluated, pending: total - evaluated, average, passPercentage };
   }, [enrolledStudents, selectedCourse]);
 
+  // Count of students with marks entered but not yet locked
+  const evaluatedNotLockedCount = useMemo(() => {
+    return enrolledStudents.filter((s) => {
+      const mark = s.marks[selectedCourse];
+      const matchingEval = sessionCourseEvaluations.find(
+        (e) => e.enrollmentNo === s.enrollmentNo && e.courseCode === selectedCourse
+      );
+      return mark !== null && mark !== undefined && !matchingEval?.isLocked;
+    }).length;
+  }, [enrolledStudents, sessionCourseEvaluations, selectedCourse]);
+
   const handleMarkChange = (intakeId: string, valueStr: string) => {
     if (valueStr === '') {
       updateMarks(intakeId, selectedCourse, null);
@@ -101,6 +115,84 @@ export const MarksEntry: React.FC = () => {
     const val = parseInt(valueStr, 10);
     if (isNaN(val) || val < 0 || val > 100) return;
     updateMarks(intakeId, selectedCourse, val);
+  };
+
+  const handleSaveAndLock = async (
+    student: (typeof enrolledStudents)[0],
+    matchingEval: any,
+    isLockAction: boolean
+  ) => {
+    const currentMark = student.marks[selectedCourse];
+    if (currentMark === null || currentMark === undefined) {
+      if (isLockAction) {
+        alert('Cannot lock script: A valid numerical mark (0-100) must be recorded before locking.');
+        return;
+      }
+    }
+
+    const row = matchingEval || {
+      Sub_ID: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}_${currentSession.replace(/\s+/g, '')}`,
+      subId: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}_${currentSession.replace(/\s+/g, '')}`,
+      Enrollment_No: student.enrollmentNo,
+      enrollmentNo: student.enrollmentNo,
+      Course_Code: selectedCourse,
+      courseCode: selectedCourse,
+      tokenNo: student.tokenNo,
+      studentName: student.studentName,
+      programmeCode: student.programmeCode,
+      session: currentSession,
+      isLocked: isLockAction,
+      intakeId: student.id,
+    };
+
+    await saveOrUpdateMarksAndLock(row, currentMark, isLockAction);
+  };
+
+  const handleUnlockMarks = async (
+    student: (typeof enrolledStudents)[0],
+    matchingEval: any
+  ) => {
+    if (!isAdmin) {
+      alert('Permission Denied: Only an Administrator (Coordinator) can unlock marks for verified scripts.');
+      return;
+    }
+    const row = matchingEval || {
+      Sub_ID: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}_${currentSession.replace(/\s+/g, '')}`,
+      subId: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}_${currentSession.replace(/\s+/g, '')}`,
+      Enrollment_No: student.enrollmentNo,
+      enrollmentNo: student.enrollmentNo,
+      Course_Code: selectedCourse,
+      courseCode: selectedCourse,
+      tokenNo: student.tokenNo,
+      studentName: student.studentName,
+      programmeCode: student.programmeCode,
+      session: currentSession,
+      isLocked: false,
+      intakeId: student.id,
+    };
+    await saveOrUpdateMarksAndLock(row, row.marks ?? student.marks[selectedCourse], false);
+  };
+
+  const handleBatchLockAllEvaluated = async () => {
+    const toLock = enrolledStudents.filter((s) => {
+      const mark = s.marks[selectedCourse];
+      const matchingEval = sessionCourseEvaluations.find(
+        (e) => e.enrollmentNo === s.enrollmentNo && e.courseCode === selectedCourse
+      );
+      return mark !== null && mark !== undefined && !matchingEval?.isLocked;
+    });
+
+    if (toLock.length === 0) return;
+    if (!window.confirm(`Save & Lock marks for ${toLock.length} evaluated student(s) in course ${selectedCourse}?`)) {
+      return;
+    }
+
+    for (const student of toLock) {
+      const matchingEval = sessionCourseEvaluations.find(
+        (e) => e.enrollmentNo === student.enrollmentNo && e.courseCode === selectedCourse
+      );
+      await handleSaveAndLock(student, matchingEval, true);
+    }
   };
 
   return (
@@ -121,6 +213,16 @@ export const MarksEntry: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleBatchLockAllEvaluated}
+            disabled={!selectedCourse || evaluatedNotLockedCount === 0}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+            title="Lock all evaluated marks for this course and sync to Google Sheets"
+          >
+            <Lock className="w-3.5 h-3.5" />
+            <span>Save & Lock Evaluated ({evaluatedNotLockedCount})</span>
+          </button>
+
           <button
             onClick={() => setIsAwardListModalOpen(true)}
             disabled={!selectedCourse || enrolledStudents.length === 0}
@@ -250,7 +352,7 @@ export const MarksEntry: React.FC = () => {
                     <th className="py-2.5 px-4 w-36">Marks (0-100)</th>
                     <th className="py-2.5 px-4">IGNOU Grade</th>
                     <th className="py-2.5 px-4">Status & Verification Seal</th>
-                    <th className="py-2.5 px-4 text-center w-28">Lock Engine</th>
+                    <th className="py-2.5 px-4 text-center w-40">Lock Engine & Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200">
@@ -310,7 +412,14 @@ export const MarksEntry: React.FC = () => {
                                   placeholder="0-100"
                                   value={currentMark !== null && currentMark !== undefined ? currentMark : ''}
                                   onChange={(e) => handleMarkChange(student.id, e.target.value)}
+                                  onBlur={() => handleSaveAndLock(student, matchingEval, false)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      handleSaveAndLock(student, matchingEval, false);
+                                    }
+                                  }}
                                   className="w-20 px-2.5 py-1.5 font-mono text-xs font-bold border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden bg-white"
+                                  title="Press Enter or click away to save marks draft"
                                 />
                                 <span className="text-[10px] text-zinc-400 font-mono">/100</span>
                               </div>
@@ -347,45 +456,43 @@ export const MarksEntry: React.FC = () => {
                             )}
                           </td>
                           <td className="py-3 px-4 text-center">
-                            {matchingEval && (
-                              isLocked ? (
-                                isAdmin ? (
-                                  <button
-                                    onClick={() => toggleLockMarks(matchingEval.id, false)}
-                                    className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold transition flex items-center gap-1 mx-auto cursor-pointer"
-                                    title="Administrator Override: Click to Unlock"
-                                  >
-                                    <Unlock className="w-3 h-3 text-rose-600" />
-                                    <span>Unlock</span>
-                                  </button>
-                                ) : (
-                                  <span
-                                    className="inline-flex items-center gap-1 text-[10px] text-zinc-400 bg-zinc-100 px-2 py-1 rounded border border-zinc-200 cursor-not-allowed"
-                                    title="Locked by Coordinator. Administrative privileges required to unlock."
-                                  >
-                                    <Lock className="w-3 h-3 text-zinc-400" />
-                                    <span>Sealed</span>
-                                  </span>
-                                )
-                              ) : (
+                            {isLocked ? (
+                              isAdmin ? (
                                 <button
-                                  onClick={() => toggleLockMarks(matchingEval.id, true)}
-                                  disabled={currentMark === null || currentMark === undefined}
-                                  className={`px-2 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 mx-auto cursor-pointer ${
-                                    currentMark !== null && currentMark !== undefined
-                                      ? 'bg-purple-100 hover:bg-purple-200 text-purple-900 border border-purple-300'
-                                      : 'bg-zinc-100 text-zinc-400 border border-zinc-200 cursor-not-allowed opacity-60'
-                                  }`}
-                                  title={
-                                    currentMark !== null
-                                      ? 'Lock and verify marks'
-                                      : 'Enter marks before locking'
-                                  }
+                                  onClick={() => handleUnlockMarks(student, matchingEval)}
+                                  className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold transition flex items-center gap-1 mx-auto cursor-pointer"
+                                  title="Administrator Override: Click to Unlock"
                                 >
-                                  <Lock className="w-3 h-3" />
-                                  <span>Lock</span>
+                                  <Unlock className="w-3.5 h-3.5 text-rose-600" />
+                                  <span>Unlock</span>
                                 </button>
+                              ) : (
+                                <span
+                                  className="inline-flex items-center gap-1 text-[10px] text-zinc-400 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200 cursor-not-allowed"
+                                  title="Locked by Coordinator. Administrative privileges required to unlock."
+                                >
+                                  <Lock className="w-3 h-3 text-zinc-400" />
+                                  <span>Sealed</span>
+                                </span>
                               )
+                            ) : (
+                              <button
+                                onClick={() => handleSaveAndLock(student, matchingEval, true)}
+                                disabled={currentMark === null || currentMark === undefined}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 mx-auto cursor-pointer shadow-2xs ${
+                                  currentMark !== null && currentMark !== undefined
+                                    ? 'bg-purple-600 hover:bg-purple-700 text-white border border-purple-700 active:scale-95'
+                                    : 'bg-zinc-100 text-zinc-400 border border-zinc-200 cursor-not-allowed opacity-60'
+                                }`}
+                                title={
+                                  currentMark !== null
+                                    ? 'Save & Lock Marks (Dispatches UPDATE_MARKS to Google Sheets)'
+                                    : 'Enter marks (0-100) before locking'
+                                }
+                              >
+                                <Lock className="w-3.5 h-3.5" />
+                                <span>Save & Lock Marks</span>
+                              </button>
                             )}
                           </td>
                         </tr>

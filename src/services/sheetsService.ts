@@ -1,3 +1,5 @@
+import { getIgnouGrade } from '../utils/helpers';
+
 /**
  * Google Sheets & Apps Script Integration Service
  * Target Script Web App ID / URL:
@@ -182,12 +184,32 @@ export async function postAddIntake(
       courses: coursesArray,
       handledBy,
     },
-    // Backwards-compatible aliases for varied Apps Script implementations
+    // Top-level aliases for direct access by Google Apps Script
+    enrollmentNo: cleanEnrollment,
+    candidateName,
+    programme,
+    courses: coursesArray,
+    session: activeSession,
+    contact,
+    handledBy,
+    timestamp,
     intake: intakeRecord,
     unpackedCourses: unpackedCourses || [],
   };
 
-  // Dispatch via no-cors text/plain;charset=utf-8 (do not wait for res.json() as it's opaque status 0)
+  // Direct fetch POST to SCRIPT_URL with mode: "no-cors"
+  try {
+    await fetch(SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    console.warn('[ADD_INTAKE fetch error]:', err);
+  }
+
+  // Backup dispatch to backend proxy
   sendScriptPost(payload).catch((err) => console.warn(err));
 
   return {
@@ -313,17 +335,7 @@ export interface UpdateMarksPayload {
  * }
  */
 export async function postUpdateMarks(
-  params:
-    | UpdateMarksPayload
-    | {
-        subId: string;
-        enrollmentNo?: string;
-        courseCode?: string;
-        marks?: number | null;
-        grade?: string;
-        isLocked?: boolean;
-      }
-    | string,
+  rowOrParams: any,
   marksParam?: number | null,
   gradeParam?: string,
   isLockedParam?: boolean,
@@ -332,61 +344,88 @@ export async function postUpdateMarks(
   let subId = '';
   let enrollmentNo = '';
   let courseCode = '';
-  let marks: number | null = null;
-  let grade = '';
-  let isLocked = true;
+  let marksValue: any = null;
+  let isLockAction = isLockedParam !== undefined ? Boolean(isLockedParam) : true;
 
-  if (typeof params === 'object' && params !== null) {
-    subId = params.subId || '';
-    enrollmentNo = params.enrollmentNo || '';
-    courseCode = params.courseCode || '';
-    marks = params.marks !== undefined ? params.marks : null;
-    grade = params.grade || '';
-    isLocked = params.isLocked !== undefined ? Boolean(params.isLocked) : true;
+  if (typeof rowOrParams === 'object' && rowOrParams !== null) {
+    const row = rowOrParams;
+    subId = (row.Sub_ID || row.subId || row.submissionKey || row.id || '').toString().trim();
+    enrollmentNo = (row.Enrollment_No || row.enrollmentNo || '').toString().replace(/^'/, '').trim();
+    courseCode = (row.Course_Code || row.courseCode || '').toString().trim().toUpperCase();
+    marksValue = marksParam !== undefined
+      ? marksParam
+      : (row.marks !== undefined ? row.marks : (row.Marks !== undefined ? row.Marks : null));
+    if (row.isLocked !== undefined && isLockedParam === undefined) {
+      isLockAction = Boolean(row.isLocked);
+    }
   } else {
-    subId = String(params || '');
-    marks = marksParam !== undefined ? marksParam : null;
-    grade = gradeParam || '';
-    isLocked = isLockedParam !== undefined ? Boolean(isLockedParam) : true;
-    enrollmentNo = compositeParams?.enrollmentNo || '';
-    courseCode = compositeParams?.courseCode || '';
+    subId = String(rowOrParams || '');
+    marksValue = marksParam !== undefined ? marksParam : null;
+    isLockAction = isLockedParam !== undefined ? Boolean(isLockedParam) : true;
+    enrollmentNo = (compositeParams?.enrollmentNo || '').toString().replace(/^'/, '').trim();
+    courseCode = (compositeParams?.courseCode || '').toString().trim().toUpperCase();
   }
 
-  // Fallback parsing if composite keys not explicitly provided
+  // Fallback composite key parsing from subId if missing
   if ((!enrollmentNo || !courseCode) && subId) {
     const parts = subId.split('_');
     if (parts.length >= 3) {
-      if (!enrollmentNo) enrollmentNo = parts[1];
-      if (!courseCode) courseCode = parts[2];
+      if (!enrollmentNo) enrollmentNo = parts[1].replace(/^'/, '').trim();
+      if (!courseCode) courseCode = parts[2].trim().toUpperCase();
     }
   }
 
+  if (!subId && enrollmentNo && courseCode) {
+    subId = `SUB_${enrollmentNo}_${courseCode}_JUL2026`;
+  }
+
+  const numericMarks = marksValue !== null && marksValue !== undefined && marksValue !== ''
+    ? Number(marksValue)
+    : 0;
+
+  const calculatedGrade = gradeParam || getIgnouGrade(numericMarks).grade;
+
   const payload = {
-    action: "UPDATE_MARKS",
-    payload: {
-      subId,
-      enrollmentNo,
-      courseCode,
-      marks: marks !== null ? Number(marks) : null,
-      grade,
-      isLocked,
-    },
-    // Top-level mirrors for backward compatibility
     subId,
     enrollmentNo,
     courseCode,
-    marks: marks !== null ? Number(marks) : null,
-    grade,
-    isLocked,
+    marks: Number(numericMarks),
+    grade: calculatedGrade,
+    isLocked: isLockAction,
   };
 
-  // Dispatch via no-cors text/plain;charset=utf-8 without waiting for res.json()
-  sendScriptPost(payload).catch((err) => console.warn(err));
+  // Direct fetch to Apps Script Web App URL with mode: "no-cors"
+  try {
+    await fetch(SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: "UPDATE_MARKS",
+        payload: payload,
+      }),
+    });
+  } catch (err) {
+    console.warn('[UPDATE_MARKS fetch error]:', err);
+  }
+
+  // Also dispatch to local server proxy in parallel
+  sendScriptPost({
+    action: "UPDATE_MARKS",
+    payload,
+    // Top-level aliases
+    subId,
+    enrollmentNo,
+    courseCode,
+    marks: Number(numericMarks),
+    grade: calculatedGrade,
+    isLocked: isLockAction,
+  }).catch((err) => console.warn(err));
 
   return {
     status: 'success',
     action: 'UPDATE_MARKS',
-    message: 'Saved & Synced with Google Sheet',
+    message: `Marks for ${payload.courseCode} (${payload.marks}/100 - Grade ${payload.grade}) updated & synced to Google Sheets`,
   };
 }
 

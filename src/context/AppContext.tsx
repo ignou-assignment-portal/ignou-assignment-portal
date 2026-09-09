@@ -24,7 +24,7 @@ import {
   INITIAL_COURSE_EVALUATIONS,
   IGNOU_PROGRAMMES,
 } from '../data/ignouMasterData';
-import { generateSessionCode, generateDeterministicSubmissionKey, calculateIGNOUGrade } from '../utils/helpers';
+import { generateSessionCode, generateDeterministicSubmissionKey, calculateIGNOUGrade, getIgnouGrade } from '../utils/helpers';
 import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, SCRIPT_URL } from '../services/sheetsService';
 
 interface AppContextType {
@@ -64,6 +64,11 @@ interface AppContextType {
   }) => void;
   deleteIntakeRecord: (id: string) => boolean;
   updateMarks: (intakeId: string, courseCode: string, marks: number | null) => void;
+  saveOrUpdateMarksAndLock: (
+    row: any,
+    marksValue: number | string | null | undefined,
+    isLockAction: boolean
+  ) => Promise<void>;
 
   // Module B: 2_Course_Evaluation_Master (Automated Ledger Unpacking & Marks Engine)
   sessionCourseEvaluations: CourseEvaluationRecord[];
@@ -965,9 +970,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast('Saved & Synced with Google Sheet', 'success');
 
       // 2. On Intake Submission: Send POST with action "ADD_INTAKE". Save row to Intake_Register and automatically unpack courses to Course_Ledger
-      const coursesArray = data.courseCodes
-        .flatMap((c) => c.split(','))
-        .map((c) => c.trim().toUpperCase())
+      const rawCourses = (data as any).courses || data.courseCodes || [];
+      const coursesArray: string[] = (Array.isArray(rawCourses) ? rawCourses.join(',') : String(rawCourses))
+        .split(',')
+        .map((c: string) => c.trim().toUpperCase())
         .filter(Boolean);
 
       postAddIntake(
@@ -979,7 +985,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           programme: data.programmeCode.trim().toUpperCase(),
           courses: coursesArray,
           handledBy: currentRole === 'ADMIN' ? 'Coordinator' : 'Desk Official',
-          session: currentSession,
+          session: (data as any).session || currentSession,
           timestamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
         },
         unpackedRows
@@ -1274,40 +1280,192 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [intakes, courseEvaluations, currentSession, showToast]
   );
 
+  const saveOrUpdateMarksAndLock = useCallback(
+    async (
+      row: any,
+      marksValue: number | string | null | undefined,
+      isLockAction: boolean = false
+    ) => {
+      if (isLockAction && !row.isLocked) {
+        if (marksValue === null || marksValue === undefined || marksValue === '' || isNaN(Number(marksValue))) {
+          alert('Cannot lock script: A valid numerical mark (0-100) must be recorded before locking.');
+          return;
+        }
+      }
+      if (!isLockAction && row.isLocked && (isUrlLockedDeskMode || currentRole !== 'ADMIN')) {
+        alert('Permission Denied: Only an Administrator (Coordinator) can unlock marks for verified scripts. Unlocking permissions are strictly disabled in Desk Official mode.');
+        return;
+      }
+
+      const cleanEnrollment = (row.Enrollment_No || row.enrollmentNo || '').toString().replace(/^'/, '').trim();
+      const cleanCourse = (row.Course_Code || row.courseCode || '').toString().trim().toUpperCase();
+      const rawSubId = (
+        row.Sub_ID ||
+        row.subId ||
+        row.submissionKey ||
+        row.id ||
+        `SUB_${cleanEnrollment}_${cleanCourse}_${(row.session || currentSession || 'JUL2026').replace(/\s+/g, '')}`
+      ).toString().trim();
+
+      const numericMarks = marksValue !== null && marksValue !== undefined && marksValue !== ''
+        ? Number(marksValue)
+        : null;
+
+      const calculatedGrade = numericMarks !== null ? getIgnouGrade(numericMarks).grade : '—';
+      const gradeInfo = calculateIGNOUGrade(numericMarks);
+
+      const payload = {
+        subId: rawSubId,
+        enrollmentNo: cleanEnrollment,
+        courseCode: cleanCourse,
+        marks: Number(numericMarks ?? 0),
+        grade: calculatedGrade,
+        isLocked: isLockAction,
+      };
+
+      const now = new Date().toISOString();
+      const lockedBy = isLockAction
+        ? currentRole === 'ADMIN'
+          ? `${settings.coordinatorName || 'Dr. Sant K. Gupta'} (Coordinator)`
+          : 'Desk Official'
+        : null;
+
+      // 1. Optimistic UI update for courseEvaluations
+      setCourseEvaluations((prev) => {
+        const index = prev.findIndex(
+          (e) =>
+            e.id === rawSubId ||
+            e.submissionKey === rawSubId ||
+            (e.enrollmentNo.trim() === cleanEnrollment && e.courseCode.trim().toUpperCase() === cleanCourse)
+        );
+
+        let next: CourseEvaluationRecord[];
+        if (index >= 0) {
+          next = prev.map((rec, i) => {
+            if (i !== index) return rec;
+            return {
+              ...rec,
+              marks: numericMarks,
+              grade: calculatedGrade,
+              gradeLabel: gradeInfo.label,
+              isLocked: isLockAction,
+              lockedAt: isLockAction ? now : null,
+              lockedBy,
+              status: isLockAction
+                ? 'Marks Locked'
+                : numericMarks !== null
+                ? 'Evaluated'
+                : rec.evaluatorId
+                ? 'Allotted'
+                : 'Pending Allotment',
+              updatedAt: now,
+            };
+          });
+        } else {
+          const newEval: CourseEvaluationRecord = {
+            id: rawSubId,
+            submissionKey: rawSubId,
+            tokenNo: row.tokenNo || `TOK-${cleanEnrollment.slice(-4)}`,
+            enrollmentNo: cleanEnrollment,
+            studentName: row.studentName || row.Candidate_Name || '',
+            studentPhone: row.studentPhone || '',
+            studentEmail: row.studentEmail || '',
+            programmeCode: row.programmeCode || row.Programme || 'BAG',
+            courseCode: cleanCourse,
+            session: row.session || currentSession,
+            submissionDate: row.submissionDate || now.split('T')[0],
+            submissionMode: row.submissionMode || 'In-Person (Desk)',
+            evaluatorId: null,
+            allottedDate: null,
+            marks: numericMarks,
+            grade: calculatedGrade,
+            gradeLabel: gradeInfo.label,
+            isLocked: isLockAction,
+            lockedAt: isLockAction ? now : null,
+            lockedBy,
+            status: isLockAction ? 'Marks Locked' : numericMarks !== null ? 'Evaluated' : 'Pending Allotment',
+            updatedAt: now,
+          };
+          next = [newEval, ...prev];
+        }
+
+        try {
+          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // Optimistic UI update for intakes
+      setIntakes((prev) => {
+        const next = prev.map((item) => {
+          if (item.enrollmentNo.trim() !== cleanEnrollment) return item;
+          const updatedMarks = { ...item.marks, [cleanCourse]: numericMarks };
+          const allEntered = item.courseCodes.every((c) => updatedMarks[c] !== null && updatedMarks[c] !== undefined);
+          const status = allEntered ? 'Evaluated' : item.status === 'Received' ? 'Under Evaluation' : item.status;
+          return {
+            ...item,
+            marks: updatedMarks,
+            status,
+          };
+        });
+        try {
+          localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // 2. Dispatch POST to SCRIPT_URL:
+      try {
+        await fetch(SCRIPT_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "UPDATE_MARKS",
+            payload: payload,
+          }),
+        });
+      } catch (err) {
+        console.warn('Google Sheets UPDATE_MARKS fetch error:', err);
+      }
+
+      // Also call postUpdateMarks for server proxy fallback
+      postUpdateMarks(payload).catch(() => {});
+
+      // 3. Show toast notification as requested
+      showToast(
+        `Marks for ${payload.courseCode} (${payload.marks}/100 - Grade ${payload.grade}) updated & synced to Google Sheets`,
+        'success'
+      );
+    },
+    [currentRole, isUrlLockedDeskMode, settings.coordinatorName, currentSession, showToast]
+  );
+
   const updateMarks = useCallback((intakeId: string, courseCode: string, marksValue: number | null) => {
-    setIntakes((prev) =>
-      prev.map((item) => {
-        if (item.id !== intakeId) return item;
-        const updatedMarks = { ...item.marks, [courseCode]: marksValue };
-        // Check if all marks are entered
-        const allEntered = item.courseCodes.every((c) => updatedMarks[c] !== null && updatedMarks[c] !== undefined);
-        const status = allEntered ? 'Evaluated' : item.status === 'Received' ? 'Under Evaluation' : item.status;
-        return {
-          ...item,
-          marks: updatedMarks,
-          status,
-        };
-      })
+    const intake = intakes.find((i) => i.id === intakeId);
+    const cleanCourse = courseCode.trim().toUpperCase();
+    const cleanEnrollment = (intake?.enrollmentNo || '').trim();
+
+    const matchingEval = courseEvaluations.find(
+      (e) => (e.intakeId === intakeId || e.enrollmentNo === cleanEnrollment) && e.courseCode === cleanCourse
     );
 
-    const gradeInfo = calculateIGNOUGrade(marksValue);
-    setCourseEvaluations((prev) =>
-      prev.map((rec) => {
-        if (rec.intakeId === intakeId && rec.courseCode === courseCode) {
-          if (rec.isLocked) return rec;
-          return {
-            ...rec,
-            marks: marksValue,
-            grade: gradeInfo.grade,
-            gradeLabel: gradeInfo.label,
-            status: marksValue !== null ? 'Evaluated' : rec.evaluatorId ? 'Allotted' : 'Pending Allotment',
-            updatedAt: new Date().toISOString(),
-          };
-        }
-        return rec;
-      })
-    );
-  }, []);
+    const row = matchingEval || {
+      subId: `SUB_${cleanEnrollment}_${cleanCourse}_${(intake?.session || currentSession).replace(/\s+/g, '')}`,
+      Sub_ID: `SUB_${cleanEnrollment}_${cleanCourse}_${(intake?.session || currentSession).replace(/\s+/g, '')}`,
+      enrollmentNo: cleanEnrollment,
+      Enrollment_No: cleanEnrollment,
+      courseCode: cleanCourse,
+      Course_Code: cleanCourse,
+      tokenNo: intake?.tokenNo,
+      studentName: intake?.studentName,
+      programmeCode: intake?.programmeCode,
+      session: intake?.session || currentSession,
+      isLocked: false,
+    };
+
+    saveOrUpdateMarksAndLock(row, marksValue, false);
+  }, [intakes, courseEvaluations, currentSession, saveOrUpdateMarksAndLock]);
 
   // Module B: 2_Course_Evaluation_Master Allotment & Marks Engine Operations
   const allotEvaluatorToEvaluations = useCallback(
@@ -1447,78 +1605,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const toggleLockMarks = useCallback(
     (evaluationId: string, shouldLock: boolean) => {
-      if (!shouldLock && (isUrlLockedDeskMode || currentRole !== 'ADMIN')) {
-        alert('Permission Denied: Only an Administrator (Coordinator) can unlock marks for verified scripts. Unlocking permissions are strictly disabled in Desk Official mode.');
-        return;
-      }
-
-      const now = new Date().toISOString();
-      const lockedBy = currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Dr. Sant K. Gupta'} (Coordinator)` : 'Desk Official';
-
-      setCourseEvaluations((prev) => {
-        const next = prev.map((rec) => {
-          if (rec.id !== evaluationId) return rec;
-
-          if (shouldLock) {
-            if (rec.marks === null || rec.marks === undefined) {
-              alert('Cannot lock script: A valid numerical mark (0-100) must be recorded before locking.');
-              return rec;
-            }
-            const gradeInfo = calculateIGNOUGrade(rec.marks);
-            // 3. On Marks Locking: Send POST with action "UPDATE_MARKS" containing subId, enrollmentNo, courseCode, marks, calculated grade, and isLocked: true
-            postUpdateMarks({
-              subId: rec.submissionKey || rec.id,
-              enrollmentNo: rec.enrollmentNo,
-              courseCode: rec.courseCode,
-              marks: rec.marks,
-              grade: gradeInfo.grade,
-              isLocked: true,
-            }).catch((err) => {
-              console.warn('Google Sheets UPDATE_MARKS notification:', err);
-            });
-            return {
-              ...rec,
-              isLocked: true,
-              lockedAt: now,
-              lockedBy,
-              status: 'Marks Locked',
-              updatedAt: now,
-            };
-          } else {
-            const gradeInfo = calculateIGNOUGrade(rec.marks);
-            postUpdateMarks({
-              subId: rec.submissionKey || rec.id,
-              enrollmentNo: rec.enrollmentNo,
-              courseCode: rec.courseCode,
-              marks: rec.marks,
-              grade: gradeInfo.grade,
-              isLocked: false,
-            }).catch((err) => {
-              console.warn('Google Sheets UPDATE_MARKS notification:', err);
-            });
-            return {
-              ...rec,
-              isLocked: false,
-              lockedAt: null,
-              lockedBy,
-              status: rec.marks !== null ? 'Evaluated' : rec.evaluatorId ? 'Allotted' : 'Pending Allotment',
-              updatedAt: now,
-            };
-          }
-        });
-
-        try {
-          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(next));
-        } catch {}
-
-        return next;
-      });
-
-      if (shouldLock) {
-        showToast('Saved & Synced with Google Sheet', 'success');
-      }
+      const rec = courseEvaluations.find((e) => e.id === evaluationId || e.submissionKey === evaluationId);
+      if (!rec) return;
+      saveOrUpdateMarksAndLock(rec, rec.marks, shouldLock);
     },
-    [currentRole, isUrlLockedDeskMode, settings.coordinatorName, showToast]
+    [courseEvaluations, saveOrUpdateMarksAndLock]
   );
 
   const batchLockMarks = useCallback(
@@ -1978,6 +2069,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         editIntakeEntry,
         deleteIntakeRecord,
         updateMarks,
+        saveOrUpdateMarksAndLock,
         // Module B: Course Evaluations
         sessionCourseEvaluations,
         allCourseEvaluations: courseEvaluations,
