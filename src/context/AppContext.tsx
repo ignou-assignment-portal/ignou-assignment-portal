@@ -1826,7 +1826,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCourseEvaluations(INITIAL_COURSE_EVALUATIONS);
       setCurrentSessionState(INITIAL_SETTINGS.defaultSession);
       setCurrentRole('ADMIN');
+      localStorage.removeItem('ignou_remuneration_rate');
+      localStorage.removeItem('ignou_conveyance_allowance');
+      localStorage.removeItem('ignou_coordination_charges');
+      localStorage.removeItem('ignou_sc2033_remuneration_rate');
+      localStorage.removeItem('ignou_sc2033_conveyance_allowance');
+      localStorage.removeItem('ignou_sc2033_coordination_charges');
+      localStorage.removeItem('custom_allowances');
       localStorage.clear();
+      window.dispatchEvent(new CustomEvent('ignou_factory_reset'));
     }
   }, []);
 

@@ -501,12 +501,18 @@ export async function postGenerateClaimPdf(details: {
   evaluatorCode?: string;
   evaluatorName?: string;
   session: string;
-  grossAmount: number;
+  grossAmount?: number;
   netPayable?: number;
   scriptCount?: number;
+  totalScripts?: number;
+  rate?: number;
   ratePerScript?: number;
+  conveyance?: number;
   conveyanceAmount?: number;
+  coordination?: number;
+  coordinationCharges?: number;
   courses?: string[];
+  courseCodes?: string[];
   bankAccountNo?: string;
   accountNumber?: string;
   ifscCode?: string;
@@ -514,28 +520,52 @@ export async function postGenerateClaimPdf(details: {
   panNumber?: string;
   department?: string;
   designation?: string;
+  centreCode?: string;
 }): Promise<string> {
+  const activeSession = details.session;
+  const evName = details.evaluatorName || 'Academic Counsellor';
+  const rateVal = parseFloat(String(details.rate ?? details.ratePerScript ?? 27.50));
+  const conveyanceVal = parseFloat(String(details.conveyance ?? details.conveyanceAmount ?? 0)) || 0;
+  const coordinationVal = parseFloat(String(details.coordination ?? details.coordinationCharges ?? 0)) || 0;
+  const count = details.scriptCount || details.totalScripts || 0;
+  const gross = details.grossAmount ?? (count * rateVal + conveyanceVal + coordinationVal);
+
   const payload = {
     action: 'GENERATE_CLAIM_PDF',
+    payload: {
+      session: activeSession,
+      evaluatorName: evName,
+      rate: rateVal,
+      conveyance: conveyanceVal,
+      coordination: coordinationVal,
+    },
+    // Top-level fields for backwards compatibility with Google Apps Script
+    session: activeSession,
+    evaluatorName: evName,
+    rate: rateVal,
+    conveyance: conveyanceVal,
+    coordination: coordinationVal,
     billId: details.billId || 'STATUTORY-CLAIM-VOUCHER',
     evaluatorId: details.evaluatorId || details.evaluatorCode || 'EV-SC2033',
     evaluatorCode: details.evaluatorCode || details.evaluatorId || 'EV-SC2033',
-    evaluatorName: details.evaluatorName || 'Academic Counsellor',
     bankAccountNo: details.bankAccountNo || details.accountNumber || '',
     accountNumber: details.bankAccountNo || details.accountNumber || '',
     ifscCode: details.ifscCode || '',
-    bankName: details.bankName || '',
+    bankName: details.bankName || 'State Bank of India',
     panNumber: details.panNumber || '',
     department: details.department || '',
     designation: details.designation || '',
-    session: details.session,
-    grossAmount: details.grossAmount,
-    netPayable: details.netPayable || details.grossAmount,
-    scriptCount: details.scriptCount || 0,
-    ratePerScript: details.ratePerScript || 27.5,
-    conveyanceAmount: details.conveyanceAmount || 0,
-    courses: details.courses || [],
+    grossAmount: gross,
+    netPayable: details.netPayable || gross,
+    scriptCount: count,
+    ratePerScript: rateVal,
+    conveyanceAmount: conveyanceVal,
+    coordinationCharges: coordinationVal,
+    courses: details.courses || details.courseCodes || [],
   };
+
+  // Direct no-cors post to Apps Script to guarantee request dispatch without browser blockage
+  sendScriptPost(payload).catch((err) => console.warn('[GENERATE_CLAIM_PDF no-cors dispatch]:', err));
 
   let downloadUrl: string | null = null;
 
@@ -575,7 +605,14 @@ export async function postGenerateClaimPdf(details: {
   }
 
   // Fallback: Generate an authentic IGNOU F&AD Statutory Remuneration Claim Bill PDF blob URL
-  return createFallbackClaimBillPdfBlob(details);
+  return createFallbackClaimBillPdfBlob({
+    ...details,
+    grossAmount: gross,
+    ratePerScript: rateVal,
+    conveyanceAmount: conveyanceVal,
+    coordinationCharges: coordinationVal,
+    scriptCount: count,
+  });
 }
 
 /**
@@ -717,6 +754,8 @@ function createFallbackClaimBillPdfBlob(details: {
   scriptCount?: number;
   ratePerScript?: number;
   conveyanceAmount?: number;
+  coordinationCharges?: number;
+  coordination?: number;
   courses?: string[];
   bankAccountNo?: string;
   accountNumber?: string;
@@ -732,8 +771,9 @@ function createFallbackClaimBillPdfBlob(details: {
   const rate = details.ratePerScript || 27.5;
   const scriptCount = details.scriptCount || Math.round(details.grossAmount / rate) || 1;
   const scriptAmount = scriptCount * rate;
-  const conveyance = details.conveyanceAmount || 150;
-  const gross = details.grossAmount || (scriptAmount + conveyance);
+  const conveyance = details.conveyanceAmount ?? 0;
+  const coordination = (details as any).coordinationCharges ?? (details as any).coordination ?? 0;
+  const gross = details.grossAmount || (scriptAmount + conveyance + coordination);
   const net = details.netPayable || gross;
   const evalCode = details.evaluatorCode || details.evaluatorId || 'EV-SC2033-01';
   const bankAcc = details.bankAccountNo || details.accountNumber || '—';
@@ -830,9 +870,15 @@ function createFallbackClaimBillPdfBlob(details: {
       </tr>
       <tr>
         <td>2</td>
-        <td>Conveyance Allowance for Collection & Return of Assignment Packets</td>
-        <td style="text-align: center;">Standard norm</td>
+        <td>Conveyance Allowance (Study Centre Delivery / Return)</td>
+        <td style="text-align: center;">${conveyance > 0 ? 'Sanctioned' : 'Default Norm'}</td>
         <td style="text-align: right; font-weight: bold;">₹${conveyance.toFixed(2)}</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>Coordination & Verification Charges</td>
+        <td style="text-align: center;">${coordination > 0 ? 'Sanctioned' : 'Default Norm'}</td>
+        <td style="text-align: right; font-weight: bold;">₹${coordination.toFixed(2)}</td>
       </tr>
       <tr class="total-row">
         <td colspan="3" style="text-align: right; font-size: 13px;">GROSS STATUTORY CLAIM:</td>
