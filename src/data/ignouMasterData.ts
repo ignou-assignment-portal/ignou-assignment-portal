@@ -369,11 +369,16 @@ export const INITIAL_EVALUATORS: Evaluator[] = [
 export const INITIAL_SETTINGS: SystemSettings = {
   centreCode: 'SC-2033',
   centreName: 'IGNOU Study Centre - 2033',
-  institutionName: 'DAV PG College Campus / IGNOU Regular Study Centre',
-  regionalCentreCode: 'RC Delhi-2 (Rajghat)',
+  institutionName: "S.D. Jain Girls' College, Dimapur",
+  hostInstitution: "S.D. Jain Girls' College, Dimapur",
+  collegeName: "S.D. Jain Girls' College, Dimapur",
+  regionalCentreCode: 'RC-20 Kohima (Regional Centre Kohima)',
+  regionalCentre: 'RC-20 Kohima',
   coordinatorName: 'Dr. Sant K. Gupta',
   coordinatorDesignation: 'Coordinator, IGNOU SC-2033',
-  coordinatorContact: '+91 11 2341 8900 | ignou.sc2033@gmail.com',
+  coordinatorContact: '+91 9436013686 | sant.k.gupta@gmail.com',
+  coordinatorPhone: '9436013686',
+  coordinatorEmail: 'sant.k.gupta@gmail.com',
   remunerationRatePerScript: 27.50, // Rs. 27.50 per assignment script as per official IGNOU study centre evaluation guidelines
   conveyanceAllowancePerPacket: 0.00, // Default 0.00 conveyance allowance
   coordinationChargesPerScript: 0.00, // Default 0.00 coordination charges

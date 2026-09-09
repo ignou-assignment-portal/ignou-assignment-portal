@@ -109,14 +109,19 @@ export interface RemunerationBill {
 export interface SystemSettings {
   centreCode: string; // 'SC-2033'
   centreName: string; // 'IGNOU Study Centre 2033'
-  institutionName: string; // 'Shri Ram College of Commerce / DAV PG College'
-  regionalCentreCode: string; // 'RC-07 Delhi-2'
-  coordinatorName: string;
+  institutionName: string; // "S.D. Jain Girls' College, Dimapur"
+  hostInstitution?: string; // "S.D. Jain Girls' College, Dimapur"
+  collegeName?: string; // "S.D. Jain Girls' College, Dimapur"
+  regionalCentreCode: string; // 'RC-20 Kohima (Regional Centre Kohima)'
+  regionalCentre?: string; // 'RC-20 Kohima'
+  coordinatorName: string; // 'Dr. Sant K. Gupta'
   coordinatorDesignation?: string;
-  coordinatorContact: string;
+  coordinatorContact: string; // '+91 9436013686 | sant.k.gupta@gmail.com'
+  coordinatorPhone?: string; // '9436013686'
+  coordinatorEmail?: string; // 'sant.k.gupta@gmail.com'
   remunerationRatePerScript: number; // default Rs 27.50
-  conveyanceAllowancePerPacket: number; // default Rs 150
-  coordinationChargesPerScript: number; // default Rs 5
+  conveyanceAllowancePerPacket: number; // default Rs 0.00
+  coordinationChargesPerScript: number; // default Rs 0.00
   availableSessions: string[];
   defaultSession: string;
   adminPin?: string; // 4-digit Administrator PIN (default: '2033')

@@ -206,10 +206,15 @@ export const IntakeDesk: React.FC = () => {
 
   // Course addition with strict max 8 limit and duplicate check
   const handleAddCourse = (courseCode: string) => {
-    const clean = courseCode.trim().toUpperCase();
-    if (!clean) return;
+    if (!courseCode.trim()) return;
+    const splitCourses = courseCode
+      .split(',')
+      .map((c) => c.trim().toUpperCase())
+      .filter(Boolean);
 
-    if (selectedCourses.length >= 8) {
+    if (splitCourses.length === 0) return;
+
+    if (selectedCourses.length + splitCourses.length > 8) {
       setErrorMsg('Maximum 8 course codes allowed per registration cycle in IGNOU academic term.');
       return;
     }
@@ -217,32 +222,40 @@ export const IntakeDesk: React.FC = () => {
     const cleanEnrollment = enrollmentNo.trim();
     const targetSession = selectedSession || currentSession;
 
-    // Check if this student has already submitted this course code in this session
-    if (cleanEnrollment) {
-      const isDuplicate =
-        allCourseEvaluations.some(
-          (ce) =>
-            ce.enrollmentNo.trim() === cleanEnrollment &&
-            ce.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
-            ce.courseCode.trim().toUpperCase() === clean
-        ) ||
-        allIntakes.some(
-          (it) =>
-            it.enrollmentNo.trim() === cleanEnrollment &&
-            it.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
-            it.courseCodes.some((c) => c.trim().toUpperCase() === clean)
-        );
+    const newCoursesToAdd: string[] = [];
 
-      if (isDuplicate) {
-        const msg = `Duplicate Submission Blocked: Student ${cleanEnrollment} has already submitted course ${clean} for session "${targetSession}". Each course may only be submitted once per academic cycle.`;
-        alert(msg);
-        setErrorMsg(msg);
-        return;
+    for (const clean of splitCourses) {
+      // Check if this student has already submitted this course code in this session
+      if (cleanEnrollment) {
+        const isDuplicate =
+          allCourseEvaluations.some(
+            (ce) =>
+              ce.enrollmentNo.trim() === cleanEnrollment &&
+              ce.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
+              ce.courseCode.trim().toUpperCase() === clean
+          ) ||
+          allIntakes.some(
+            (it) =>
+              it.enrollmentNo.trim() === cleanEnrollment &&
+              it.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
+              it.courseCodes.some((c) => c.trim().toUpperCase() === clean)
+          );
+
+        if (isDuplicate) {
+          const msg = `Duplicate Submission Blocked: Student ${cleanEnrollment} has already submitted course ${clean} for session "${targetSession}". Each course may only be submitted once per academic cycle.`;
+          alert(msg);
+          setErrorMsg(msg);
+          return;
+        }
+      }
+
+      if (!selectedCourses.includes(clean) && !newCoursesToAdd.includes(clean)) {
+        newCoursesToAdd.push(clean);
       }
     }
 
-    if (!selectedCourses.includes(clean)) {
-      setSelectedCourses([...selectedCourses, clean]);
+    if (newCoursesToAdd.length > 0) {
+      setSelectedCourses([...selectedCourses, ...newCoursesToAdd]);
       setErrorMsg('');
     }
     setCourseSearchInput('');
@@ -281,11 +294,28 @@ export const IntakeDesk: React.FC = () => {
       setErrorMsg('Please select or specify a Programme Code (e.g. BAG, MEG, BCA, MPS).');
       return;
     }
-    if (selectedCourses.length === 0) {
+    // Merge any un-added input in courseSearchInput
+    let combinedCourses = [...selectedCourses];
+    if (courseSearchInput.trim()) {
+      const extra = courseSearchInput
+        .split(',')
+        .map((c) => c.trim().toUpperCase())
+        .filter(Boolean);
+      extra.forEach((c) => {
+        if (!combinedCourses.includes(c)) combinedCourses.push(c);
+      });
+    }
+
+    const coursesArray = combinedCourses
+      .flatMap((c) => c.split(','))
+      .map((c) => c.trim().toUpperCase())
+      .filter(Boolean);
+
+    if (coursesArray.length === 0) {
       setErrorMsg('Please enter or select at least one Course Code (up to 8 courses).');
       return;
     }
-    if (selectedCourses.length > 8) {
+    if (coursesArray.length > 8) {
       setErrorMsg('Maximum 8 course codes allowed per registration cycle.');
       return;
     }
@@ -300,7 +330,7 @@ export const IntakeDesk: React.FC = () => {
     // If the SAME student submits the EXACT SAME course code already recorded for this session:
     // BLOCK submission and trigger an alert.
     // Allow different course codes for the same student in the same session.
-    const cleanCourses = selectedCourses.map((c) => c.trim().toUpperCase());
+    const cleanCourses = coursesArray;
     const existingDuplicates: string[] = [];
 
     cleanCourses.forEach((course) => {
@@ -338,14 +368,14 @@ export const IntakeDesk: React.FC = () => {
         setSession(targetSession);
       }
 
-      // 1. Create intake record in IntakeMaster
+      // 1. Create intake record in IntakeMaster and optimistically unpack to Course_Ledger
       const newRecord = addIntakeRecord({
         enrollmentNo: cleanEnrollment,
         studentName: studentName.trim(),
         studentPhone: studentPhone.trim() || undefined,
         studentEmail: studentEmail.trim() || undefined,
         programmeCode: selectedProgramme.trim().toUpperCase(),
-        courseCodes: selectedCourses,
+        courseCodes: coursesArray,
         submissionDate,
         submissionMode,
         consignmentNo: consignmentNo.trim() || undefined,
@@ -359,7 +389,7 @@ export const IntakeDesk: React.FC = () => {
         studentId: cleanEnrollment,
         studentName: studentName.trim(),
         programmeCode: selectedProgramme.trim().toUpperCase(),
-        courseCodes: selectedCourses,
+        courseCodes: coursesArray,
         session: targetSession,
         initialStatus: 'submitted',
         submissionDate,
@@ -376,7 +406,7 @@ export const IntakeDesk: React.FC = () => {
         studentEmail: studentEmail.trim() || undefined,
         programmeCode: selectedProgramme.trim().toUpperCase(),
         session: targetSession,
-        registeredCourses: selectedCourses,
+        registeredCourses: coursesArray,
         issuedBy: registeredBy,
         remarks: remarks.trim() || undefined,
       });

@@ -260,23 +260,24 @@ export const ReceiptModal: React.FC = () => {
             <div>
               <div className="text-zinc-500 text-[10px] uppercase font-bold">Counter Received By</div>
               <div className="font-bold text-zinc-900 text-xs mt-0.5">{selectedReceiptRecord.registeredBy}</div>
-              <div className="text-[10px] text-zinc-500">IGNOU Study Centre SC-2033</div>
+              <div className="text-[10px] text-zinc-500">{settings.institutionName || "S.D. Jain Girls' College, Dimapur"} ({settings.centreCode})</div>
             </div>
 
             <div className="text-center relative">
               {/* Simulated Stamp Seal */}
-              <div className="w-32 h-14 mx-auto border-2 border-indigo-900 text-indigo-900 rounded-lg p-1 flex flex-col items-center justify-center text-[9px] font-black uppercase tracking-wider rotate-[-4deg] bg-indigo-50/40">
-                <span>IGNOU SC-2033</span>
+              <div className="w-36 h-16 mx-auto border-2 border-indigo-900 text-indigo-900 rounded-lg p-1 flex flex-col items-center justify-center text-[9px] font-black uppercase tracking-wider rotate-[-4deg] bg-indigo-50/40">
+                <span>IGNOU {settings.centreCode}</span>
                 <span className="text-[8px] font-bold text-indigo-800">VERIFIED & RECEIVED</span>
                 <span className="text-[7px] text-indigo-600 font-mono">{formatDate(selectedReceiptRecord.submissionDate)}</span>
+                <span className="text-[7px] text-indigo-900 font-semibold">{settings.coordinatorName || 'Dr. Sant K. Gupta'}</span>
               </div>
               <div className="text-[10px] font-bold text-zinc-700 mt-1">Study Centre Official Stamp</div>
             </div>
 
             <div className="text-right">
               <div className="w-40 ml-auto border-b-2 border-zinc-900 mb-1"></div>
-              <div className="font-black text-zinc-950 text-xs">Receiving Desk Official Signature & Seal</div>
-              <div className="text-[10px] text-zinc-500">Authorized Desk Coordinator, SC-2033</div>
+              <div className="font-black text-zinc-950 text-xs">{settings.coordinatorName || 'Dr. Sant K. Gupta'}</div>
+              <div className="text-[10px] text-zinc-500">{settings.coordinatorDesignation || 'Coordinator, IGNOU SC-2033'}</div>
             </div>
           </div>
         </div>

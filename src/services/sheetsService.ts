@@ -154,25 +154,32 @@ export async function postAddIntake(
   const candidateName = String(intakeRecord.candidateName || intakeRecord.studentName || '').trim();
   const contact = String(intakeRecord.contact || intakeRecord.studentPhone || '').trim();
   const programme = String(intakeRecord.programme || intakeRecord.programmeCode || '').trim().toUpperCase();
-  const courses = Array.isArray(intakeRecord.courses)
-    ? intakeRecord.courses
-    : Array.isArray(intakeRecord.courseCodes)
-    ? intakeRecord.courseCodes
-    : typeof intakeRecord.courseCodes === 'string'
-    ? intakeRecord.courseCodes.split(',').map((c: string) => c.trim()).filter(Boolean)
+  const rawCourses = intakeRecord.courses || intakeRecord.courseCodes || [];
+  const coursesArray: string[] = Array.isArray(rawCourses)
+    ? rawCourses.flatMap((c: any) => String(c).split(',')).map((c: string) => c.trim().toUpperCase()).filter(Boolean)
+    : typeof rawCourses === 'string'
+    ? rawCourses.split(',').map((c: string) => c.trim().toUpperCase()).filter(Boolean)
     : [];
-  const handledBy = intakeRecord.handledBy || (intakeRecord.registeredBy?.includes('Coordinator') ? 'Coordinator' : 'Official');
+  const handledBy =
+    intakeRecord.handledBy ||
+    (intakeRecord.registeredBy?.includes('Coordinator') || intakeRecord.role === 'admin'
+      ? 'Coordinator'
+      : 'Desk Official');
+
+  const timestamp =
+    intakeRecord.timestamp ||
+    new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 
   const payload = {
     action: "ADD_INTAKE",
     payload: {
-      timestamp: intakeRecord.createdAt || new Date().toISOString(),
+      timestamp,
       session: activeSession,
       enrollmentNo: cleanEnrollment,
       candidateName,
       contact,
       programme,
-      courses,
+      courses: coursesArray,
       handledBy,
     },
     // Backwards-compatible aliases for varied Apps Script implementations

@@ -249,16 +249,18 @@ export const RegistrationReceiptModal: React.FC = () => {
 
             <div className="text-center pt-8 relative">
               {/* Simulated Stamp */}
-              <div className="absolute top-0 right-1/4 border-2 border-indigo-900 text-indigo-900 rounded-lg px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rotate-[-5deg] opacity-80 pointer-events-none bg-indigo-50/60">
+              <div className="absolute top-0 right-1/4 border-2 border-indigo-900 text-indigo-900 rounded-lg px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rotate-[-5deg] opacity-80 pointer-events-none bg-indigo-50/60 leading-tight">
                 VERIFIED & RECEIVED
                 <br />
-                IGNOU SC-{settings.centreCode}
+                IGNOU {settings.centreCode}
+                <br />
+                <span className="text-[7.5px] font-semibold text-indigo-800">{settings.coordinatorName || 'Dr. Sant K. Gupta'}</span>
               </div>
               <div className="w-3/4 mx-auto border-t border-zinc-900 pt-1 text-zinc-900 font-bold">
-                Receiving Desk Official Signature & Seal
+                {settings.coordinatorName || 'Dr. Sant K. Gupta'}
               </div>
               <div className="text-[10px] text-zinc-500 mt-0.5">
-                {selectedRegistrationReceipt.issuedBy} • Study Centre {settings.centreCode}
+                {settings.coordinatorDesignation || 'Coordinator, IGNOU SC-2033'} • {settings.institutionName}
               </div>
             </div>
           </div>

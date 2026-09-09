@@ -24,20 +24,44 @@ export const SystemSettingsView: React.FC = () => {
     allIntakes,
     evaluators,
     currentSession,
+    showToast,
   } = useApp();
 
-  const [formData, setFormData] = useState({
-    centreCode: settings.centreCode,
-    centreName: settings.centreName,
-    institutionName: settings.institutionName,
-    regionalCentreCode: settings.regionalCentreCode,
-    coordinatorName: settings.coordinatorName,
-    coordinatorDesignation: settings.coordinatorDesignation || 'Coordinator, IGNOU SC-2033',
-    coordinatorContact: settings.coordinatorContact,
-    remunerationRatePerScript: settings.remunerationRatePerScript,
-    conveyanceAllowancePerPacket: settings.conveyanceAllowancePerPacket,
-    coordinationChargesPerScript: settings.coordinationChargesPerScript,
-    adminPin: settings.adminPin || '2033',
+  const [systemSettings, setSystemSettings] = useState(() => {
+    const saved = localStorage.getItem("ignou_sc2033_settings");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          centreCode: parsed.centreCode || "SC-2033",
+          regionalCentre: parsed.regionalCentre || parsed.regionalCentreCode || "RC-20 Kohima",
+          hostInstitution: parsed.hostInstitution || parsed.institutionName || "S.D. Jain Girls' College, Dimapur",
+          coordinatorName: parsed.coordinatorName || "Dr. Sant K. Gupta",
+          coordinatorPhone: parsed.coordinatorPhone || "9436013686",
+          coordinatorEmail: parsed.coordinatorEmail || "sant.k.gupta@gmail.com",
+          coordinatorDesignation: parsed.coordinatorDesignation || "Coordinator, IGNOU SC-2033",
+          remunerationRatePerScript: parsed.remunerationRatePerScript !== undefined ? parsed.remunerationRatePerScript : settings.remunerationRatePerScript || 27.50,
+          conveyanceAllowancePerPacket: parsed.conveyanceAllowancePerPacket !== undefined ? parsed.conveyanceAllowancePerPacket : (settings.conveyanceAllowancePerPacket ?? 0.00),
+          coordinationChargesPerScript: parsed.coordinationChargesPerScript !== undefined ? parsed.coordinationChargesPerScript : (settings.coordinationChargesPerScript ?? 0.00),
+          adminPin: parsed.adminPin || settings.adminPin || "2033",
+        };
+      } catch (e) {
+        console.warn("Failed to parse ignou_sc2033_settings:", e);
+      }
+    }
+    return {
+      centreCode: "SC-2033",
+      regionalCentre: "RC-20 Kohima",
+      hostInstitution: "S.D. Jain Girls' College, Dimapur",
+      coordinatorName: "Dr. Sant K. Gupta",
+      coordinatorPhone: "9436013686",
+      coordinatorEmail: "sant.k.gupta@gmail.com",
+      coordinatorDesignation: "Coordinator, IGNOU SC-2033",
+      remunerationRatePerScript: settings.remunerationRatePerScript || 27.50,
+      conveyanceAllowancePerPacket: settings.conveyanceAllowancePerPacket ?? 0.00,
+      coordinationChargesPerScript: settings.coordinationChargesPerScript ?? 0.00,
+      adminPin: settings.adminPin || "2033",
+    };
   });
 
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -45,7 +69,32 @@ export const SystemSettingsView: React.FC = () => {
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) return;
-    updateSettings(formData);
+
+    const updatedSettings = {
+      ...settings,
+      ...systemSettings,
+      centreCode: systemSettings.centreCode.trim(),
+      regionalCentre: systemSettings.regionalCentre.trim(),
+      regionalCentreCode: systemSettings.regionalCentre.includes('Kohima')
+        ? (systemSettings.regionalCentre.includes('(') ? systemSettings.regionalCentre : `${systemSettings.regionalCentre} (Regional Centre Kohima)`)
+        : systemSettings.regionalCentre,
+      hostInstitution: systemSettings.hostInstitution.trim(),
+      institutionName: systemSettings.hostInstitution.trim(),
+      collegeName: systemSettings.hostInstitution.trim(),
+      coordinatorName: systemSettings.coordinatorName.trim(),
+      coordinatorPhone: systemSettings.coordinatorPhone.trim(),
+      coordinatorEmail: systemSettings.coordinatorEmail.trim(),
+      coordinatorDesignation: systemSettings.coordinatorDesignation?.trim() || 'Coordinator, IGNOU SC-2033',
+      coordinatorContact: `+91 ${systemSettings.coordinatorPhone.trim()} | ${systemSettings.coordinatorEmail.trim()}`,
+      remunerationRatePerScript: Number(systemSettings.remunerationRatePerScript) || 27.50,
+      conveyanceAllowancePerPacket: Number(systemSettings.conveyanceAllowancePerPacket) || 0.00,
+      coordinationChargesPerScript: Number(systemSettings.coordinationChargesPerScript) || 0.00,
+      adminPin: systemSettings.adminPin || '2033',
+    };
+
+    localStorage.setItem("ignou_sc2033_settings", JSON.stringify(updatedSettings));
+    updateSettings(updatedSettings);
+    showToast("Institutional Settings Saved", "success");
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
   };
@@ -115,8 +164,8 @@ export const SystemSettingsView: React.FC = () => {
               <input
                 type="text"
                 disabled={!isAdmin}
-                value={formData.centreCode}
-                onChange={(e) => setFormData({ ...formData, centreCode: e.target.value })}
+                value={systemSettings.centreCode}
+                onChange={(e) => setSystemSettings({ ...systemSettings, centreCode: e.target.value })}
                 className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono font-bold bg-zinc-50 disabled:opacity-75"
               />
             </div>
@@ -126,8 +175,8 @@ export const SystemSettingsView: React.FC = () => {
               <input
                 type="text"
                 disabled={!isAdmin}
-                value={formData.regionalCentreCode}
-                onChange={(e) => setFormData({ ...formData, regionalCentreCode: e.target.value })}
+                value={systemSettings.regionalCentre}
+                onChange={(e) => setSystemSettings({ ...systemSettings, regionalCentre: e.target.value })}
                 className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75"
               />
             </div>
@@ -137,19 +186,19 @@ export const SystemSettingsView: React.FC = () => {
               <input
                 type="text"
                 disabled={!isAdmin}
-                value={formData.institutionName}
-                onChange={(e) => setFormData({ ...formData, institutionName: e.target.value })}
+                value={systemSettings.hostInstitution}
+                onChange={(e) => setSystemSettings({ ...systemSettings, hostInstitution: e.target.value })}
                 className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75"
               />
             </div>
 
             <div>
-              <label className="block font-semibold text-zinc-700 mb-1">Coordinator / Head Name</label>
+              <label className="block font-semibold text-zinc-700 mb-1">Coordinator Name</label>
               <input
                 type="text"
                 disabled={!isAdmin}
-                value={formData.coordinatorName}
-                onChange={(e) => setFormData({ ...formData, coordinatorName: e.target.value })}
+                value={systemSettings.coordinatorName}
+                onChange={(e) => setSystemSettings({ ...systemSettings, coordinatorName: e.target.value })}
                 className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75"
               />
             </div>
@@ -159,20 +208,31 @@ export const SystemSettingsView: React.FC = () => {
               <input
                 type="text"
                 disabled={!isAdmin}
-                value={formData.coordinatorDesignation}
-                onChange={(e) => setFormData({ ...formData, coordinatorDesignation: e.target.value })}
+                value={systemSettings.coordinatorDesignation}
+                onChange={(e) => setSystemSettings({ ...systemSettings, coordinatorDesignation: e.target.value })}
                 className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75"
               />
             </div>
 
             <div>
-              <label className="block font-semibold text-zinc-700 mb-1">Coordinator Contact Phone / Email</label>
+              <label className="block font-semibold text-zinc-700 mb-1">Coordinator Contact Phone</label>
               <input
                 type="text"
                 disabled={!isAdmin}
-                value={formData.coordinatorContact}
-                onChange={(e) => setFormData({ ...formData, coordinatorContact: e.target.value })}
-                className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75"
+                value={systemSettings.coordinatorPhone}
+                onChange={(e) => setSystemSettings({ ...systemSettings, coordinatorPhone: e.target.value })}
+                className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold text-zinc-700 mb-1">Coordinator Email</label>
+              <input
+                type="email"
+                disabled={!isAdmin}
+                value={systemSettings.coordinatorEmail}
+                onChange={(e) => setSystemSettings({ ...systemSettings, coordinatorEmail: e.target.value })}
+                className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75 font-mono"
               />
             </div>
           </div>
@@ -196,14 +256,14 @@ export const SystemSettingsView: React.FC = () => {
                   step="0.50"
                   min="0"
                   disabled={!isAdmin}
-                  value={formData.remunerationRatePerScript}
+                  value={systemSettings.remunerationRatePerScript}
                   onChange={(e) =>
-                    setFormData({ ...formData, remunerationRatePerScript: parseFloat(e.target.value) || 0 })
+                    setSystemSettings({ ...systemSettings, remunerationRatePerScript: parseFloat(e.target.value) || 0 })
                   }
                   className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-bold disabled:opacity-75"
                 />
                 <span className="text-[10px] text-zinc-500 mt-1 block">
-                  Standard study centre rate (e.g. ₹30)
+                  Standard study centre rate (₹27.50)
                 </span>
               </div>
 
@@ -214,14 +274,14 @@ export const SystemSettingsView: React.FC = () => {
                 <input
                   type="number"
                   disabled={!isAdmin}
-                  value={formData.conveyanceAllowancePerPacket}
+                  value={systemSettings.conveyanceAllowancePerPacket}
                   onChange={(e) =>
-                    setFormData({ ...formData, conveyanceAllowancePerPacket: parseFloat(e.target.value) || 0 })
+                    setSystemSettings({ ...systemSettings, conveyanceAllowancePerPacket: parseFloat(e.target.value) || 0 })
                   }
                   className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-bold disabled:opacity-75"
                 />
                 <span className="text-[10px] text-zinc-500 mt-1 block">
-                  Paid to academic counselors per packet
+                  Default ₹0.00 unless entered
                 </span>
               </div>
 
@@ -232,14 +292,14 @@ export const SystemSettingsView: React.FC = () => {
                 <input
                   type="number"
                   disabled={!isAdmin}
-                  value={formData.coordinationChargesPerScript}
+                  value={systemSettings.coordinationChargesPerScript}
                   onChange={(e) =>
-                    setFormData({ ...formData, coordinationChargesPerScript: parseFloat(e.target.value) || 0 })
+                    setSystemSettings({ ...systemSettings, coordinationChargesPerScript: parseFloat(e.target.value) || 0 })
                   }
                   className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-bold disabled:opacity-75"
                 />
                 <span className="text-[10px] text-zinc-500 mt-1 block">
-                  Study centre secretarial allowance
+                  Default ₹0.00 unless entered
                 </span>
               </div>
             </div>
@@ -257,8 +317,8 @@ export const SystemSettingsView: React.FC = () => {
                 <input
                   type="password"
                   maxLength={4}
-                  value={formData.adminPin}
-                  onChange={(e) => setFormData({ ...formData, adminPin: e.target.value })}
+                  value={systemSettings.adminPin}
+                  onChange={(e) => setSystemSettings({ ...systemSettings, adminPin: e.target.value })}
                   placeholder="2033"
                   className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono tracking-widest text-center font-bold text-sm bg-zinc-50 focus:bg-white"
                 />

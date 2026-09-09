@@ -219,7 +219,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Settings & Sessions
   const [settings, setSettings] = useState<SystemSettings>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+      const saved = localStorage.getItem('ignou_sc2033_settings') || localStorage.getItem(STORAGE_KEYS.SETTINGS);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.coordinatorName === 'Dr. V. K. Aggarwal' || !parsed.coordinatorName) {
@@ -227,6 +227,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         if (!parsed.coordinatorDesignation) {
           parsed.coordinatorDesignation = 'Coordinator, IGNOU SC-2033';
+        }
+        if (!parsed.centreCode) {
+          parsed.centreCode = 'SC-2033';
+        }
+        if (!parsed.regionalCentre) {
+          parsed.regionalCentre = 'RC-20 Kohima';
+        }
+        if (!parsed.regionalCentreCode || parsed.regionalCentreCode.includes('Delhi')) {
+          parsed.regionalCentreCode = 'RC-20 Kohima (Regional Centre Kohima)';
+        }
+        if (!parsed.hostInstitution || parsed.hostInstitution.includes('DAV') || parsed.hostInstitution.includes('Shri Ram')) {
+          parsed.hostInstitution = "S.D. Jain Girls' College, Dimapur";
+          parsed.institutionName = "S.D. Jain Girls' College, Dimapur";
+          parsed.collegeName = "S.D. Jain Girls' College, Dimapur";
+        }
+        if (!parsed.coordinatorPhone) {
+          parsed.coordinatorPhone = '9436013686';
+        }
+        if (!parsed.coordinatorEmail) {
+          parsed.coordinatorEmail = 'sant.k.gupta@gmail.com';
+        }
+        if (!parsed.coordinatorContact || parsed.coordinatorContact.includes('2341')) {
+          parsed.coordinatorContact = '+91 9436013686 | sant.k.gupta@gmail.com';
         }
         if (parsed.remunerationRatePerScript === 30 || !parsed.remunerationRatePerScript) {
           parsed.remunerationRatePerScript = 27.50;
@@ -942,13 +965,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast('Saved & Synced with Google Sheet', 'success');
 
       // 2. On Intake Submission: Send POST with action "ADD_INTAKE". Save row to Intake_Register and automatically unpack courses to Course_Ledger
-      postAddIntake(newRecord, unpackedRows).catch((err) => {
+      const coursesArray = data.courseCodes
+        .flatMap((c) => c.split(','))
+        .map((c) => c.trim().toUpperCase())
+        .filter(Boolean);
+
+      postAddIntake(
+        {
+          ...newRecord,
+          enrollmentNo: data.enrollmentNo.trim(),
+          candidateName: data.studentName.trim(),
+          contact: (data.studentPhone || '').trim(),
+          programme: data.programmeCode.trim().toUpperCase(),
+          courses: coursesArray,
+          handledBy: currentRole === 'ADMIN' ? 'Coordinator' : 'Desk Official',
+          session: currentSession,
+          timestamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+        },
+        unpackedRows
+      ).catch((err) => {
         console.warn('Google Sheets ADD_INTAKE notification:', err);
       });
 
       return newRecord;
     },
-    [currentSession, intakes, showToast]
+    [currentSession, intakes, courseEvaluations, currentRole, showToast]
   );
 
   const updateIntakeRecord = useCallback((id: string, updates: Partial<IntakeRecord>) => {
@@ -1844,17 +1885,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Settings
   const updateSettings = useCallback((newValues: Partial<SystemSettings>) => {
-    setSettings((prev) => ({ ...prev, ...newValues }));
+    setSettings((prev) => {
+      const updated = { ...prev, ...newValues };
+      try {
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
+        localStorage.setItem('ignou_sc2033_settings', JSON.stringify(updated));
+      } catch (err) {
+        console.warn('Failed to persist settings:', err);
+      }
+      return updated;
+    });
   }, []);
 
   const resetAllData = useCallback(() => {
     if (window.confirm('Are you sure you want to reset all data to initial institutional seed state? This cannot be undone.')) {
-      setSettings({
+      const defaultResetSettings = {
         ...INITIAL_SETTINGS,
         remunerationRatePerScript: 27.50,
         conveyanceAllowancePerPacket: 0.00,
         coordinationChargesPerScript: 0.00,
-      });
+      };
+      setSettings(defaultResetSettings);
+      try {
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(defaultResetSettings));
+        localStorage.setItem('ignou_sc2033_settings', JSON.stringify(defaultResetSettings));
+      } catch {}
       setIntakes([]); // Submissions register: []
       setEvaluators(INITIAL_EVALUATORS);
       setPackets([]); // Course packets: [] (0 packets)
