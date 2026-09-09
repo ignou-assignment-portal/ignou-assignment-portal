@@ -72,6 +72,8 @@ interface AppContextType {
   ) => Promise<void>;
 
   // Module B: 2_Course_Evaluation_Master (Automated Ledger Unpacking & Marks Engine)
+  courseLedger: CourseEvaluationRecord[];
+  setCourseLedger: React.Dispatch<React.SetStateAction<CourseEvaluationRecord[]>>;
   sessionCourseEvaluations: CourseEvaluationRecord[];
   allCourseEvaluations: CourseEvaluationRecord[];
   allotEvaluatorToEvaluations: (evaluationIds: string[], evaluatorId: string | null) => void;
@@ -1844,6 +1846,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               const isLocked = item.Status === 'Locked' || item.status === 'Locked' || item.isLocked === true || item.isLocked === 'true';
               const evaluatorName = item.Allotted_Evaluator || item.allottedEvaluator || item.evaluatorName || existing?.evaluatorName || null;
               const merged: CourseEvaluationRecord = {
+                // Clean Google Sheets Course_Ledger keys
+                Sub_ID: key,
+                subId: key,
+                Session: item.Session || item.session || existing?.session || currentSession,
+                Enrollment_No: item.Enrollment_No || item.enrollmentNo || existing?.enrollmentNo || '',
+                Candidate_Name: item.Candidate_Name || item.candidateName || item.studentName || existing?.studentName || '',
+                Programme: item.Programme || item.programme || item.programmeCode || existing?.programmeCode || '',
+                Course_Code: item.Course_Code || item.courseCode || existing?.courseCode || '',
+                Allotted_Evaluator: evaluatorName && evaluatorName !== 'Unallotted' ? evaluatorName : '',
+                Marks: markVal,
+                Grade: item.Grade || item.grade || gradeInfo.grade,
+                Status: isLocked ? 'Marks Locked' : markVal !== null ? 'Evaluated' : (evaluatorName && evaluatorName !== 'Unallotted') ? 'Allotted' : 'Pending Allotment',
+
                 id: key,
                 submissionKey: key,
                 tokenNo: item.tokenNo || existing?.tokenNo || '',
@@ -2115,6 +2130,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateMarks,
         saveOrUpdateMarksAndLock,
         // Module B: Course Evaluations
+        courseLedger: courseEvaluations,
+        setCourseLedger: setCourseEvaluations,
         sessionCourseEvaluations,
         allCourseEvaluations: courseEvaluations,
         allotEvaluatorToEvaluations,

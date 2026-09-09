@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { CourseEvaluationRecord, Evaluator } from '../types';
 import { calculateIGNOUGrade, formatDate } from '../utils/helpers';
+import { SCRIPT_URL } from '../services/sheetsService';
 import {
   Layers,
   Award,
@@ -30,6 +31,8 @@ import {
 export const CourseEvaluationMaster: React.FC = () => {
   const {
     currentSession,
+    courseLedger,
+    setCourseLedger,
     sessionCourseEvaluations,
     allCourseEvaluations,
     evaluators,
@@ -42,6 +45,7 @@ export const CourseEvaluationMaster: React.FC = () => {
     settings,
     isSyncingEvaluators,
     syncEvaluatorsDirectory,
+    showToast,
   } = useApp();
 
   // Filters & Search
@@ -145,19 +149,54 @@ export const CourseEvaluationMaster: React.FC = () => {
   };
 
   // Evaluator allotment handler
-  const handleAllotEvaluator = (subId: string | string[], value: string | null) => {
-    const ids = Array.isArray(subId) ? subId : [subId];
-    if (!value || value === 'Unallotted') {
-      allotEvaluatorToEvaluations(ids, null);
-      return;
+  const handleAllotEvaluator = async (
+    row: any,
+    e: React.ChangeEvent<HTMLSelectElement>
+  ) => {
+    const selectedEvaluator = e.target.value;
+
+    // Build robust payload with composite fallback keys:
+    const payload = {
+      subId: (row.Sub_ID || row.subId || "").toString().trim(),
+      subIds: [(row.Sub_ID || row.subId || "").toString().trim()],
+      enrollmentNo: (row.Enrollment_No || row.enrollmentNo || "").toString().replace(/^'/, '').trim(),
+      courseCode: (row.Course_Code || row.courseCode || "").toString().trim().toUpperCase(),
+      evaluator: selectedEvaluator
+    };
+
+    // Optimistically update local state in `courseLedger`:
+    setCourseLedger(prev => prev.map(r => {
+      const isCurrent = (r.Sub_ID || r.subId) === (row.Sub_ID || row.subId);
+      if (isCurrent) {
+        const isUnallotted = !selectedEvaluator || selectedEvaluator === "Unallotted";
+        return {
+          ...r,
+          Allotted_Evaluator: isUnallotted ? "" : selectedEvaluator,
+          evaluatorName: isUnallotted ? null : selectedEvaluator,
+          Status: (r.Status === "Pending" || !r.Status) ? "Allotted" : r.Status
+        };
+      }
+      return r;
+    }));
+
+    // Dispatch POST request to Google Apps Script:
+    try {
+      await fetch(SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "ALLOT_EVALUATOR",
+          payload: payload
+        })
+      });
+    } catch (err) {
+      console.warn("[ALLOT_EVALUATOR writeback error]:", err);
     }
-    const matched = evaluators.find(
-      (ev) =>
-        `${ev.evaluatorName || ev.name} (${ev.evaluatorCode})` === value ||
-        ev.id === value ||
-        ev.evaluatorCode === value
-    );
-    allotEvaluatorToEvaluations(ids, matched ? matched.id : value);
+
+    // Show notification toast: `Allotted ${row.Course_Code} to ${selectedEvaluator}`.
+    const courseCodeDisplay = row.Course_Code || row.courseCode || payload.courseCode;
+    showToast(`Allotted ${courseCodeDisplay} to ${selectedEvaluator}`);
   };
 
   // Lock marks handler
@@ -166,7 +205,7 @@ export const CourseEvaluationMaster: React.FC = () => {
   };
 
   // Batch Allotment Action (Unrestricted for all active academic counsellors)
-  const handleBatchAllot = () => {
+  const handleBatchAllot = async () => {
     if (selectedIds.length === 0) {
       setBatchMessage('Please select at least one script to allot.');
       setTimeout(() => setBatchMessage(null), 3500);
@@ -185,9 +224,44 @@ export const CourseEvaluationMaster: React.FC = () => {
         `${e.evaluatorName || e.name} (${e.evaluatorCode})` === batchEvaluatorId
     );
     if (!targetEvaluator) return;
+    const selectedEvaluator = `${targetEvaluator.evaluatorName || targetEvaluator.name} (${targetEvaluator.evaluatorCode})`;
+
+    setCourseLedger((prev) =>
+      prev.map((r) => {
+        const isCurrent = selectedIds.includes((r.Sub_ID || r.subId || r.id) as string);
+        if (isCurrent) {
+          return {
+            ...r,
+            Allotted_Evaluator: selectedEvaluator,
+            evaluatorName: selectedEvaluator,
+            Status: (r.Status === "Pending" || !r.Status) ? "Allotted" : r.Status
+          };
+        }
+        return r;
+      })
+    );
 
     allotEvaluatorToEvaluations(selectedIds, targetEvaluator.id);
-    setBatchMessage(`Successfully allotted ${selectedIds.length} script(s) to ${targetEvaluator.evaluatorName || targetEvaluator.name} (${targetEvaluator.evaluatorCode}).`);
+
+    try {
+      await fetch(SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "ALLOT_EVALUATOR",
+          payload: {
+            subIds: selectedIds,
+            evaluator: selectedEvaluator
+          }
+        })
+      });
+    } catch (err) {
+      console.warn("[BATCH ALLOT_EVALUATOR writeback error]:", err);
+    }
+
+    setBatchMessage(`Successfully allotted ${selectedIds.length} script(s) to ${selectedEvaluator}.`);
+    showToast(`Allotted ${selectedIds.length} script(s) to ${selectedEvaluator}`);
     setSelectedIds([]);
     setTimeout(() => setBatchMessage(null), 4000);
   };
@@ -677,8 +751,10 @@ export const CourseEvaluationMaster: React.FC = () => {
                         ) : (
                           <div className="space-y-1">
                             <select
+                              id={`allot-evaluator-select-${record.id || (record as any).Sub_ID || record.courseCode}`}
                               value={
                                 (record as any).Allotted_Evaluator ||
+                                record.Allotted_Evaluator ||
                                 (record.evaluatorName && record.evaluatorCode
                                   ? `${record.evaluatorName} (${record.evaluatorCode})`
                                   : record.evaluatorId
@@ -687,7 +763,7 @@ export const CourseEvaluationMaster: React.FC = () => {
                                     : record.evaluatorId
                                   : 'Unallotted')
                               }
-                              onChange={(e) => handleAllotEvaluator(record.id, e.target.value)}
+                              onChange={(e) => handleAllotEvaluator(record, e)}
                               className={`w-full max-w-[240px] text-xs py-1.5 px-2 rounded-lg border focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer ${
                                 record.evaluatorId || (record as any).Allotted_Evaluator
                                   ? 'bg-blue-50/50 border-blue-200 text-blue-950 font-medium'

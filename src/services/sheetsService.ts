@@ -432,27 +432,39 @@ export async function postUpdateMarks(
  */
 export async function postAllotEvaluator(
   subId: string,
-  evaluator: { id?: string; name?: string; evaluatorCode?: string; Allotted_Evaluator?: string | null }
+  evaluator: { id?: string; name?: string; evaluatorCode?: string; Allotted_Evaluator?: string | null; enrollmentNo?: string; courseCode?: string }
 ): Promise<ApiResponse> {
   const allottedEvaluatorVal = evaluator.Allotted_Evaluator || (evaluator.name && evaluator.evaluatorCode ? `${evaluator.name} (${evaluator.evaluatorCode})` : evaluator.name || '');
+  const cleanSubId = (subId || '').toString().trim();
+  const cleanEnr = (evaluator.enrollmentNo || '').toString().replace(/^'/, '').trim();
+  const cleanCourse = (evaluator.courseCode || '').toString().trim().toUpperCase();
+
   const payload = {
-    action: "ALLOT_EVALUATOR",
-    payload: {
-      subId,
-      evaluatorId: evaluator.id || '',
-      evaluatorName: evaluator.name || '',
-      evaluatorCode: evaluator.evaluatorCode || '',
-      Allotted_Evaluator: allottedEvaluatorVal,
-    },
-    subId,
+    subId: cleanSubId,
+    subIds: [cleanSubId],
+    enrollmentNo: cleanEnr,
+    courseCode: cleanCourse,
+    evaluator: allottedEvaluatorVal,
     evaluatorId: evaluator.id || '',
-    evaluatorName: evaluator.name || '',
+    evaluatorName: evaluator.name || allottedEvaluatorVal,
     evaluatorCode: evaluator.evaluatorCode || '',
     Allotted_Evaluator: allottedEvaluatorVal,
   };
 
-  // Dispatch via no-cors text/plain;charset=utf-8
-  sendScriptPost(payload).catch((err) => console.warn(err));
+  try {
+    await fetch(SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: "ALLOT_EVALUATOR",
+        payload: payload,
+      }),
+    });
+  } catch (err) {
+    console.warn("[postAllotEvaluator direct POST fallback]:", err);
+    sendScriptPost({ action: "ALLOT_EVALUATOR", payload }).catch(() => {});
+  }
 
   return {
     status: 'success',
