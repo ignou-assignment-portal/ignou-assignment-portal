@@ -67,6 +67,17 @@ export const CourseEvaluationMaster: React.FC = () => {
     return Array.from(set).sort();
   }, [sessionCourseEvaluations]);
 
+  // Active academic counsellors sorted alphabetically
+  const activeEvaluatorsSorted = useMemo(() => {
+    return evaluators
+      .filter((ev) => (ev.status || (ev as any).Status || 'Active').toLowerCase() === 'active')
+      .sort((a, b) => {
+        const nameA = (a.evaluatorName || a.name || '').toLowerCase();
+        const nameB = (b.evaluatorName || b.name || '').toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+  }, [evaluators]);
+
   // Filtered rows
   const filteredRecords = useMemo(() => {
     return sessionCourseEvaluations.filter((rec) => {
@@ -105,51 +116,19 @@ export const CourseEvaluationMaster: React.FC = () => {
     return evaluators.find((e) => e.id === id || e.evaluatorCode === id);
   };
 
-  // Helper to check if an evaluator is eligible for a course
+  // Helper to check if an evaluator is eligible (any active counsellor is eligible for any course script based on faculty availability)
   const isEvaluatorEligible = (
     ev: Evaluator,
-    courseCode: string,
-    programmeCode?: string,
-    bypass: boolean = bypassCourseFilter
+    _courseCode?: string,
+    _programmeCode?: string,
+    _bypass: boolean = true
   ): boolean => {
-    // If admin enabled bypass, show all active evaluators
-    if (bypass) {
-      return (ev.status || 'Active').toLowerCase() === 'active';
-    }
-
-    // Must be Active status
-    if ((ev.status || 'Active').toLowerCase() !== 'active') {
-      return false;
-    }
-
-    if (!ev.eligibleCourses || ev.eligibleCourses.length === 0) {
-      return false;
-    }
-
-    const cleanCourse = courseCode.toUpperCase().replace(/[-\s]/g, '');
-    const cleanProg = (programmeCode || '').toUpperCase().replace(/[-\s]/g, '');
-
-    return ev.eligibleCourses.some((raw) => {
-      const cleanElig = String(raw).toUpperCase().replace(/[-\s]/g, '');
-      if (!cleanElig) return false;
-      // Exact course code match (e.g. MEG-01 vs MEG01 or MEG-01)
-      if (cleanElig === cleanCourse) return true;
-      // Programme code match (e.g. MEG matches MEG-01 or MEG)
-      if (cleanProg && (cleanElig === cleanProg || cleanProg.startsWith(cleanElig) || cleanElig.startsWith(cleanProg))) return true;
-      // Course code prefix match (e.g. MEG-01 matches MEG)
-      if (cleanCourse.startsWith(cleanElig) || cleanElig.startsWith(cleanCourse)) return true;
-      return false;
-    });
+    return (ev.status || (ev as any).Status || 'Active').toLowerCase() === 'active';
   };
 
-  // Get evaluators eligible for a given course & programme
-  const getEligibleEvaluators = (courseCode: string, programmeCode?: string, currentEvaluatorId?: string | null) => {
-    return evaluators.filter((ev) => {
-      if (currentEvaluatorId && (ev.id === currentEvaluatorId || ev.evaluatorCode === currentEvaluatorId)) {
-        return true;
-      }
-      return isEvaluatorEligible(ev, courseCode, programmeCode);
-    });
+  // Get evaluators eligible for allotment (all active academic counsellors)
+  const getEligibleEvaluators = (_courseCode?: string, _programmeCode?: string, _currentEvaluatorId?: string | null) => {
+    return evaluators.filter((ev) => (ev.status || (ev as any).Status || 'Active').toLowerCase() === 'active');
   };
 
   // Checkbox selection handlers
@@ -166,8 +145,19 @@ export const CourseEvaluationMaster: React.FC = () => {
   };
 
   // Evaluator allotment handler
-  const handleAllotEvaluator = (evaluationIds: string[], evaluatorId: string | null) => {
-    allotEvaluatorToEvaluations(evaluationIds, evaluatorId);
+  const handleAllotEvaluator = (subId: string | string[], value: string | null) => {
+    const ids = Array.isArray(subId) ? subId : [subId];
+    if (!value || value === 'Unallotted') {
+      allotEvaluatorToEvaluations(ids, null);
+      return;
+    }
+    const matched = evaluators.find(
+      (ev) =>
+        `${ev.evaluatorName || ev.name} (${ev.evaluatorCode})` === value ||
+        ev.id === value ||
+        ev.evaluatorCode === value
+    );
+    allotEvaluatorToEvaluations(ids, matched ? matched.id : value);
   };
 
   // Lock marks handler
@@ -175,36 +165,29 @@ export const CourseEvaluationMaster: React.FC = () => {
     toggleLockMarks(evaluationId, shouldLock);
   };
 
-  // Batch Allotment Action
+  // Batch Allotment Action (Unrestricted for all active academic counsellors)
   const handleBatchAllot = () => {
     if (selectedIds.length === 0) {
       setBatchMessage('Please select at least one script to allot.');
       setTimeout(() => setBatchMessage(null), 3500);
       return;
     }
-    if (!batchEvaluatorId) {
+    if (!batchEvaluatorId || batchEvaluatorId === 'Unallotted') {
       setBatchMessage('Please choose an academic counsellor for allotment.');
       setTimeout(() => setBatchMessage(null), 3500);
       return;
     }
 
-    const targetEvaluator = evaluators.find((e) => e.id === batchEvaluatorId);
+    const targetEvaluator = evaluators.find(
+      (e) =>
+        e.id === batchEvaluatorId ||
+        e.evaluatorCode === batchEvaluatorId ||
+        `${e.evaluatorName || e.name} (${e.evaluatorCode})` === batchEvaluatorId
+    );
     if (!targetEvaluator) return;
 
-    // Check if evaluator is eligible for all selected courses
-    const selectedRecords = sessionCourseEvaluations.filter((r) => selectedIds.includes(r.id));
-    const ineligible = selectedRecords.filter((r) => !targetEvaluator.eligibleCourses.includes(r.courseCode));
-
-    if (ineligible.length > 0) {
-      const distinctBadCourses = Array.from(new Set(ineligible.map((r) => r.courseCode))).join(', ');
-      alert(
-        `Academic Validation Warning: ${targetEvaluator.name} (${targetEvaluator.evaluatorCode}) is not approved to evaluate courses: ${distinctBadCourses}.\nOnly eligible courses can be assigned to this counsellor.`
-      );
-      return;
-    }
-
-    allotEvaluatorToEvaluations(selectedIds, batchEvaluatorId);
-    setBatchMessage(`Successfully allotted ${selectedIds.length} script(s) to ${targetEvaluator.name} (${targetEvaluator.evaluatorCode}).`);
+    allotEvaluatorToEvaluations(selectedIds, targetEvaluator.id);
+    setBatchMessage(`Successfully allotted ${selectedIds.length} script(s) to ${targetEvaluator.evaluatorName || targetEvaluator.name} (${targetEvaluator.evaluatorCode}).`);
     setSelectedIds([]);
     setTimeout(() => setBatchMessage(null), 4000);
   };
@@ -430,28 +413,20 @@ export const CourseEvaluationMaster: React.FC = () => {
               <select
                 value={batchEvaluatorId}
                 onChange={(e) => setBatchEvaluatorId(e.target.value)}
-                className="bg-transparent text-white text-xs font-medium focus:outline-none cursor-pointer max-w-[200px]"
+                className="bg-transparent text-white text-xs font-medium focus:outline-none cursor-pointer max-w-[220px]"
               >
                 <option value="" className="text-zinc-800">
-                  Select Counsellor...
+                  -- Select Academic Counsellor --
                 </option>
-                {evaluators
-                  .filter((ev) => {
-                    if (bypassCourseFilter) return (ev.status || 'Active').toLowerCase() === 'active';
-                    if (selectedCourseFilter !== 'ALL') {
-                      return isEvaluatorEligible(ev, selectedCourseFilter, undefined, false);
-                    }
-                    return (ev.status || 'Active').toLowerCase() === 'active';
-                  })
-                  .map((ev) => {
-                    const evalName = ev.evaluatorName || ev.name;
-                    const evalDept = ev.department || 'Academic Division';
-                    return (
-                      <option key={ev.id} value={ev.id} className="text-zinc-800">
-                        {evalName} ({ev.evaluatorCode} - {evalDept})
-                      </option>
-                    );
-                  })}
+                {activeEvaluatorsSorted.map((ev) => {
+                  const evalName = ev.evaluatorName || ev.name;
+                  const evalDept = ev.department ? ev.department : ev.designation || 'Academic Counsellor';
+                  return (
+                    <option key={ev.evaluatorCode || ev.id} value={ev.id} className="text-zinc-800">
+                      {evalName} ({evalDept})
+                    </option>
+                  );
+                })}
               </select>
               <button
                 onClick={handleBatchAllot}
@@ -625,7 +600,6 @@ export const CourseEvaluationMaster: React.FC = () => {
               ) : (
                 filteredRecords.map((record) => {
                   const isSelected = selectedIds.includes(record.id);
-                  const eligibleEvaluators = getEligibleEvaluators(record.courseCode, record.programmeCode, record.evaluatorId);
                   const currentEvaluator = getEvaluator(record.evaluatorId);
                   const gradeInfo = calculateIGNOUGrade(record.marks);
 
@@ -703,34 +677,34 @@ export const CourseEvaluationMaster: React.FC = () => {
                         ) : (
                           <div className="space-y-1">
                             <select
-                              value={record.evaluatorId || ''}
-                              onChange={(e) =>
-                                handleAllotEvaluator([record.id], e.target.value || null)
+                              value={
+                                (record as any).Allotted_Evaluator ||
+                                (record.evaluatorName && record.evaluatorCode
+                                  ? `${record.evaluatorName} (${record.evaluatorCode})`
+                                  : record.evaluatorId
+                                  ? evaluators.find((e) => e.id === record.evaluatorId)
+                                    ? `${evaluators.find((e) => e.id === record.evaluatorId)?.evaluatorName || evaluators.find((e) => e.id === record.evaluatorId)?.name} (${evaluators.find((e) => e.id === record.evaluatorId)?.evaluatorCode})`
+                                    : record.evaluatorId
+                                  : 'Unallotted')
                               }
-                              className={`w-full max-w-[210px] text-xs py-1 px-2 rounded-lg border focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer ${
-                                record.evaluatorId
+                              onChange={(e) => handleAllotEvaluator(record.id, e.target.value)}
+                              className={`w-full max-w-[240px] text-xs py-1.5 px-2 rounded-lg border focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer ${
+                                record.evaluatorId || (record as any).Allotted_Evaluator
                                   ? 'bg-blue-50/50 border-blue-200 text-blue-950 font-medium'
                                   : 'bg-zinc-50 border-zinc-200 text-zinc-600'
                               }`}
                             >
-                              <option value="">— Choose Counsellor —</option>
-                              {eligibleEvaluators.map((ev) => {
+                              <option value="Unallotted">-- Select Academic Counsellor --</option>
+                              {activeEvaluatorsSorted.map((ev) => {
                                 const evalName = ev.evaluatorName || ev.name;
-                                const evalDept = ev.department || 'Academic Division';
+                                const evalDept = ev.department ? ev.department : ev.designation || 'Academic Counsellor';
                                 return (
-                                  <option key={ev.id} value={ev.id}>
-                                    {evalName} ({ev.evaluatorCode} - {evalDept})
+                                  <option key={ev.evaluatorCode || ev.id} value={`${evalName} (${ev.evaluatorCode})`}>
+                                    {evalName} ({evalDept})
                                   </option>
                                 );
                               })}
                             </select>
-
-                            {eligibleEvaluators.length === 0 && (
-                              <p className="text-[10px] text-amber-600 font-medium flex items-center gap-1">
-                                <AlertCircle className="w-3 h-3" />
-                                No approved evaluator for {record.courseCode}
-                              </p>
-                            )}
 
                             {record.allottedDate && (
                               <p className="text-[10px] text-zinc-400">

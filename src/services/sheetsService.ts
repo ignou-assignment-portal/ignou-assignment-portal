@@ -399,8 +399,9 @@ export async function postUpdateMarks(
  */
 export async function postAllotEvaluator(
   subId: string,
-  evaluator: { id?: string; name?: string; evaluatorCode?: string }
+  evaluator: { id?: string; name?: string; evaluatorCode?: string; Allotted_Evaluator?: string | null }
 ): Promise<ApiResponse> {
+  const allottedEvaluatorVal = evaluator.Allotted_Evaluator || (evaluator.name && evaluator.evaluatorCode ? `${evaluator.name} (${evaluator.evaluatorCode})` : evaluator.name || '');
   const payload = {
     action: "ALLOT_EVALUATOR",
     payload: {
@@ -408,11 +409,13 @@ export async function postAllotEvaluator(
       evaluatorId: evaluator.id || '',
       evaluatorName: evaluator.name || '',
       evaluatorCode: evaluator.evaluatorCode || '',
+      Allotted_Evaluator: allottedEvaluatorVal,
     },
     subId,
     evaluatorId: evaluator.id || '',
     evaluatorName: evaluator.name || '',
     evaluatorCode: evaluator.evaluatorCode || '',
+    Allotted_Evaluator: allottedEvaluatorVal,
   };
 
   // Dispatch via no-cors text/plain;charset=utf-8

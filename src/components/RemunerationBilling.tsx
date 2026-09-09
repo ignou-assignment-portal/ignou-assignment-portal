@@ -58,6 +58,7 @@ export const RemunerationBilling: React.FC = () => {
     isAdmin,
     setRole,
     sessionCourseEvaluations,
+    resetAllData,
   } = useApp();
 
   // Selected bill for viewing/printing official F&AD voucher
@@ -110,13 +111,22 @@ export const RemunerationBilling: React.FC = () => {
     setRemunerationRate(27.50);
     setConveyanceAllowance(0.00);
     setCoordinationCharges(0.00);
+    localStorage.removeItem('ignou_intake_register');
+    localStorage.removeItem('ignou_course_ledger');
+    localStorage.removeItem('ignou_course_packets');
+    localStorage.removeItem('ignou_marks_draft');
+    localStorage.removeItem('ignou_conveyance');
+    localStorage.removeItem('ignou_coordination');
     localStorage.removeItem('ignou_remuneration_rate');
     localStorage.removeItem('ignou_conveyance_allowance');
     localStorage.removeItem('ignou_coordination_charges');
+    localStorage.removeItem('ignou_packets_tracker');
+    localStorage.removeItem('ignou_sc2033_packets');
     localStorage.removeItem('ignou_sc2033_remuneration_rate');
     localStorage.removeItem('ignou_sc2033_conveyance_allowance');
     localStorage.removeItem('ignou_sc2033_coordination_charges');
     localStorage.removeItem('custom_allowances');
+    resetAllData();
   };
 
   // Listen for global factory reset event
@@ -125,9 +135,17 @@ export const RemunerationBilling: React.FC = () => {
       setRemunerationRate(27.50);
       setConveyanceAllowance(0.00);
       setCoordinationCharges(0.00);
+      localStorage.removeItem('ignou_intake_register');
+      localStorage.removeItem('ignou_course_ledger');
+      localStorage.removeItem('ignou_course_packets');
+      localStorage.removeItem('ignou_marks_draft');
+      localStorage.removeItem('ignou_conveyance');
+      localStorage.removeItem('ignou_coordination');
       localStorage.removeItem('ignou_remuneration_rate');
       localStorage.removeItem('ignou_conveyance_allowance');
       localStorage.removeItem('ignou_coordination_charges');
+      localStorage.removeItem('ignou_packets_tracker');
+      localStorage.removeItem('ignou_sc2033_packets');
       localStorage.removeItem('ignou_sc2033_remuneration_rate');
       localStorage.removeItem('ignou_sc2033_conveyance_allowance');
       localStorage.removeItem('ignou_sc2033_coordination_charges');

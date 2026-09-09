@@ -375,8 +375,8 @@ export const INITIAL_SETTINGS: SystemSettings = {
   coordinatorDesignation: 'Coordinator, IGNOU SC-2033',
   coordinatorContact: '+91 11 2341 8900 | ignou.sc2033@gmail.com',
   remunerationRatePerScript: 27.50, // Rs. 27.50 per assignment script as per official IGNOU study centre evaluation guidelines
-  conveyanceAllowancePerPacket: 150, // Conveyance per evaluated packet
-  coordinationChargesPerScript: 5,
+  conveyanceAllowancePerPacket: 0.00, // Default 0.00 conveyance allowance
+  coordinationChargesPerScript: 0.00, // Default 0.00 coordination charges
   availableSessions: ['July 2026', 'Jan 2027', 'July 2027', 'Jan 2026'],
   defaultSession: 'July 2026',
   adminPin: '2033',
@@ -522,50 +522,7 @@ export const INITIAL_INTAKE_RECORDS: IntakeRecord[] = [
   },
 ];
 
-export const INITIAL_PACKETS: CoursePacket[] = [
-  {
-    id: 'pkt-jul26-1',
-    session: 'July 2026',
-    packetNumber: 'PKT-JUL26-MEG01-01',
-    courseCode: 'MEG-01',
-    programmeCode: 'MEG',
-    evaluatorId: 'ev-1',
-    scriptCount: 15,
-    assignedDate: '2026-08-25',
-    expectedReturnDate: '2026-09-10',
-    returnedDate: null,
-    status: 'Dispatched',
-    notes: 'Packaged in yellow cloth envelope with TE award sheet copy',
-  },
-  {
-    id: 'pkt-jul26-2',
-    session: 'July 2026',
-    packetNumber: 'PKT-JUL26-MPS01-01',
-    courseCode: 'MPS-001',
-    programmeCode: 'MPS',
-    evaluatorId: 'ev-2',
-    scriptCount: 22,
-    assignedDate: '2026-08-26',
-    expectedReturnDate: '2026-09-12',
-    returnedDate: null,
-    status: 'Dispatched',
-    notes: 'Dispatched via study centre runner to Gargi College',
-  },
-  {
-    id: 'pkt-jul26-3',
-    session: 'July 2026',
-    packetNumber: 'PKT-JUL26-MHD02-01',
-    courseCode: 'MHD-02',
-    programmeCode: 'MHD',
-    evaluatorId: 'ev-5',
-    scriptCount: 18,
-    assignedDate: '2026-08-24',
-    expectedReturnDate: '2026-09-05',
-    returnedDate: '2026-09-04',
-    status: 'Evaluated',
-    notes: 'Scripts returned with duly signed award list & bill voucher',
-  },
-];
+export const INITIAL_PACKETS: CoursePacket[] = [];
 
 export const INITIAL_BILLS: RemunerationBill[] = [
   {

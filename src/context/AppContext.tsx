@@ -89,6 +89,10 @@ interface AppContextType {
   closeRegistrationReceiptModal: () => void;
 
   // Course Ledger / Packets
+  packets: CoursePacket[];
+  setPackets: React.Dispatch<React.SetStateAction<CoursePacket[]>>;
+  coursePackets: CoursePacket[];
+  setCoursePackets: React.Dispatch<React.SetStateAction<CoursePacket[]>>;
   sessionPackets: CoursePacket[];
   createPacket: (data: { courseCode: string; programmeCode: string; evaluatorId: string | null; scriptCount: number; expectedReturnDate?: string; notes?: string }) => CoursePacket;
   updatePacket: (id: string, updates: Partial<CoursePacket>) => void;
@@ -227,6 +231,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (parsed.remunerationRatePerScript === 30 || !parsed.remunerationRatePerScript) {
           parsed.remunerationRatePerScript = 27.50;
         }
+        if (parsed.conveyanceAllowancePerPacket === undefined || parsed.conveyanceAllowancePerPacket === null || parsed.conveyanceAllowancePerPacket === 150) {
+          parsed.conveyanceAllowancePerPacket = 0.00;
+        }
+        if (parsed.coordinationChargesPerScript === undefined || parsed.coordinationChargesPerScript === null || parsed.coordinationChargesPerScript === 5) {
+          parsed.coordinationChargesPerScript = 0.00;
+        }
         return { ...INITIAL_SETTINGS, ...parsed };
       }
       return INITIAL_SETTINGS;
@@ -287,13 +297,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [isUrlLockedDeskMode, currentRole]);
 
-  // Database Simulation States
+  // Database States: Start cleanly with empty arrays (0 records) if cache is empty
   const [intakes, setIntakes] = useState<IntakeRecord[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.INTAKES);
-      return saved ? JSON.parse(saved) : INITIAL_INTAKE_RECORDS;
+      const saved =
+        localStorage.getItem(STORAGE_KEYS.INTAKES) ||
+        localStorage.getItem('ignou_intake_register');
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_INTAKE_RECORDS;
+      return [];
     }
   });
 
@@ -313,53 +325,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [packets, setPackets] = useState<CoursePacket[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.PACKETS);
-      return saved ? JSON.parse(saved) : INITIAL_PACKETS;
+      const saved =
+        localStorage.getItem(STORAGE_KEYS.PACKETS) ||
+        localStorage.getItem('ignou_course_packets') ||
+        localStorage.getItem('ignou_packets_tracker');
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_PACKETS;
+      return [];
     }
   });
 
   const [bills, setBills] = useState<RemunerationBill[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.BILLS);
-      return saved ? JSON.parse(saved) : INITIAL_BILLS;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_BILLS;
+      return [];
     }
   });
 
-  // Mock Database Table: AssignmentSubmissions
+  // Database Table: AssignmentSubmissions
   const [assignmentSubmissions, setAssignmentSubmissions] = useState<AssignmentSubmission[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS);
-      return saved ? JSON.parse(saved) : INITIAL_ASSIGNMENT_SUBMISSIONS;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_ASSIGNMENT_SUBMISSIONS;
+      return [];
     }
   });
 
-  // Mock Database Table: RegistrationReceipts
+  // Database Table: RegistrationReceipts
   const [registrationReceipts, setRegistrationReceipts] = useState<RegistrationReceipt[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.REGISTRATION_RECEIPTS);
-      return saved ? JSON.parse(saved) : INITIAL_REGISTRATION_RECEIPTS;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_REGISTRATION_RECEIPTS;
+      return [];
     }
   });
 
-  // Module B Table: Course Evaluations (2_Course_Evaluation_Master)
+  // Module B Table: Course Evaluations (Course Ledger)
   const [courseEvaluations, setCourseEvaluations] = useState<CourseEvaluationRecord[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.COURSE_EVALUATIONS);
-      const data: CourseEvaluationRecord[] = saved ? JSON.parse(saved) : INITIAL_COURSE_EVALUATIONS;
+      const saved =
+        localStorage.getItem(STORAGE_KEYS.COURSE_EVALUATIONS) ||
+        localStorage.getItem('ignou_course_ledger');
+      const data: CourseEvaluationRecord[] = saved ? JSON.parse(saved) : [];
       return data.map((rec) => ({
         ...rec,
         lockedBy: rec.lockedBy?.includes('Aggarwal') ? 'Dr. Sant K. Gupta (Coordinator)' : rec.lockedBy,
       }));
     } catch {
-      return INITIAL_COURSE_EVALUATIONS;
+      return [];
     }
   });
 
@@ -521,6 +538,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.PACKETS, JSON.stringify(packets));
+      localStorage.setItem('ignou_course_packets', JSON.stringify(packets));
+      localStorage.setItem('ignou_packets_tracker', JSON.stringify(packets));
     } catch (e) {
       console.error('Failed to persist packets', e);
     }
@@ -650,9 +669,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return intakes.filter((r) => r.session === currentSession);
   }, [intakes, currentSession]);
 
+  const sessionCourseEvaluations = useMemo(() => {
+    return courseEvaluations.filter((c) => c.session === currentSession);
+  }, [courseEvaluations, currentSession]);
+
   const sessionPackets = useMemo(() => {
-    return packets.filter((p) => p.session === currentSession);
-  }, [packets, currentSession]);
+    if (sessionCourseEvaluations.length === 0) {
+      return [];
+    }
+    const activeCourses = new Set(sessionCourseEvaluations.map((c) => c.courseCode.toUpperCase()));
+    return packets.filter((p) => p.session === currentSession && activeCourses.has(p.courseCode.toUpperCase()));
+  }, [packets, currentSession, sessionCourseEvaluations]);
 
   const sessionBills = useMemo(() => {
     return bills.filter((b) => b.session === currentSession);
@@ -665,10 +692,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const sessionRegistrationReceipts = useMemo(() => {
     return registrationReceipts.filter((r) => r.session === currentSession);
   }, [registrationReceipts, currentSession]);
-
-  const sessionCourseEvaluations = useMemo(() => {
-    return courseEvaluations.filter((c) => c.session === currentSession);
-  }, [courseEvaluations, currentSession]);
 
   // Assignment Submissions Operations
   const updateSubmissionStatus = useCallback(
@@ -1248,10 +1271,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Module B: 2_Course_Evaluation_Master Allotment & Marks Engine Operations
   const allotEvaluatorToEvaluations = useCallback(
     (evaluationIds: string[], evaluatorId: string | null) => {
-      const ev = evaluatorId ? evaluators.find((e) => e.id === evaluatorId) : null;
+      const ev = evaluatorId
+        ? evaluators.find(
+            (e) =>
+              e.id === evaluatorId ||
+              e.evaluatorCode === evaluatorId ||
+              `${e.evaluatorName || e.name} (${e.evaluatorCode})` === evaluatorId
+          )
+        : null;
       const now = new Date().toISOString();
       const dateStr = now.split('T')[0];
       const allottedBy = currentRole === 'ADMIN' ? 'Coordinator Desk' : 'Counter Desk Official';
+      const evalDisplayName = ev ? `${ev.evaluatorName || ev.name} (${ev.evaluatorCode})` : null;
 
       setCourseEvaluations((prev) => {
         const updated = prev.map((rec) => {
@@ -1262,7 +1293,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ...rec,
             evaluatorId: ev ? ev.id : null,
             evaluatorCode: ev ? ev.evaluatorCode : null,
-            evaluatorName: ev ? ev.name : null,
+            evaluatorName: ev ? (ev.evaluatorName || ev.name) : null,
+            Allotted_Evaluator: evalDisplayName,
             allottedDate: ev ? dateStr : null,
             allottedBy: ev ? allottedBy : null,
             status: rec.isLocked
@@ -1288,8 +1320,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         evaluationIds.forEach((subId) => {
           postAllotEvaluator(subId, {
             id: ev.id,
-            name: ev.name,
+            name: ev.evaluatorName || ev.name,
             evaluatorCode: ev.evaluatorCode,
+            Allotted_Evaluator: evalDisplayName,
           }).catch((err) => console.warn(err));
         });
       }
@@ -1738,7 +1771,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const ev = evaluators.find((e) => e.id === evaluatorId || e.evaluatorCode === evaluatorId);
       const rate = rateOverride !== undefined ? Number(rateOverride) : Number(settings.remunerationRatePerScript || 27.50);
       const scriptAmount = totalScripts * rate;
-      const conveyanceAmount = Number(settings.conveyanceAllowancePerPacket || 150);
+      const conveyanceAmount = Number(settings.conveyanceAllowancePerPacket ?? 0.00);
       const grossAmount = scriptAmount + conveyanceAmount;
       const sessionCode = generateSessionCode(currentSession);
       const billNumber = `BILL-SC2033-${sessionCode}-${String(bills.length + 1).padStart(3, '0')}`;
@@ -1816,22 +1849,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const resetAllData = useCallback(() => {
     if (window.confirm('Are you sure you want to reset all data to initial institutional seed state? This cannot be undone.')) {
-      setSettings(INITIAL_SETTINGS);
-      setIntakes(INITIAL_INTAKE_RECORDS);
+      setSettings({
+        ...INITIAL_SETTINGS,
+        remunerationRatePerScript: 27.50,
+        conveyanceAllowancePerPacket: 0.00,
+        coordinationChargesPerScript: 0.00,
+      });
+      setIntakes([]); // Submissions register: []
       setEvaluators(INITIAL_EVALUATORS);
-      setPackets(INITIAL_PACKETS);
-      setBills(INITIAL_BILLS);
-      setAssignmentSubmissions(INITIAL_ASSIGNMENT_SUBMISSIONS);
-      setRegistrationReceipts(INITIAL_REGISTRATION_RECEIPTS);
-      setCourseEvaluations(INITIAL_COURSE_EVALUATIONS);
+      setPackets([]); // Course packets: [] (0 packets)
+      setBills([]);
+      setAssignmentSubmissions([]);
+      setRegistrationReceipts([]);
+      setCourseEvaluations([]); // Course ledger: []
       setCurrentSessionState(INITIAL_SETTINGS.defaultSession);
       setCurrentRole('ADMIN');
+      localStorage.removeItem('ignou_intake_register');
+      localStorage.removeItem('ignou_course_ledger');
+      localStorage.removeItem('ignou_course_packets');
+      localStorage.removeItem('ignou_marks_draft');
+      localStorage.removeItem('ignou_conveyance');
+      localStorage.removeItem('ignou_coordination');
       localStorage.removeItem('ignou_remuneration_rate');
       localStorage.removeItem('ignou_conveyance_allowance');
       localStorage.removeItem('ignou_coordination_charges');
+      localStorage.removeItem('ignou_packets_tracker');
+      localStorage.removeItem('ignou_sc2033_packets');
       localStorage.removeItem('ignou_sc2033_remuneration_rate');
       localStorage.removeItem('ignou_sc2033_conveyance_allowance');
       localStorage.removeItem('ignou_sc2033_coordination_charges');
+      localStorage.removeItem('ignou_sc2033_intakes');
+      localStorage.removeItem('ignou_sc2033_course_evaluations');
+      localStorage.removeItem('ignou_sc2033_bills');
+      localStorage.removeItem('ignou_sc2033_assignment_submissions');
+      localStorage.removeItem('ignou_sc2033_registration_receipts');
       localStorage.removeItem('custom_allowances');
       localStorage.clear();
       window.dispatchEvent(new CustomEvent('ignou_factory_reset'));
@@ -1891,6 +1942,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         openRegistrationReceiptModal,
         closeRegistrationReceiptModal,
         sessionPackets,
+        packets,
+        setPackets,
+        coursePackets: packets,
+        setCoursePackets: setPackets,
         createPacket,
         updatePacket,
         deletePacket,
