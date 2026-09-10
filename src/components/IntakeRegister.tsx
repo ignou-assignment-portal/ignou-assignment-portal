@@ -26,6 +26,7 @@ export const IntakeRegister: React.FC = () => {
     currentSession,
     sessionIntakes,
     allIntakes,
+    intakeRegister,
     allCourseEvaluations,
     updateIntakeRecord,
     deleteIntakeRecord,
@@ -62,10 +63,10 @@ export const IntakeRegister: React.FC = () => {
     }
 
     // 3. Check if any course for this student in courseLedger has status === "Locked" or isLocked
-    const activeSession = record.session || currentSession;
+    const activeSession = record.Session || record.session || currentSession;
     const isAnyCourseLocked = allCourseEvaluations.some(
       (ce) =>
-        (ce.intakeId === record.id || ce.enrollmentNo.trim() === record.enrollmentNo.trim()) &&
+        (ce.intakeId === record.id || ce.enrollmentNo.trim() === (record.Enrollment_No || record.enrollmentNo || '').trim()) &&
         ce.session.trim().toLowerCase() === activeSession.trim().toLowerCase() &&
         (ce.isLocked || ce.status === 'Locked' || ce.status === 'Marks Locked')
     );
@@ -75,9 +76,12 @@ export const IntakeRegister: React.FC = () => {
       return;
     }
 
+    const candName = record.Candidate_Name || record.candidateName || record["Candidate Name"] || record.studentName || '-';
+    const enr = record.Enrollment_No || record.enrollmentNo || record["Enrollment No"] || '-';
+
     // Confirmation dialog
     const confirmed = window.confirm(
-      `Are you sure you want to delete intake receipt for ${record.studentName} (${record.enrollmentNo})? This will also remove unpacked pending scripts from Course Ledger.`
+      `Are you sure you want to delete intake receipt for ${candName} (${enr})? This will also remove unpacked pending scripts from Course Ledger.`
     );
 
     if (confirmed) {
@@ -85,41 +89,75 @@ export const IntakeRegister: React.FC = () => {
     }
   };
 
-  // Filtered records strictly for active session
+  // Flexible Session Filtering: normalizes activeSession so whitespace or case does not hide valid rows
+  const cleanActiveSession = (currentSession || "July 2026").trim().toLowerCase();
+  const sessionRecords = useMemo(() => {
+    const list = (intakeRegister && intakeRegister.length > 0)
+      ? intakeRegister
+      : (allIntakes && allIntakes.length > 0)
+      ? allIntakes
+      : sessionIntakes;
+    return list.filter((row: any) => {
+      const rowSession = (row.Session || row.session || "July 2026").toString().trim().toLowerCase();
+      return rowSession === cleanActiveSession || cleanActiveSession === "all";
+    });
+  }, [intakeRegister, allIntakes, sessionIntakes, cleanActiveSession]);
+
+  // Filtered records supporting both snake_case and camelCase keys
   const filteredRecords = useMemo(() => {
-    return sessionIntakes.filter((record) => {
+    return sessionRecords.filter((row: any) => {
       const q = searchQuery.toLowerCase().trim();
+      const enrollment = String(row.Enrollment_No || row.enrollmentNo || row["Enrollment No"] || "");
+      const candidate = String(row.Candidate_Name || row.candidateName || row["Candidate Name"] || row.studentName || "");
+      const contact = String(row.Contact || row.contact || row["Contact Number"] || row.studentPhone || "");
+      const programme = String(row.Programme || row.programme || row.programmeCode || "");
+      const token = String(row.Token_No || row.tokenNo || row.token || row.id || "");
+      const rawCourses = row.Courses || row.courses || row.courseCodes || [];
+      const coursesStr = Array.isArray(rawCourses) ? rawCourses.join(", ") : String(rawCourses || "");
+
       const matchesQuery =
         !q ||
-        record.tokenNo.toLowerCase().includes(q) ||
-        record.enrollmentNo.toLowerCase().includes(q) ||
-        record.studentName.toLowerCase().includes(q) ||
-        record.programmeCode.toLowerCase().includes(q) ||
-        record.courseCodes.some((c) => c.toLowerCase().includes(q));
+        token.toLowerCase().includes(q) ||
+        enrollment.toLowerCase().includes(q) ||
+        candidate.toLowerCase().includes(q) ||
+        programme.toLowerCase().includes(q) ||
+        coursesStr.toLowerCase().includes(q) ||
+        contact.toLowerCase().includes(q);
 
-      const matchesStatus = selectedStatus === 'ALL' || record.status === selectedStatus;
-      const matchesMode = selectedMode === 'ALL' || record.submissionMode === selectedMode;
-      const matchesProgramme = selectedProgramme === 'ALL' || record.programmeCode === selectedProgramme;
+      const status = row.status || row.Status || 'Received';
+      const mode = row.submissionMode || row.mode || row['Submission Mode'] || 'In-Person (Desk)';
+
+      const matchesStatus = selectedStatus === 'ALL' || status === selectedStatus;
+      const matchesMode = selectedMode === 'ALL' || mode === selectedMode;
+      const matchesProgramme = selectedProgramme === 'ALL' || programme === selectedProgramme;
 
       return matchesQuery && matchesStatus && matchesMode && matchesProgramme;
     });
-  }, [sessionIntakes, searchQuery, selectedStatus, selectedMode, selectedProgramme]);
+  }, [sessionRecords, searchQuery, selectedStatus, selectedMode, selectedProgramme]);
 
   // Unique programmes in this session
   const sessionProgrammes = useMemo(() => {
-    return Array.from(new Set(sessionIntakes.map((r) => r.programmeCode)));
-  }, [sessionIntakes]);
+    return Array.from(
+      new Set(
+        sessionRecords
+          .map((r: any) => r.Programme || r.programme || r.programmeCode)
+          .filter(Boolean)
+      )
+    );
+  }, [sessionRecords]);
 
   // Counts across other sessions to demonstrate isolation
   const otherSessionCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    allIntakes.forEach((r) => {
-      if (r.session !== currentSession) {
-        counts[r.session] = (counts[r.session] || 0) + 1;
+    const list = (intakeRegister && intakeRegister.length > 0) ? intakeRegister : allIntakes;
+    list.forEach((r: any) => {
+      const rowSession = (r.Session || r.session || '').toString().trim();
+      if (rowSession.toLowerCase() !== cleanActiveSession) {
+        counts[rowSession] = (counts[rowSession] || 0) + 1;
       }
     });
     return counts;
-  }, [allIntakes, currentSession]);
+  }, [intakeRegister, allIntakes, cleanActiveSession]);
 
   const handleStatusChange = (id: string, newStatus: IntakeStatus) => {
     updateIntakeRecord(id, { status: newStatus });
@@ -285,8 +323,94 @@ export const IntakeRegister: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Register Table */}
-      <div className="bg-white border border-zinc-200 rounded-2xl shadow-xs overflow-hidden">
+      {/* Mobile Card View (screens < 768px) */}
+      <div className="block md:hidden space-y-3">
+        {filteredRecords.length === 0 ? (
+          <div className="p-8 text-center bg-white rounded-xl border border-zinc-200 text-zinc-400 text-sm">
+            No assignment submissions match your criteria in {currentSession}.
+          </div>
+        ) : (
+          filteredRecords.map((row: any) => {
+            const enrollment = row.Enrollment_No || row.enrollmentNo || row["Enrollment No"] || "-";
+            const candidateName = row.Candidate_Name || row.candidateName || row["Candidate Name"] || row.studentName || "-";
+            const contact = row.Contact || row.contact || row["Contact Number"] || row.studentPhone || "";
+            const programme = row.Programme || row.programme || row.programmeCode || "-";
+            const rawCourses = row.Courses || row.courses || row.courseCodes || [];
+            const coursesStr = Array.isArray(rawCourses) ? rawCourses.join(", ") : String(rawCourses || "-");
+            const timestamp = row.Timestamp ? String(row.Timestamp).split('T')[0] : (row.submissionDate || row.createdAt || "-");
+            const official = row.Official || row.handledBy || row.official || row.issuedBy || "-";
+            const token = row.Token_No || row.tokenNo || row.id || "";
+            const status = row.status || row.Status || 'Received';
+
+            return (
+              <div
+                key={row.id || token || enrollment}
+                style={{
+                  backgroundColor: '#fff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  marginBottom: '10px',
+                }}
+                className="shadow-xs"
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontWeight: 700, fontSize: '13px', color: '#0f172a' }}>{enrollment}</span>
+                  <span style={{ fontSize: '11px', background: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '4px' }}>{programme}</span>
+                </div>
+                <div style={{ fontSize: '13px', fontWeight: 600 }}>{candidateName}</div>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Courses: {coursesStr}</div>
+                {contact && contact !== '-' && (
+                  <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Ph: {contact}</div>
+                )}
+                <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{timestamp}</span>
+                  <span>By: {official}</span>
+                </div>
+                {/* Action Row */}
+                <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-zinc-100">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    status === 'Evaluated'
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : status === 'Under Evaluation'
+                      ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                      : 'bg-zinc-100 text-zinc-700 border border-zinc-200'
+                  }`}>
+                    {status}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleEditClick(row)}
+                      className="px-2 py-1 text-xs font-semibold text-zinc-700 bg-zinc-100 hover:bg-indigo-50 hover:text-indigo-700 rounded-md border border-zinc-200"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteClick(row)}
+                      className="px-2 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-600 hover:text-white rounded-md border border-rose-200"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openReceiptModal(row)}
+                      className="p-1 text-zinc-500 hover:text-indigo-600 rounded-md hover:bg-indigo-50"
+                      title="Print Slip"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Main Register Table (Desktop >= 768px) */}
+      <div className="hidden md:block bg-white border border-zinc-200 rounded-2xl shadow-xs overflow-hidden">
         <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
           <table className="w-full text-xs text-left min-w-[760px]">
             <thead className="bg-zinc-100/80 text-zinc-700 font-semibold border-b border-zinc-200">
@@ -309,34 +433,48 @@ export const IntakeRegister: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((record) => {
-                  const marksEntries = Object.entries(record.marks);
+                filteredRecords.map((record: any) => {
+                  const enrollment = record.Enrollment_No || record.enrollmentNo || record["Enrollment No"] || "-";
+                  const studentName = record.Candidate_Name || record.candidateName || record["Candidate Name"] || record.studentName || "-";
+                  const contact = record.Contact || record.contact || record["Contact Number"] || record.studentPhone || "";
+                  const programmeCode = record.Programme || record.programme || record.programmeCode || "-";
+                  const rawCourses = record.Courses || record.courses || record.courseCodes || [];
+                  const courseCodes: string[] = Array.isArray(rawCourses)
+                    ? rawCourses
+                    : String(rawCourses || "").split(',').map((c: string) => c.trim()).filter(Boolean);
+                  const tokenNo = record.Token_No || record.tokenNo || record.id || "-";
+                  const subDate = record.Timestamp ? String(record.Timestamp).split('T')[0] : (record.submissionDate || "-");
+                  const mode = record.submissionMode || record.mode || 'In-Person (Desk)';
+                  const status = record.status || record.Status || 'Received';
+                  const marks = record.marks || {};
+
+                  const marksEntries = Object.entries(marks);
                   const marksCount = marksEntries.filter(([_, m]) => m !== null).length;
-                  const allMarksEntered = marksCount === record.courseCodes.length;
+                  const allMarksEntered = marksCount > 0 && marksCount === courseCodes.length;
 
                   return (
-                    <tr key={record.id} className="hover:bg-zinc-50 transition">
+                    <tr key={record.id || tokenNo || enrollment} className="hover:bg-zinc-50 transition">
                       {/* Token & Date */}
                       <td className="py-3 px-4">
                         <div className="font-mono font-bold text-indigo-950 text-xs">
-                          {record.tokenNo}
+                          {tokenNo}
                         </div>
                         <div className="text-[11px] text-zinc-500 mt-0.5">
-                          {formatDate(record.submissionDate)}
+                          {formatDate(subDate)}
                         </div>
                       </td>
 
                       {/* Student Info */}
                       <td className="py-3 px-4">
                         <div className="font-semibold text-zinc-900">
-                          {record.studentName}
+                          {studentName}
                         </div>
                         <div className="font-mono text-zinc-500 text-[11px]">
-                          Enr: {record.enrollmentNo}
+                          Enr: {enrollment}
                         </div>
-                        {record.studentPhone && (
+                        {contact && (
                           <div className="text-[10px] text-zinc-400">
-                            {record.studentPhone}
+                            {contact}
                           </div>
                         )}
                       </td>
@@ -344,15 +482,15 @@ export const IntakeRegister: React.FC = () => {
                       {/* Programme */}
                       <td className="py-3 px-4">
                         <span className="font-bold text-zinc-800 bg-zinc-100 px-2 py-0.5 rounded text-[11px]">
-                          {record.programmeCode}
+                          {programmeCode}
                         </span>
                       </td>
 
                       {/* Courses */}
                       <td className="py-3 px-4">
                         <div className="flex flex-wrap gap-1 max-w-xs">
-                          {record.courseCodes.map((code) => {
-                            const mark = record.marks[code];
+                          {courseCodes.map((code: string) => {
+                            const mark = marks[code];
                             return (
                               <span
                                 key={code}
@@ -376,7 +514,7 @@ export const IntakeRegister: React.FC = () => {
                       {/* Mode */}
                       <td className="py-3 px-4">
                         <span className="text-zinc-700 text-[11px] block font-medium">
-                          {record.submissionMode}
+                          {mode}
                         </span>
                         {record.consignmentNo && (
                           <span className="font-mono text-[10px] text-zinc-500 block">
@@ -388,16 +526,16 @@ export const IntakeRegister: React.FC = () => {
                       {/* Status */}
                       <td className="py-3 px-4">
                         <select
-                          value={record.status}
+                          value={status}
                           onChange={(e) => handleStatusChange(record.id, e.target.value as IntakeStatus)}
                           className={`text-[11px] font-semibold rounded-lg px-2 py-1 border transition focus:outline-hidden ${
-                            record.status === 'Evaluated'
+                            status === 'Evaluated'
                               ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                              : record.status === 'Under Evaluation'
+                              : status === 'Under Evaluation'
                               ? 'bg-amber-50 text-amber-800 border-amber-200'
-                              : record.status === 'In Packet'
+                              : status === 'In Packet'
                               ? 'bg-blue-50 text-blue-800 border-blue-200'
-                              : record.status === 'Marks Uploaded'
+                              : status === 'Marks Uploaded'
                               ? 'bg-purple-50 text-purple-800 border-purple-200'
                               : 'bg-zinc-100 text-zinc-700 border-zinc-200'
                           }`}
@@ -416,11 +554,11 @@ export const IntakeRegister: React.FC = () => {
                           {allMarksEntered ? (
                             <span className="text-emerald-700 font-semibold flex items-center gap-1">
                               <CheckCircle2 className="w-3.5 h-3.5" />
-                              All Awarded ({marksCount}/{record.courseCodes.length})
+                              All Awarded ({marksCount}/{courseCodes.length})
                             </span>
                           ) : marksCount > 0 ? (
                             <span className="text-amber-700 font-medium">
-                              Partial ({marksCount}/{record.courseCodes.length})
+                              Partial ({marksCount}/{courseCodes.length})
                             </span>
                           ) : (
                             <span className="text-zinc-400">Pending Evaluation</span>

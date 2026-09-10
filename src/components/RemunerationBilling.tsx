@@ -1299,7 +1299,7 @@ export const RemunerationBilling: React.FC = () => {
                   </div>
                   <div className="text-center">
                     <div className="font-serif italic text-indigo-950 font-bold">
-                      {settings.coordinatorName || 'Dr. Sant K. Gupta'}
+                      {settings.coordinatorName || 'Dr. Sant Kumar Gupta'}
                     </div>
                     <div className="border-t border-zinc-400 pt-0.5 font-bold text-zinc-900">
                       Coordinator Signature & Institutional Seal
@@ -1507,7 +1507,7 @@ export const RemunerationBilling: React.FC = () => {
                 </div>
 
                 <div className="text-center">
-                  <div className="font-serif italic text-indigo-950 font-bold">{settings.coordinatorName || 'Dr. Sant K. Gupta'}</div>
+                  <div className="font-serif italic text-indigo-950 font-bold">{settings.coordinatorName || 'Dr. Sant Kumar Gupta'}</div>
                   <div className="border-t border-zinc-400 pt-1 font-bold text-zinc-900 text-[11px]">{settings.coordinatorDesignation || 'Coordinator, IGNOU SC-2033'}</div>
                 </div>
               </div>

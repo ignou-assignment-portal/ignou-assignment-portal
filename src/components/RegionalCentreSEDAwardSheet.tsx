@@ -99,17 +99,23 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
 
   // Dynamically extract Academic Counsellor from corresponding courseLedger records:
   const currentCourseLedgerRecords = useMemo(() => {
-    return (courseLedger || []).filter((r: any) => 
-      ((r.Session || r.session) === currentSession) &&
-      ((r.Course_Code || r.courseCode) === selectedCourse)
-    );
+    return (courseLedger || []).filter((r: any) => {
+      const rowSession = (r.Session || r.session || "").toString().trim().toLowerCase();
+      const activeSes = (currentSession || "").toString().trim().toLowerCase();
+      const course = (r.Course_Code || r.courseCode || "").toString().trim().toUpperCase();
+      const targetCourse = (selectedCourse || "").toString().trim().toUpperCase();
+      return (rowSession === activeSes || activeSes === "all") && course === targetCourse;
+    });
   }, [courseLedger, currentSession, selectedCourse]);
 
   const detectedEvaluator = useMemo(() => {
     const found = currentCourseLedgerRecords.find(
-      (r: any) => r.Allotted_Evaluator && r.Allotted_Evaluator !== 'Unallotted' && r.Allotted_Evaluator.trim() !== ''
-    )?.Allotted_Evaluator;
-    if (found) return found;
+      (r: any) => {
+        const ev = r.Allotted_Evaluator || r.allottedEvaluator;
+        return ev && ev !== 'Unallotted' && ev.trim() !== '';
+      }
+    );
+    if (found) return found.Allotted_Evaluator || found.allottedEvaluator;
 
     // Fallback to evaluatorName or evaluatorId from sessionCourseEvaluations
     const sample = sessionCourseEvaluations.find(
@@ -330,12 +336,12 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 border border-zinc-900 p-3 rounded-lg text-xs bg-zinc-50/60 print:bg-white">
           <div>
             <span className="text-[10px] text-zinc-500 uppercase font-bold block">
-              Study Centre Code
+              Study Centre Code & Name
             </span>
             <span className="font-mono font-black text-zinc-950 text-sm">
-              {settings.centreCode}
+              {settings.centreCode || 'SC-2033'}
             </span>
-            <div className="text-[10px] text-zinc-600 font-medium">{settings.centreName || "SC-2033 (S.D. Jain Girls' College, Dimapur)"}</div>
+            <div className="text-[10px] text-zinc-700 font-semibold">{settings.centreName || "SC-2033 (S.D. Jain Girls' College, Dimapur)"}</div>
           </div>
 
           <div>
@@ -343,9 +349,9 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
               Regional Centre
             </span>
             <span className="font-bold text-zinc-950">
-              {settings.regionalCentreCode}
+              {settings.regionalCentreCode || 'RC-20 Kohima'}
             </span>
-            <div className="text-[10px] text-zinc-600">Regional Centre Kohima</div>
+            <div className="text-[10px] text-zinc-700 font-semibold">RC-20 Kohima (Regional Centre Kohima)</div>
           </div>
 
           <div>
@@ -532,12 +538,12 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
               </p>
             </div>
             <div className="border-t border-dashed border-zinc-400 pt-2 text-center">
-              <div className="font-serif italic text-indigo-900 font-bold">
+              <div className="font-serif italic text-indigo-900 font-bold text-sm">
                 {settings.coordinatorName || 'Dr. Sant Kumar Gupta'}
               </div>
               <div className="font-bold text-[11px] text-zinc-900">{settings.coordinatorDesignation || 'Coordinator, IGNOU SC-2033'}</div>
-              <div className="text-[10px] font-mono text-zinc-500">
-                {settings.institutionName || "SC-2033 (S.D. Jain Girls' College, Dimapur)"}
+              <div className="text-[10px] font-mono text-zinc-600 font-semibold">
+                SC-2033 (S.D. Jain Girls' College, Dimapur)
               </div>
             </div>
           </div>

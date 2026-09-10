@@ -51,6 +51,9 @@ interface AppContextType {
   // Intake Master (Strictly Session Filtered)
   sessionIntakes: IntakeRecord[];
   allIntakes: IntakeRecord[];
+  intakeRegister: IntakeRecord[];
+  setIntakeRegister: React.Dispatch<React.SetStateAction<IntakeRecord[]>>;
+  syncStatus: string;
   addIntakeRecord: (record: Omit<IntakeRecord, 'id' | 'session' | 'tokenNo' | 'createdAt' | 'marks'> & { marks?: Record<string, number | null> }) => IntakeRecord;
   updateIntakeRecord: (id: string, updates: Partial<IntakeRecord>) => void;
   editIntakeEntry: (params: {
@@ -426,6 +429,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [isSyncingSheets, setIsSyncingSheets] = useState<boolean>(false);
+  const [syncStatus, setSyncStatus] = useState<string>('Sheets Connected');
   const [selectedReceiptRecord, setSelectedReceiptRecord] = useState<IntakeRecord | null>(null);
   const [selectedRegistrationReceipt, setSelectedRegistrationReceipt] = useState<RegistrationReceipt | null>(null);
 
@@ -702,36 +706,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isAdmin = !isUrlLockedDeskMode && currentRole === 'ADMIN';
   const isOfficial = isUrlLockedDeskMode || currentRole === 'OFFICIAL';
 
-  // Strict Session Isolation:
+  // Flexible Session Isolation (Normalizes case and whitespace):
   // sessionIntakes, sessionPackets, sessionBills, sessionAssignmentSubmissions, sessionRegistrationReceipts
-  // ONLY return records for active session
+  const cleanActiveSession = (currentSession || "July 2026").trim().toLowerCase();
+
   const sessionIntakes = useMemo(() => {
-    return intakes.filter((r) => r.session === currentSession);
-  }, [intakes, currentSession]);
+    return intakes.filter((r: any) => {
+      const rowSession = (r.Session || r.session || "July 2026").toString().trim().toLowerCase();
+      return rowSession === cleanActiveSession || cleanActiveSession === "all";
+    });
+  }, [intakes, cleanActiveSession]);
 
   const sessionCourseEvaluations = useMemo(() => {
-    return courseEvaluations.filter((c) => c.session === currentSession);
-  }, [courseEvaluations, currentSession]);
+    return courseEvaluations.filter((c: any) => {
+      const rowSession = (c.Session || c.session || "July 2026").toString().trim().toLowerCase();
+      return rowSession === cleanActiveSession || cleanActiveSession === "all";
+    });
+  }, [courseEvaluations, cleanActiveSession]);
 
   const sessionPackets = useMemo(() => {
     if (sessionCourseEvaluations.length === 0) {
       return [];
     }
     const activeCourses = new Set(sessionCourseEvaluations.map((c) => c.courseCode.toUpperCase()));
-    return packets.filter((p) => p.session === currentSession && activeCourses.has(p.courseCode.toUpperCase()));
-  }, [packets, currentSession, sessionCourseEvaluations]);
+    return packets.filter((p: any) => {
+      const rowSession = (p.Session || p.session || "July 2026").toString().trim().toLowerCase();
+      return (rowSession === cleanActiveSession || cleanActiveSession === "all") && activeCourses.has((p.courseCode || p.Course_Code || '').toUpperCase());
+    });
+  }, [packets, cleanActiveSession, sessionCourseEvaluations]);
 
   const sessionBills = useMemo(() => {
-    return bills.filter((b) => b.session === currentSession);
-  }, [bills, currentSession]);
+    return bills.filter((b: any) => {
+      const rowSession = (b.Session || b.session || "July 2026").toString().trim().toLowerCase();
+      return rowSession === cleanActiveSession || cleanActiveSession === "all";
+    });
+  }, [bills, cleanActiveSession]);
 
   const sessionAssignmentSubmissions = useMemo(() => {
-    return assignmentSubmissions.filter((s) => s.session === currentSession);
-  }, [assignmentSubmissions, currentSession]);
+    return assignmentSubmissions.filter((s: any) => {
+      const rowSession = (s.Session || s.session || "July 2026").toString().trim().toLowerCase();
+      return rowSession === cleanActiveSession || cleanActiveSession === "all";
+    });
+  }, [assignmentSubmissions, cleanActiveSession]);
 
   const sessionRegistrationReceipts = useMemo(() => {
-    return registrationReceipts.filter((r) => r.session === currentSession);
-  }, [registrationReceipts, currentSession]);
+    return registrationReceipts.filter((r: any) => {
+      const rowSession = (r.Session || r.session || "July 2026").toString().trim().toLowerCase();
+      return rowSession === cleanActiveSession || cleanActiveSession === "all";
+    });
+  }, [registrationReceipts, cleanActiveSession]);
 
   // Assignment Submissions Operations
   const updateSubmissionStatus = useCallback(
@@ -1799,6 +1822,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // 1. Google Sheets Backend Hydration (doGet)
   const syncGoogleSheets = useCallback(async (isSilent = false) => {
     setIsSyncingSheets(true);
+    setSyncStatus('Syncing...');
     try {
       const res = await doGet();
       if (res.success) {
@@ -1806,23 +1830,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setIntakes((prev) => {
             const map = new Map(prev.map((i) => [i.tokenNo || i.id, i]));
             res.intakes?.forEach((item: any) => {
-              const enr = item.Enrollment_No || item.enrollmentNo || item.studentId || '';
-              const sess = item.Session || item.session || currentSession;
+              const enr = item.Enrollment_No || item.enrollmentNo || item.studentId || item['Enrollment No'] || '';
+              const sess = item.Session || item.session || currentSession || 'July 2026';
               const key = item.Token_No || item.tokenNo || item.id || `intake-${enr}-${sess}`;
+              const candName = item.Candidate_Name || item.candidateName || item.studentName || item['Candidate Name'] || '';
+              const contact = item.Contact || item.contact || item.studentPhone || item['Contact Number'] || '';
+              const prog = item.Programme || item.programme || item.programmeCode || '';
               const courseRaw = item.Courses || item.courses || item.courseCodes || item.Course_Codes || [];
               const courseCodesArr = Array.isArray(courseRaw)
                 ? courseRaw
                 : typeof courseRaw === 'string'
                 ? courseRaw.split(',').map((c: string) => c.trim()).filter(Boolean)
                 : [];
+              const ts = item.Timestamp || item.timestamp || item.createdAt || new Date().toISOString();
+              const official = item.Official || item.handledBy || item.official || 'Desk Official';
               map.set(key, {
                 id: item.id || key,
                 tokenNo: item.tokenNo || item.Token_No || key,
                 enrollmentNo: enr,
-                studentName: item.Candidate_Name || item.candidateName || item.studentName || '',
-                studentPhone: item.Contact || item.contact || item.studentPhone || '',
+                studentName: candName,
+                studentPhone: contact,
                 studentEmail: item.Email || item.studentEmail || '',
-                programmeCode: item.Programme || item.programme || item.programmeCode || '',
+                programmeCode: prog,
                 courseCodes: courseCodesArr,
                 submissionDate: item.Timestamp ? String(item.Timestamp).split('T')[0] : (item.submissionDate || new Date().toISOString().split('T')[0]),
                 submissionMode: item.submissionMode || 'In-Person (Desk)',
@@ -1831,8 +1860,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 status: item.status || 'Received',
                 marks: item.marks || {},
                 remarks: item.remarks || '',
-                createdAt: item.Timestamp || item.createdAt || new Date().toISOString(),
-              });
+                createdAt: ts,
+                // Also store raw / alternate keys for transparent access
+                Enrollment_No: enr,
+                Candidate_Name: candName,
+                Contact: contact,
+                Programme: prog,
+                Courses: courseCodesArr,
+                Timestamp: ts,
+                Official: official,
+              } as any);
+            });
+            return Array.from(map.values());
+          });
+
+          // Also populate registrationReceipts so Receipts Register reflects all synced intakes
+          setRegistrationReceipts((prev) => {
+            const map = new Map(prev.map((r) => [r.id || r.receiptNumber, r]));
+            res.intakes?.forEach((item: any) => {
+              const enr = item.Enrollment_No || item.enrollmentNo || item.studentId || item['Enrollment No'] || '';
+              const sess = item.Session || item.session || currentSession || 'July 2026';
+              const candName = item.Candidate_Name || item.candidateName || item.studentName || item['Candidate Name'] || '';
+              const contact = item.Contact || item.contact || item.studentPhone || item['Contact Number'] || '';
+              const prog = item.Programme || item.programme || item.programmeCode || '';
+              const official = item.Official || item.handledBy || item.official || item.issuedBy || 'Desk Official';
+              const ts = item.Timestamp || item.timestamp || item.createdAt || item.submissionDate || new Date().toISOString();
+              const token = item.Token_No || item.tokenNo || item.id || `REG-${enr}-${sess}`;
+              const courseRaw = item.Courses || item.courses || item.courseCodes || item.Course_Codes || [];
+              const courseCodesArr = Array.isArray(courseRaw)
+                ? courseRaw
+                : typeof courseRaw === 'string'
+                ? courseRaw.split(',').map((c: string) => c.trim()).filter(Boolean)
+                : [];
+              const key = item.id || token;
+              map.set(key, {
+                id: key,
+                receiptNumber: item.receiptNumber || token,
+                studentId: enr,
+                studentName: candName,
+                studentPhone: contact,
+                programmeCode: prog,
+                session: sess,
+                registeredCourses: courseCodesArr,
+                issuedBy: official,
+                issuedAt: ts,
+                remarks: item.remarks || '',
+                // Dual keys
+                Enrollment_No: enr,
+                Candidate_Name: candName,
+                Contact: contact,
+                Programme: prog,
+                Courses: courseCodesArr,
+                Timestamp: ts,
+                Official: official,
+              } as any);
             });
             return Array.from(map.values());
           });
@@ -1924,12 +2005,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           lastSyncedAt: now.toISOString(),
         }))
       );
+
+      const receiptsCount = res.intakes?.length || 0;
+      const scriptsCount = res.courseLedger?.length || 0;
+      const statusText = `Synced (${receiptsCount} receipts, ${scriptsCount} scripts)`;
+      setSyncStatus(statusText);
+      if (!isSilent) {
+        showToast(statusText, 'success');
+      }
     } catch (err) {
       console.warn('[Google Sheets Sync Error]:', err);
+      setSyncStatus('Sync Failed');
+      if (!isSilent) {
+        showToast('Sync failed. Please check network.', 'warning');
+      }
     } finally {
       setIsSyncingSheets(false);
     }
-  }, [currentSession]);
+  }, [currentSession, showToast]);
 
   const [isSyncingEvaluators, setIsSyncingEvaluators] = useState<boolean>(false);
 
@@ -2132,6 +2225,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         verifyAndSetAdminRole,
         sessionIntakes,
         allIntakes: intakes,
+        intakeRegister: intakes,
+        setIntakeRegister: setIntakes,
         addIntakeRecord,
         updateIntakeRecord,
         editIntakeEntry,
@@ -2171,6 +2266,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateEvaluator,
         deleteEvaluator,
         isSyncingSheets,
+        syncStatus,
         syncGoogleSheets,
         isSyncingEvaluators,
         syncEvaluatorsDirectory,

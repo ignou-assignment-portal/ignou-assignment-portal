@@ -54,6 +54,7 @@ export const IntakeDesk: React.FC = () => {
     openRegistrationReceiptModal,
     recordStudentAssignmentSubmissions,
     sessionRegistrationReceipts,
+    allRegistrationReceipts,
   } = useApp();
 
   // Form states
@@ -84,6 +85,18 @@ export const IntakeDesk: React.FC = () => {
   // Sub-view toggle for Desk Official
   const [deskView, setDeskView] = useState<'REGISTER' | 'SUBMISSIONS_REGISTER' | 'RECEIPTS'>('REGISTER');
   const [editingRecord, setEditingRecord] = useState<any | null>(null);
+
+  // Flexible Session Filtering: normalizes activeSession so whitespace or case does not hide valid rows
+  const cleanActiveSession = (currentSession || "July 2026").trim().toLowerCase();
+  const filteredReceipts = useMemo(() => {
+    const list = (allRegistrationReceipts && allRegistrationReceipts.length > 0)
+      ? allRegistrationReceipts
+      : sessionRegistrationReceipts;
+    return list.filter((row: any) => {
+      const rowSession = (row.Session || row.session || "July 2026").toString().trim().toLowerCase();
+      return rowSession === cleanActiveSession || cleanActiveSession === "all";
+    });
+  }, [allRegistrationReceipts, sessionRegistrationReceipts, cleanActiveSession]);
 
   const handleEditClick = (record: any) => {
     setEditingRecord(record);
@@ -1267,11 +1280,73 @@ export const IntakeDesk: React.FC = () => {
               </p>
             </div>
             <span className="px-3 py-1 rounded-full text-xs font-bold bg-teal-100 text-teal-900 self-start sm:self-auto">
-              Total Receipts: {sessionRegistrationReceipts.length}
+              Total Receipts: {filteredReceipts.length}
             </span>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Mobile Cards View (screens < 768px) */}
+          <div className="block md:hidden space-y-3 p-4">
+            {filteredReceipts.length === 0 ? (
+              <div className="p-8 text-center bg-white rounded-xl border border-zinc-200 text-zinc-400 text-sm">
+                No registration receipts issued yet in cycle {currentSession}.
+              </div>
+            ) : (
+              filteredReceipts.map((rcpt: any) => {
+                const enrollment = rcpt.Enrollment_No || rcpt.enrollmentNo || rcpt.studentId || rcpt["Enrollment No"] || "-";
+                const candidateName = rcpt.Candidate_Name || rcpt.candidateName || rcpt.studentName || rcpt["Candidate Name"] || "-";
+                const contact = rcpt.Contact || rcpt.contact || rcpt.studentPhone || rcpt["Contact Number"] || "";
+                const programme = rcpt.Programme || rcpt.programme || rcpt.programmeCode || "-";
+                const rawCourses = rcpt.Courses || rcpt.courses || rcpt.registeredCourses || [];
+                const coursesStr = Array.isArray(rawCourses) ? rawCourses.join(", ") : String(rawCourses || "-");
+                const timestamp = rcpt.Timestamp || rcpt.timestamp || rcpt.issuedAt || rcpt.createdAt || "-";
+                const official = rcpt.Official || rcpt.handledBy || rcpt.official || rcpt.issuedBy || "-";
+                const rcptNo = rcpt.receiptNumber || rcpt.Token_No || rcpt.tokenNo || rcpt.id || "-";
+
+                return (
+                  <div
+                    key={rcpt.id || rcptNo || enrollment}
+                    style={{
+                      backgroundColor: '#fff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '8px',
+                      padding: '12px',
+                      marginBottom: '10px',
+                    }}
+                    className="shadow-xs"
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ fontWeight: 700, fontSize: '13px', color: '#0f172a' }}>{enrollment}</span>
+                      <span style={{ fontSize: '11px', background: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '4px' }}>{programme}</span>
+                    </div>
+                    <div style={{ fontSize: '13px', fontWeight: 600 }}>{candidateName}</div>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Courses: {coursesStr}</div>
+                    {contact && contact !== '-' && (
+                      <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Ph: {contact}</div>
+                    )}
+                    <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>{typeof timestamp === 'string' && timestamp.includes('T') ? timestamp.split('T')[0] : timestamp}</span>
+                      <span>By: {official}</span>
+                    </div>
+                    {/* Action Row */}
+                    <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-zinc-100">
+                      <span className="font-mono text-[10px] text-zinc-500 font-semibold">{rcptNo}</span>
+                      <button
+                        type="button"
+                        onClick={() => openRegistrationReceiptModal(rcpt)}
+                        className="px-2.5 py-1 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-md inline-flex items-center gap-1 shadow-xs cursor-pointer"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>Print Slip</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Desktop Table View (screens >= 768px) */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-zinc-50 text-zinc-600 uppercase text-[10px] font-bold border-b border-zinc-200">
                 <tr>
@@ -1285,72 +1360,88 @@ export const IntakeDesk: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-200">
-                {sessionRegistrationReceipts.length === 0 ? (
+                {filteredReceipts.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-12 text-center text-zinc-400">
                       No registration receipts issued yet in cycle {currentSession}.
                     </td>
                   </tr>
                 ) : (
-                  sessionRegistrationReceipts.map((rcpt) => (
-                    <tr key={rcpt.id} className="hover:bg-zinc-50/70 transition">
-                      <td className="py-3 px-4 font-mono font-bold text-indigo-950">
-                        {rcpt.receiptNumber}
-                        <div className="text-[10px] text-zinc-400 font-sans font-normal">
-                          {formatDateTime(rcpt.issuedAt)}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-zinc-900">{rcpt.studentName}</div>
-                        <div className="text-zinc-500 font-mono text-[11px]">ID: {rcpt.studentId}</div>
-                        {rcpt.studentPhone && (
-                          <div className="text-zinc-400 text-[10px]">Ph: {rcpt.studentPhone}</div>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 font-bold text-zinc-700">
-                        <span className="px-2 py-0.5 rounded bg-zinc-100 text-zinc-900 font-mono">
-                          {rcpt.programmeCode}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex flex-wrap gap-1 max-w-xs">
-                          {rcpt.registeredCourses.map((c) => (
-                            <span
-                              key={c}
-                              className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-900 font-mono text-[10px] font-bold border border-indigo-200"
-                            >
-                              {c}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-zinc-700 font-medium">
-                        <div className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-zinc-100 text-zinc-800">
-                          In-Person / Verified
-                        </div>
-                        {rcpt.remarks && (
-                          <div className="text-[10px] text-zinc-400 italic mt-0.5">
-                            {rcpt.remarks}
+                  filteredReceipts.map((rcpt: any) => {
+                    const enrollment = rcpt.Enrollment_No || rcpt.enrollmentNo || rcpt.studentId || rcpt["Enrollment No"] || "-";
+                    const candidateName = rcpt.Candidate_Name || rcpt.candidateName || rcpt.studentName || rcpt["Candidate Name"] || "-";
+                    const contact = rcpt.Contact || rcpt.contact || rcpt.studentPhone || rcpt["Contact Number"] || "";
+                    const programme = rcpt.Programme || rcpt.programme || rcpt.programmeCode || "-";
+                    const rawCourses = rcpt.Courses || rcpt.courses || rcpt.registeredCourses || [];
+                    const coursesArr = Array.isArray(rawCourses)
+                      ? rawCourses
+                      : typeof rawCourses === 'string'
+                      ? rawCourses.split(',').map((c: string) => c.trim()).filter(Boolean)
+                      : [];
+                    const timestamp = rcpt.Timestamp || rcpt.timestamp || rcpt.issuedAt || rcpt.createdAt || "-";
+                    const official = rcpt.Official || rcpt.handledBy || rcpt.official || rcpt.issuedBy || "-";
+                    const rcptNo = rcpt.receiptNumber || rcpt.Token_No || rcpt.tokenNo || rcpt.id || "-";
+
+                    return (
+                      <tr key={rcpt.id || rcptNo || enrollment} className="hover:bg-zinc-50/70 transition">
+                        <td className="py-3 px-4 font-mono font-bold text-indigo-950">
+                          {rcptNo}
+                          <div className="text-[10px] text-zinc-400 font-sans font-normal">
+                            {formatDateTime(timestamp)}
                           </div>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-zinc-600">
-                        <div className="font-semibold text-zinc-900">{rcpt.issuedBy}</div>
-                        <div className="text-emerald-700 text-[10px] font-bold">
-                          Zero-Fee Intake
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => openRegistrationReceiptModal(rcpt)}
-                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-xs transition inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>Print Slip</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-zinc-900">{candidateName}</div>
+                          <div className="text-zinc-500 font-mono text-[11px]">ID: {enrollment}</div>
+                          {contact && (
+                            <div className="text-zinc-400 text-[10px]">Ph: {contact}</div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 font-bold text-zinc-700">
+                          <span className="px-2 py-0.5 rounded bg-zinc-100 text-zinc-900 font-mono">
+                            {programme}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex flex-wrap gap-1 max-w-xs">
+                            {coursesArr.map((c: string) => (
+                              <span
+                                key={c}
+                                className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-900 font-mono text-[10px] font-bold border border-indigo-200"
+                              >
+                                {c}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-zinc-700 font-medium">
+                          <div className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-zinc-100 text-zinc-800">
+                            In-Person / Verified
+                          </div>
+                          {rcpt.remarks && (
+                            <div className="text-[10px] text-zinc-400 italic mt-0.5">
+                              {rcpt.remarks}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-zinc-600">
+                          <div className="font-semibold text-zinc-900">{official}</div>
+                          <div className="text-emerald-700 text-[10px] font-bold">
+                            Zero-Fee Intake
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={() => openRegistrationReceiptModal(rcpt)}
+                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-xs transition inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>Print Slip</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

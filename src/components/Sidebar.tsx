@@ -50,6 +50,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
     toggleSidebarHidden,
     isSidebarCollapsed,
     toggleSidebarCollapsed,
+    syncGoogleSheets,
+    isSyncingSheets,
+    syncStatus,
   } = useApp();
 
   // Guard against navigating to Stage 4 or Settings in URL locked mode
@@ -396,6 +399,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Mobile Google Sheets Sync Button */}
+        <div className="md:hidden px-3 pb-2 pt-1">
+          <button
+            type="button"
+            onClick={() => syncGoogleSheets(false)}
+            disabled={isSyncingSheets}
+            style={{ touchAction: 'manipulation' }}
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold transition shadow-xs disabled:opacity-50 cursor-pointer"
+          >
+            <span className={`w-2 h-2 rounded-full bg-white ${isSyncingSheets ? 'animate-ping' : ''}`} />
+            <span>{syncStatus || (isSyncingSheets ? 'Syncing...' : 'Sync Google Sheets')}</span>
+          </button>
         </div>
 
         {/* Sidebar Footer */}

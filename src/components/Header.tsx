@@ -39,6 +39,7 @@ export const Header: React.FC = () => {
     isSyncingEvaluators,
     syncEvaluatorsDirectory,
     lastSheetSync,
+    syncStatus,
   } = useApp();
 
   const [isSessionDropdownOpen, setIsSessionDropdownOpen] = useState(false);
@@ -259,13 +260,17 @@ export const Header: React.FC = () => {
           {/* Google Sheets Backend Sync Button */}
           <button
             id="btn-sync-sheets"
+            type="button"
             onClick={() => syncGoogleSheets(false)}
             disabled={isSyncingSheets}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+            style={{ touchAction: 'manipulation' }}
+            className="relative z-10 flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-semibold transition cursor-pointer disabled:opacity-50 select-none"
             title={`Hydrate Intake Register & Course Ledger from Google Sheets (Last synced: ${lastSheetSync})`}
           >
             <span className={`w-2 h-2 rounded-full bg-emerald-500 ${isSyncingSheets ? 'animate-ping' : ''}`}></span>
-            <span className="font-mono text-[11px]">{isSyncingSheets ? 'Syncing...' : 'Sheets Connected'}</span>
+            <span className="font-mono text-[11px]">
+              {syncStatus || (isSyncingSheets ? 'Syncing...' : 'Sheets Connected')}
+            </span>
           </button>
 
           {/* Sync Evaluators Directory Button */}
