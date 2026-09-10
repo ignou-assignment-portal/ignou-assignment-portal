@@ -43,6 +43,8 @@ export const CourseEvaluationMaster: React.FC = () => {
     isAdmin,
     currentRole,
     settings,
+    isSyncingSheets,
+    syncGoogleSheets,
     isSyncingEvaluators,
     syncEvaluatorsDirectory,
     showToast,
@@ -178,6 +180,20 @@ export const CourseEvaluationMaster: React.FC = () => {
       }
       return r;
     }));
+
+    // Keep courseEvaluations (sessionCourseEvaluations) in sync as well
+    const matchedEv = evaluators.find((e) =>
+      e.id === selectedEvaluator ||
+      e.evaluatorCode === selectedEvaluator ||
+      `${e.evaluatorName || e.name} (${e.evaluatorCode})` === selectedEvaluator ||
+      (selectedEvaluator && (
+        selectedEvaluator.toLowerCase().includes((e.name || e.evaluatorName || '').toLowerCase()) ||
+        (e.evaluatorCode && selectedEvaluator.toLowerCase().includes(e.evaluatorCode.toLowerCase()))
+      ))
+    );
+    if (row.id) {
+      allotEvaluatorToEvaluations([row.id], matchedEv ? matchedEv.id : null);
+    }
 
     // Dispatch POST request to Google Apps Script:
     try {
@@ -354,13 +370,24 @@ export const CourseEvaluationMaster: React.FC = () => {
 
           <div className="flex items-center gap-2 flex-wrap">
             <button
+              onClick={() => syncGoogleSheets(false)}
+              disabled={isSyncingSheets}
+              id="sync-sheets-stage2-btn"
+              className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50 pointer-events-auto min-h-[38px]"
+              title="Sync Stage 2 Course Ledger with Google Sheets Backend"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin text-emerald-600' : 'text-emerald-700'}`} />
+              <span>{isSyncingSheets ? 'Syncing Sheets...' : 'Sync Sheets'}</span>
+            </button>
+
+            <button
               onClick={syncEvaluatorsDirectory}
               disabled={isSyncingEvaluators}
               id="sync-evaluators-stage2-btn"
-              className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50 pointer-events-auto min-h-[38px]"
               title="Reload latest Academic Counsellors / Evaluators Master Directory from Google Sheets"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingEvaluators ? 'animate-spin text-emerald-600' : 'text-emerald-700'}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingEvaluators ? 'animate-spin text-indigo-600' : 'text-indigo-700'}`} />
               <span>{isSyncingEvaluators ? 'Syncing Evaluators...' : 'Sync Evaluators Directory'}</span>
             </button>
 
@@ -633,8 +660,8 @@ export const CourseEvaluationMaster: React.FC = () => {
 
       {/* Primary Unpacked Ledger Table */}
       <div className="bg-white border border-zinc-200 rounded-2xl shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+        <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <table className="w-full text-left border-collapse text-xs min-w-[950px]">
             <thead>
               <tr className="bg-zinc-50/80 border-b border-zinc-200 text-zinc-600 font-bold uppercase tracking-wider text-[10px]">
                 <th className="p-3.5 w-10 text-center">

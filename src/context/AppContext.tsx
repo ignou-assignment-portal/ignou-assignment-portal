@@ -230,19 +230,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const saved = localStorage.getItem('ignou_sc2033_settings') || localStorage.getItem(STORAGE_KEYS.SETTINGS);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.coordinatorName === 'Dr. V. K. Aggarwal' || !parsed.coordinatorName) {
-          parsed.coordinatorName = 'Dr. Sant K. Gupta';
+        if (!parsed.coordinatorName || parsed.coordinatorName === 'Dr. V. K. Aggarwal' || parsed.coordinatorName === 'Dr. Sant K. Gupta') {
+          parsed.coordinatorName = 'Dr. Sant Kumar Gupta';
         }
-        if (!parsed.coordinatorDesignation) {
+        if (!parsed.coordinatorDesignation || parsed.coordinatorDesignation === 'Coordinator') {
           parsed.coordinatorDesignation = 'Coordinator, IGNOU SC-2033';
         }
         if (!parsed.centreCode) {
           parsed.centreCode = 'SC-2033';
         }
+        if (!parsed.centreName || parsed.centreName === 'IGNOU Study Centre - 2033' || parsed.centreName.includes('Delhi')) {
+          parsed.centreName = "SC-2033 (S.D. Jain Girls' College, Dimapur)";
+        }
+        if (!parsed.institutionName || parsed.institutionName.includes('Delhi')) {
+          parsed.institutionName = "SC-2033 (S.D. Jain Girls' College, Dimapur)";
+        }
         if (!parsed.regionalCentre) {
           parsed.regionalCentre = 'RC-20 Kohima';
         }
-        if (!parsed.regionalCentreCode || parsed.regionalCentreCode.includes('Delhi')) {
+        if (!parsed.regionalCentreCode || parsed.regionalCentreCode.includes('Delhi') || parsed.regionalCentreCode.includes('Rajghat')) {
           parsed.regionalCentreCode = 'RC-20 Kohima (Regional Centre Kohima)';
         }
         if (!parsed.hostInstitution || parsed.hostInstitution.includes('DAV') || parsed.hostInstitution.includes('Shri Ram')) {
@@ -453,6 +459,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Navigation Sidebar Collapsible & Hideable State
   const [isSidebarHidden, setIsSidebarHiddenState] = useState<boolean>(() => {
     try {
+      if (typeof window !== 'undefined' && window.innerWidth < 768) {
+        return true;
+      }
       const saved = localStorage.getItem('ignou_sc2033_sidebar_hidden');
       return saved !== null ? JSON.parse(saved) : false;
     } catch {

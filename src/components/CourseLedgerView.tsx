@@ -170,8 +170,8 @@ export const CourseLedgerView: React.FC = () => {
           </span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
+        <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <table className="w-full text-xs text-left min-w-[760px]">
             <thead className="bg-zinc-100 text-zinc-700 font-semibold border-b border-zinc-200">
               <tr>
                 <th className="py-3 px-4">Course Code</th>

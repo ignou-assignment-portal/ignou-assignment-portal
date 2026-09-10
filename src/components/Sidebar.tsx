@@ -194,7 +194,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       {!isSidebarHidden && (
         <div
           onClick={() => setIsSidebarHidden(true)}
-          className="fixed inset-0 bg-zinc-950/40 backdrop-blur-xs z-40 md:hidden transition-opacity duration-300"
+          className="fixed inset-0 bg-zinc-950/40 backdrop-blur-xs z-40 md:hidden transition-opacity duration-300 cursor-pointer pointer-events-auto"
           aria-hidden="true"
         />
       )}
@@ -202,14 +202,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       {/* Main Collapsible & Hideable Sidebar Container */}
       <aside
         id="app-left-sidebar"
-        className={`fixed md:sticky top-0 md:top-[73px] h-screen md:h-[calc(100vh-73px)] z-40 md:z-20 bg-white border-r border-zinc-200 flex flex-col shrink-0 shadow-sm transition-all duration-300 ease-in-out ${
+        className={`fixed md:sticky top-0 md:top-[73px] h-screen md:h-[calc(100vh-73px)] z-50 md:z-20 bg-white border-r border-zinc-200 flex flex-col shrink-0 shadow-sm transition-all duration-300 ease-in-out ${
           // Width: 260px expanded vs 72px collapsed icon-only rail
           isSidebarCollapsed ? 'w-[72px]' : 'w-[260px]'
         } ${
           // Hide / Show on desktop: slide in/out via negative margin and opacity
           isSidebarHidden
-            ? '-translate-x-full md:-translate-x-0 md:-ml-[260px] md:opacity-0 md:pointer-events-none'
-            : 'translate-x-0 md:ml-0 md:opacity-100'
+            ? '-translate-x-full pointer-events-none md:-translate-x-0 md:-ml-[260px] md:opacity-0 md:pointer-events-none'
+            : 'translate-x-0 pointer-events-auto md:ml-0 md:opacity-100'
         }`}
       >
         {/* Sidebar Header Toolbar */}

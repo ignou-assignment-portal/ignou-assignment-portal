@@ -705,8 +705,8 @@ export const CourseSubmissionsTracker: React.FC = () => {
             </div>
 
             {/* Students Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+              <table className="w-full text-left text-xs min-w-[700px]">
                 <thead className="bg-zinc-50 text-zinc-600 uppercase text-[10px] font-bold border-b border-zinc-200">
                   <tr>
                     <th className="py-3 px-4">Enrolment No</th>

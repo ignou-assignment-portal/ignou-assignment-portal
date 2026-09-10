@@ -204,9 +204,26 @@ export const RemunerationBilling: React.FC = () => {
     const coord = parseFloat(String(coordinationCharges || 0));
 
     return evaluators.map((ev) => {
-      // Find all course evaluations in currentSession assigned to this evaluator
-      const assigned = sessionCourseEvaluations.filter((e) => e.evaluatorId === ev.id);
-      const evaluated = assigned.filter((e) => e.marks !== null);
+      const evName = (ev.name || ev.evaluatorName || '').toLowerCase().trim();
+      const evCode = (ev.evaluatorCode || '').toLowerCase().trim();
+
+      // Flexible matching for assigned scripts across evaluatorId, Allotted_Evaluator, and evaluatorName
+      const assigned = sessionCourseEvaluations.filter((e: any) => {
+        if (e.evaluatorId && e.evaluatorId === ev.id) return true;
+        const allotted = (e.Allotted_Evaluator || e.allottedEvaluator || '').toLowerCase();
+        if (allotted && allotted !== 'unallotted') {
+          if (evName && allotted.includes(evName)) return true;
+          if (evCode && allotted.includes(evCode)) return true;
+        }
+        const name = (e.evaluatorName || '').toLowerCase();
+        if (name) {
+          if (evName && name.includes(evName)) return true;
+          if (evCode && name.includes(evCode)) return true;
+        }
+        return false;
+      });
+
+      const evaluated = assigned.filter((e) => e.marks !== null && e.marks !== undefined);
       const locked = assigned.filter((e) => e.isLocked);
 
       // Group by course code
@@ -350,6 +367,7 @@ export const RemunerationBilling: React.FC = () => {
           rate: rateNum,
           conveyance: convNum,
           coordination: coordNum,
+          grossTotal: grossTotal,
         },
         session: activeSession,
         evaluatorName: evName,
@@ -360,6 +378,7 @@ export const RemunerationBilling: React.FC = () => {
         conveyanceAmount: convNum,
         coordinationCharges: coordNum,
         grossAmount: grossTotal,
+        grossTotal: grossTotal,
         scriptCount,
         courses,
         evaluatorCode: evCode,
@@ -370,7 +389,10 @@ export const RemunerationBilling: React.FC = () => {
         panNumber: targetEv?.panNumber || '',
         department: targetEv?.department || '',
         designation: targetEv?.designation || '',
-        centreCode: settings.centreCode,
+        centreCode: settings.centreCode || 'SC-2033',
+        centreName: settings.centreName || "SC-2033 (S.D. Jain Girls' College, Dimapur)",
+        coordinatorName: settings.coordinatorName || 'Dr. Sant Kumar Gupta',
+        regionalCentre: settings.regionalCentreCode || 'RC-20 Kohima (Regional Centre Kohima)',
       };
 
       const downloadUrl = await postGenerateClaimPdf(payload);
@@ -606,8 +628,8 @@ export const RemunerationBilling: React.FC = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left border-collapse">
+        <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <table className="w-full text-xs text-left border-collapse min-w-[900px]">
             <thead className="bg-zinc-100/80 text-zinc-700 font-semibold border-b border-zinc-200">
               <tr>
                 <th className="py-3 px-3">Academic Evaluator</th>
@@ -792,8 +814,8 @@ export const RemunerationBilling: React.FC = () => {
           </span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
+        <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <table className="w-full text-xs text-left min-w-[800px]">
             <thead className="bg-zinc-100 text-zinc-700 font-semibold border-b border-zinc-200">
               <tr>
                 <th className="py-3 px-4">Bill No / Date</th>

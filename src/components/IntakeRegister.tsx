@@ -287,8 +287,8 @@ export const IntakeRegister: React.FC = () => {
 
       {/* Main Register Table */}
       <div className="bg-white border border-zinc-200 rounded-2xl shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
+        <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <table className="w-full text-xs text-left min-w-[760px]">
             <thead className="bg-zinc-100/80 text-zinc-700 font-semibold border-b border-zinc-200">
               <tr>
                 <th className="py-3 px-4">Token / Date</th>

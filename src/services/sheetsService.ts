@@ -722,7 +722,7 @@ function createFallbackSedAwardPdfBlob(details: {
   </div>
   <div class="header">
     <div class="univ">Indira Gandhi National Open University</div>
-    <div class="division">Student Evaluation Division (SED) — Maidan Garhi, New Delhi - 110068</div>
+    <div class="division">Student Evaluation Division (SED) — IGNOU HQ</div>
     <div class="sub">Continuous Assessment Award List for Tutor Marked Assignments (TMA)</div>
     <div style="font-weight: bold; font-size: 12px; margin-top: 4px; color: #1e3a8a;">PART - 1: SED STATUTORY TABULATION COPY (ORIGINAL)</div>
   </div>
@@ -730,9 +730,9 @@ function createFallbackSedAwardPdfBlob(details: {
   <table class="meta-box">
     <tr>
       <td class="meta-label">Study Centre Code:</td>
-      <td><strong>${details.centreCode || '2033'}</strong> (Al-Ameen College)</td>
+      <td><strong>SC-2033</strong> (S.D. Jain Girls' College, Dimapur)</td>
       <td class="meta-label">Regional Centre:</td>
-      <td><strong>RC-14 (Kochi)</strong></td>
+      <td><strong>RC-20 Kohima (Regional Centre Kohima)</strong></td>
     </tr>
     <tr>
       <td class="meta-label">Course Code:</td>
@@ -773,11 +773,11 @@ function createFallbackSedAwardPdfBlob(details: {
     </div>
     <div class="sign-block">
       Checked & Verified by Dealing Official<br/>
-      (Study Centre 2033)
+      (Study Centre SC-2033, Dimapur)
     </div>
     <div class="sign-block">
       Signature & Seal of Coordinator<br/>
-      Dr. Sant K. Gupta<br/>
+      Dr. Sant Kumar Gupta<br/>
       Coordinator, IGNOU SC-2033
     </div>
   </div>
@@ -864,8 +864,8 @@ function createFallbackClaimBillPdfBlob(details: {
   </div>
   <div class="header">
     <div class="univ">Indira Gandhi National Open University</div>
-    <div class="division">Finance & Accounts Division (F&AD) — Maidan Garhi, New Delhi</div>
-    <div class="sub">Study Centre 2033 (Al-Ameen College) | Regional Centre: RC-14 Kochi</div>
+    <div class="division">Finance & Accounts Division (F&AD) — IGNOU HQ</div>
+    <div class="sub">Study Centre SC-2033 (S.D. Jain Girls' College, Dimapur) | Regional Centre: RC-20 Kohima (Regional Centre Kohima)</div>
     <div class="voucher-title">STATUTORY CLAIM BILL FOR EVALUATION OF ASSIGNMENTS</div>
   </div>
 
@@ -955,7 +955,7 @@ function createFallbackClaimBillPdfBlob(details: {
     </div>
     <div class="sign-block">
       <strong>Verified & Sanctioned by Coordinator</strong><br/>
-      Dr. Sant K. Gupta<br/>
+      Dr. Sant Kumar Gupta<br/>
       Coordinator, IGNOU SC-2033
     </div>
   </div>

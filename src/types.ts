@@ -49,7 +49,7 @@ export interface Evaluator {
   evaluatorName?: string; // alias for name
   designation: string; // e.g. Associate Professor
   department: string; // e.g. Department of English
-  collegeInstitution: string; // e.g. Hindu College, University of Delhi
+  collegeInstitution: string; // e.g. S.D. Jain Girls' College, Dimapur
   contactPhone: string;
   contactNumber?: string; // alias for contactPhone
   email: string;

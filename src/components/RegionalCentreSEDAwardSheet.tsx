@@ -29,6 +29,7 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
   const {
     currentSession,
     sessionCourseEvaluations,
+    courseLedger,
     settings,
     isAdmin,
     evaluators,
@@ -36,6 +37,7 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
 
   // Selected Course Code
   const [selectedCourse, setSelectedCourse] = useState<string>('');
+  const [overrideEvaluator, setOverrideEvaluator] = useState<string>('');
   const [selectedCopy, setSelectedCopy] = useState<TripartiteCopyType>('SED_COPY');
   const [wordsStyle, setWordsStyle] = useState<'cardinal' | 'digits'>('cardinal');
   const [dispatchMemoNo, setDispatchMemoNo] = useState<string>('SC2033/SED/DISP-2026/042');
@@ -66,6 +68,11 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
     }
   }, [distinctCourses, selectedCourse]);
 
+  // Reset override evaluator on course change
+  React.useEffect(() => {
+    setOverrideEvaluator('');
+  }, [selectedCourse]);
+
   // Course metadata lookup
   const courseMeta = useMemo(() => {
     if (!selectedCourse) return null;
@@ -90,14 +97,44 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
     };
   }, [selectedCourse, sessionCourseEvaluations]);
 
-  // Evaluator lookup for the selected course
-  const courseEvaluator = useMemo(() => {
-    const sample = sessionCourseEvaluations.find(
-      (r) => r.courseCode === selectedCourse && r.evaluatorId
+  // Dynamically extract Academic Counsellor from corresponding courseLedger records:
+  const currentCourseLedgerRecords = useMemo(() => {
+    return (courseLedger || []).filter((r: any) => 
+      ((r.Session || r.session) === currentSession) &&
+      ((r.Course_Code || r.courseCode) === selectedCourse)
     );
-    if (!sample || !sample.evaluatorId) return null;
-    return evaluators.find((e) => e.id === sample.evaluatorId) || null;
-  }, [selectedCourse, sessionCourseEvaluations, evaluators]);
+  }, [courseLedger, currentSession, selectedCourse]);
+
+  const detectedEvaluator = useMemo(() => {
+    const found = currentCourseLedgerRecords.find(
+      (r: any) => r.Allotted_Evaluator && r.Allotted_Evaluator !== 'Unallotted' && r.Allotted_Evaluator.trim() !== ''
+    )?.Allotted_Evaluator;
+    if (found) return found;
+
+    // Fallback to evaluatorName or evaluatorId from sessionCourseEvaluations
+    const sample = sessionCourseEvaluations.find(
+      (r) => r.courseCode === selectedCourse && (r.evaluatorName || r.evaluatorId)
+    );
+    if (sample?.evaluatorName) return sample.evaluatorName;
+    if (sample?.evaluatorId) {
+      const ev = evaluators.find((e) => e.id === sample.evaluatorId);
+      if (ev) return `${ev.evaluatorName || ev.name} (${ev.evaluatorCode})`;
+    }
+    return 'Not Allotted';
+  }, [currentCourseLedgerRecords, sessionCourseEvaluations, selectedCourse, evaluators]);
+
+  // Active Evaluator displayed on Award Sheet
+  const activeEvaluatorName = overrideEvaluator || (detectedEvaluator !== 'Not Allotted' ? detectedEvaluator : 'Academic Evaluation Panel');
+  
+  // Find evaluator metadata object if matched
+  const activeEvaluatorObj = useMemo(() => {
+    return evaluators.find(e => {
+      const fullName = (e.evaluatorName || e.name || '').toLowerCase();
+      const code = (e.evaluatorCode || '').toLowerCase();
+      const current = activeEvaluatorName.toLowerCase();
+      return (code && current.includes(code)) || (fullName && current.includes(fullName));
+    }) || null;
+  }, [evaluators, activeEvaluatorName]);
 
   // Records for the selected course
   const currentCourseRecords = useMemo(() => {
@@ -225,21 +262,21 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
       case 'SED_COPY':
         return {
           title: 'SED COPY (ORIGINAL)',
-          sub: 'For Student Evaluation Division (SED), IGNOU HQ, Maidan Garhi, New Delhi - 110068',
+          sub: 'For Student Evaluation Division (SED), IGNOU HQ',
           accent: 'border-indigo-600 text-indigo-900 bg-indigo-50/50',
           badge: 'PART - 1: SED TABULATION COPY',
         };
       case 'RC_COPY':
         return {
           title: 'REGIONAL CENTRE COPY (DUPLICATE)',
-          sub: `For Regional Evaluation Centre / Regional Director, ${settings.regionalCentreCode}`,
+          sub: 'For Regional Evaluation Centre / Regional Director, RC-20 Kohima (Regional Centre Kohima)',
           accent: 'border-emerald-600 text-emerald-900 bg-emerald-50/50',
           badge: 'PART - 2: REGIONAL EVALUATION CENTRE COPY',
         };
       case 'SC_COPY':
         return {
           title: 'STUDY CENTRE OFFICE COPY (TRIPLICATE)',
-          sub: `Retained for 2-Year Audit Record at Study Centre ${settings.centreCode}`,
+          sub: "Retained for 2-Year Audit Record at Study Centre SC-2033 (S.D. Jain Girls' College, Dimapur)",
           accent: 'border-amber-600 text-amber-900 bg-amber-50/50',
           badge: 'PART - 3: STUDY CENTRE RECORD COPY',
         };
@@ -281,7 +318,7 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
             INDIRA GANDHI NATIONAL OPEN UNIVERSITY
           </h1>
           <p className="text-xs font-bold uppercase tracking-wide text-zinc-800">
-            STUDENT EVALUATION DIVISION (SED) • MAIDAN GARHI, NEW DELHI - 110068
+            STUDENT EVALUATION DIVISION (SED) • INDIRA GANDHI NATIONAL OPEN UNIVERSITY
           </p>
           <div className="text-[11px] font-semibold text-zinc-600">
             STATUTORY CONSOLIDATED ASSIGNMENT MARKS AWARD LIST (TMA / CMA)
@@ -298,7 +335,7 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
             <span className="font-mono font-black text-zinc-950 text-sm">
               {settings.centreCode}
             </span>
-            <div className="text-[10px] text-zinc-600">{settings.centreName}</div>
+            <div className="text-[10px] text-zinc-600 font-medium">{settings.centreName || "SC-2033 (S.D. Jain Girls' College, Dimapur)"}</div>
           </div>
 
           <div>
@@ -308,7 +345,7 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
             <span className="font-bold text-zinc-950">
               {settings.regionalCentreCode}
             </span>
-            <div className="text-[10px] text-zinc-600">Region: Delhi-2 (Rajghat)</div>
+            <div className="text-[10px] text-zinc-600">Regional Centre Kohima</div>
           </div>
 
           <div>
@@ -346,9 +383,8 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
           <div>
             <span className="text-zinc-500">Evaluator / Academic Counsellor: </span>
             <strong className="text-zinc-900">
-              {courseEvaluator?.name || 'Academic Evaluation Panel'}
-            </strong>{' '}
-            ({courseEvaluator?.evaluatorCode || 'SC-2033-PANEL'})
+              {activeEvaluatorName}
+            </strong>
           </div>
           <div>
             <span className="text-zinc-500">Total Scripts on Sheet: </span>
@@ -357,7 +393,7 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
         </div>
 
         {/* Data Table */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
           <table className="w-full text-left border-collapse border-2 border-zinc-900 text-xs">
             <thead>
               <tr className="bg-zinc-100 border-b-2 border-zinc-900 text-zinc-800 text-[10px] font-bold uppercase">
@@ -467,7 +503,7 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
           <div className="border border-zinc-300 p-3 rounded-lg flex flex-col justify-between space-y-4">
             <div>
               <div className="text-[10px] font-bold uppercase text-zinc-500">
-                1. Academic Evaluator
+                1. Academic Evaluator / Approved Academic Counsellor
               </div>
               <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed">
                 Certified that the assignment responses have been evaluated by me strictly as per
@@ -476,10 +512,10 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
             </div>
             <div className="border-t border-dashed border-zinc-400 pt-2 text-center">
               <div className="font-semibold text-zinc-900">
-                {courseEvaluator?.name || 'Approved Academic Counsellor'}
+                {activeEvaluatorName}
               </div>
               <div className="text-[10px] text-zinc-500 font-mono">
-                Code: {courseEvaluator?.evaluatorCode || 'SC-2033'}
+                {activeEvaluatorObj?.evaluatorCode ? `Code: ${activeEvaluatorObj.evaluatorCode}` : 'Approved IGNOU Academic Counsellor'}
               </div>
             </div>
           </div>
@@ -488,7 +524,7 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
           <div className="border border-zinc-300 p-3 rounded-lg flex flex-col justify-between space-y-4">
             <div>
               <div className="text-[10px] font-bold uppercase text-zinc-500">
-                2. Study Centre Verification
+                2. Study Centre Verification & Seal
               </div>
               <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed">
                 Cross-verified with physical scripts & Intake Register. Transcribed verbatim into SED
@@ -497,11 +533,11 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
             </div>
             <div className="border-t border-dashed border-zinc-400 pt-2 text-center">
               <div className="font-serif italic text-indigo-900 font-bold">
-                {settings.coordinatorName || 'Dr. Sant K. Gupta'}
+                {settings.coordinatorName || 'Dr. Sant Kumar Gupta'}
               </div>
               <div className="font-bold text-[11px] text-zinc-900">{settings.coordinatorDesignation || 'Coordinator, IGNOU SC-2033'}</div>
               <div className="text-[10px] font-mono text-zinc-500">
-                Study Centre {settings.centreCode}
+                {settings.institutionName || "SC-2033 (S.D. Jain Girls' College, Dimapur)"}
               </div>
             </div>
           </div>
@@ -608,7 +644,7 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
         </div>
 
         {/* Filter & Configuration Strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-6 pt-5 border-t border-zinc-100">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 mt-6 pt-5 border-t border-zinc-100">
           {/* Course Selector */}
           <div>
             <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
@@ -627,6 +663,34 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
             </select>
           </div>
 
+          {/* Academic Counsellor Dynamic Selector */}
+          <div>
+            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
+              Academic Counsellor
+            </label>
+            <select
+              value={activeEvaluatorName}
+              onChange={(e) => setOverrideEvaluator(e.target.value)}
+              className="w-full bg-zinc-50 border border-zinc-300 rounded-xl px-3 py-2 text-xs font-bold text-zinc-900 focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              title="Dynamic Academic Counsellor from Course Ledger or Evaluator Master"
+            >
+              {detectedEvaluator !== 'Not Allotted' && (
+                <option value={detectedEvaluator}>
+                  {detectedEvaluator} (From Course Ledger)
+                </option>
+              )}
+              <option value="Academic Evaluation Panel">Academic Evaluation Panel (Default)</option>
+              {evaluators.map((ev) => {
+                const val = `${ev.evaluatorName || ev.name} (${ev.evaluatorCode})`;
+                return (
+                  <option key={ev.evaluatorCode || ev.id} value={val}>
+                    {ev.evaluatorName || ev.name} ({ev.evaluatorCode})
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
           {/* Tripartite Copy Selector */}
           <div>
             <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
@@ -637,7 +701,7 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
               onChange={(e) => setSelectedCopy(e.target.value as TripartiteCopyType)}
               className="w-full bg-zinc-50 border border-zinc-300 rounded-xl px-3 py-2 text-xs font-bold text-zinc-900 focus:ring-2 focus:ring-indigo-500 cursor-pointer"
             >
-              <option value="SED_COPY">Part 1: SED Copy (Maidan Garhi Original)</option>
+              <option value="SED_COPY">Part 1: SED Copy (Original Tabulation)</option>
               <option value="RC_COPY">Part 2: Evaluation Centre / RC Copy</option>
               <option value="SC_COPY">Part 3: Study Centre Office Record</option>
               <option value="ALL_THREE">Print Complete Set (All 3 Copies)</option>
