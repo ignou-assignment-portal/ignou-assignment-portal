@@ -1,6 +1,53 @@
 import { getIgnouGrade } from '../utils/helpers';
 
 /**
+ * Universal Session Normalizer
+ * Converts raw session strings or ISO date stamps (e.g. "2026-06-30T18:30:00.000Z") into standard "July 2026" / "January 2026"
+ */
+export const normalizeSessionName = (rawVal: any, fallbackSubId?: string): string => {
+  if (!rawVal && fallbackSubId) {
+    const match = fallbackSubId.match(/(July|January|Jan|Jul)\s*(\d{4})/i);
+    if (match) {
+      const month = match[1].toLowerCase().startsWith('jul') ? 'July' : 'January';
+      return `${month} ${match[2]}`;
+    }
+  }
+  const str = String(rawVal || '').trim();
+  if (!str) return 'July 2026';
+
+  // If ISO date string: e.g. "2026-06-30T18:30:00.000Z" or "2026-07-01..."
+  if (str.includes('T') || /^\d{4}-\d{2}/.test(str)) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      // Offset by +5:30 for Indian Standard Time (IST)
+      const istDate = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
+      const m = istDate.getUTCMonth(); // 0-based: 6 is July, 0 is Jan
+      const y = istDate.getUTCFullYear();
+      const sessionMonth = (m >= 4 && m <= 9) ? 'July' : 'January';
+      return `${sessionMonth} ${y}`;
+    }
+  }
+
+  // If contains July or January with year: e.g. "July 2026", "JULY 2026", "July-2026"
+  const textMatch = str.match(/(July|January|Jan|Jul)[^\d]*(\d{4})/i);
+  if (textMatch) {
+    const month = textMatch[1].toLowerCase().startsWith('jul') ? 'July' : 'January';
+    return `${month} ${textMatch[2]}`;
+  }
+
+  return str;
+};
+
+/**
+ * Normalizes session values for whitespace-insensitive and format-insensitive comparison
+ */
+export const norm = (val: any): string => {
+  if (!val) return '';
+  const clean = normalizeSessionName(val);
+  return clean.toString().trim().toLowerCase().replace(/\s+/g, '').replace(/[-_]/g, '');
+};
+
+/**
  * Google Sheets & Apps Script Integration Service
  * Target Script Web App ID / URL:
  */

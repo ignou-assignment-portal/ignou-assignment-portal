@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useApp } from '../context/AppContext';
+import { useApp, norm } from '../context/AppContext';
 import { CourseEvaluationRecord, Evaluator } from '../types';
 import { calculateIGNOUGrade, formatDate } from '../utils/helpers';
 import { SCRIPT_URL } from '../services/sheetsService';
@@ -66,7 +66,7 @@ export const CourseEvaluationMaster: React.FC = () => {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [printCourseCode, setPrintCourseCode] = useState<string>('');
 
-  const normalizeSession = (s: any) => (s || "").toString().trim().toLowerCase().replace(/\s+/g, '');
+  const normalizeSession = (s: any) => norm(s);
 
   const filteredLedger = useMemo(() => {
     const list = (courseLedger && courseLedger.length > 0)
@@ -76,7 +76,7 @@ export const CourseEvaluationMaster: React.FC = () => {
       : sessionCourseEvaluations;
     return list.filter((row: any) => {
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
-      return normalizeSession(row.Session || row.session) === normalizeSession(currentSession);
+      return norm(row.Session || row.session) === norm(currentSession);
     });
   }, [courseLedger, allCourseEvaluations, sessionCourseEvaluations, currentSession]);
 

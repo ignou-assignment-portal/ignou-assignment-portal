@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useApp } from '../context/AppContext';
+import { useApp, norm } from '../context/AppContext';
 import { IGNOU_PROGRAMMES } from '../data/ignouMasterData';
 import { marksToWords, formatDate, calculateIGNOUGrade } from '../utils/helpers';
 import { postGenerateSedPdf } from '../services/sheetsService';
@@ -49,7 +49,7 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isGeneratingSedPdf, setIsGeneratingSedPdf] = useState<boolean>(false);
 
-  const normalizeSession = (s: any) => (s || "").toString().trim().toLowerCase().replace(/\s+/g, '');
+  const normalizeSession = (s: any) => norm(s);
 
   const filteredLedger = useMemo(() => {
     const list = (courseLedger && courseLedger.length > 0)
@@ -59,7 +59,7 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
       : sessionCourseEvaluations;
     return list.filter((row: any) => {
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
-      return normalizeSession(row.Session || row.session) === normalizeSession(currentSession);
+      return norm(row.Session || row.session) === norm(currentSession);
     });
   }, [courseLedger, allCourseEvaluations, sessionCourseEvaluations, currentSession]);
 
@@ -80,12 +80,20 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [filteredLedger]);
 
-  // Auto-select first course if empty or no longer valid
+  // Auto-populate Course Selection in Stage 3:
+  const availableCourses = useMemo(() => {
+    const fromLedger = (courseLedger || []).map((r: any) => r.courseCode || r.Course_Code);
+    const fromDistinct = distinctCourses.map(([c]) => c);
+    return [...new Set([...fromLedger, ...fromDistinct])].filter(Boolean);
+  }, [courseLedger, distinctCourses]);
+
   React.useEffect(() => {
-    if ((!selectedCourse || !distinctCourses.some(([c]) => c === selectedCourse)) && distinctCourses.length > 0) {
+    if (!selectedCourse && availableCourses.length > 0) {
+      setSelectedCourse(availableCourses[0]);
+    } else if ((!selectedCourse || !distinctCourses.some(([c]) => c === selectedCourse)) && distinctCourses.length > 0) {
       setSelectedCourse(distinctCourses[0][0]);
     }
-  }, [distinctCourses, selectedCourse]);
+  }, [availableCourses, distinctCourses, selectedCourse]);
 
   // Reset override evaluator on course change
   React.useEffect(() => {

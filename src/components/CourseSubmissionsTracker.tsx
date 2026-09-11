@@ -186,6 +186,19 @@ export const CourseSubmissionsTracker: React.FC = () => {
     return activeCourseCodes[0] || 'MEG-01';
   });
 
+  // Auto-populate Course Selection in Stage 3 & Registers & Tracking:
+  React.useEffect(() => {
+    if (!selectedCourse && activeCourseCodes.length > 0) {
+      setSelectedCourse(activeCourseCodes[0]);
+    }
+  }, [activeCourseCodes, selectedCourse]);
+
+  React.useEffect(() => {
+    if (!selectedProgramme && activeProgrammeCodes.length > 0) {
+      setSelectedProgramme(activeProgrammeCodes[0]);
+    }
+  }, [activeProgrammeCodes, selectedProgramme]);
+
   // Course Filter by Programme
   const [courseProgFilter, setCourseProgFilter] = useState<string>('ALL');
 

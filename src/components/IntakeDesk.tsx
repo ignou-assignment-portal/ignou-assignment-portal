@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { useApp } from '../context/AppContext';
+import { useApp, norm } from '../context/AppContext';
 import { IGNOU_PROGRAMMES } from '../data/ignouMasterData';
 import { SubmissionMode } from '../types';
 import { formatDate, formatDateTime } from '../utils/helpers';
@@ -87,8 +87,8 @@ export const IntakeDesk: React.FC = () => {
   const [deskView, setDeskView] = useState<'REGISTER' | 'SUBMISSIONS_REGISTER' | 'RECEIPTS'>('REGISTER');
   const [editingRecord, setEditingRecord] = useState<any | null>(null);
 
-  // Flexible Session Filtering: normalizes activeSession so whitespace or case does not hide valid rows
-  const normalizeSession = (s: any) => (s || "").toString().trim().toLowerCase().replace(/\s+/g, '');
+  // Flexible Session Filtering: normalizes activeSession so whitespace, date formatting, or case does not hide valid rows
+  const normalizeSession = (s: any) => norm(s);
 
   const filteredIntake = useMemo(() => {
     const list = (intakeRegister && intakeRegister.length > 0)
@@ -98,7 +98,7 @@ export const IntakeDesk: React.FC = () => {
       : sessionIntakes;
     return list.filter((row: any) => {
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
-      return normalizeSession(row.Session || row.session) === normalizeSession(currentSession);
+      return norm(row.Session || row.session) === norm(currentSession);
     });
   }, [intakeRegister, allIntakes, sessionIntakes, currentSession]);
 
@@ -108,7 +108,7 @@ export const IntakeDesk: React.FC = () => {
       : sessionRegistrationReceipts;
     return list.filter((row: any) => {
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
-      return normalizeSession(row.Session || row.session) === normalizeSession(currentSession);
+      return norm(row.Session || row.session) === norm(currentSession);
     });
   }, [allRegistrationReceipts, sessionRegistrationReceipts, currentSession]);
 

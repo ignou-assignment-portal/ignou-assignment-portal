@@ -20,6 +20,7 @@ export const CourseLedgerView: React.FC = () => {
   const {
     currentSession,
     sessionIntakes,
+    sessionCourseEvaluations,
     sessionPackets,
     evaluators,
     createPacket,
@@ -49,26 +50,59 @@ export const CourseLedgerView: React.FC = () => {
     >();
 
     // Scan all intakes in this session
-    sessionIntakes.forEach((intake) => {
-      intake.courseCodes.forEach((code) => {
-        if (!map.has(code)) {
-          map.set(code, {
-            courseCode: code,
-            programmeCode: intake.programmeCode,
-            totalReceived: 0,
-            evaluated: 0,
-            pending: 0,
-            packetsFormed: [],
-          });
-        }
-        const item = map.get(code)!;
-        item.totalReceived++;
-        if (intake.marks[code] !== null && intake.marks[code] !== undefined) {
-          item.evaluated++;
-        } else {
-          item.pending++;
-        }
-      });
+    sessionIntakes.forEach((intake: any) => {
+      const courses = intake.courseCodes || intake.courses || [];
+      if (Array.isArray(courses)) {
+        courses.forEach((rawCode: string) => {
+          const code = rawCode.trim().toUpperCase();
+          if (!code) return;
+          if (!map.has(code)) {
+            map.set(code, {
+              courseCode: code,
+              programmeCode: intake.programmeCode || intake.programme || 'MEG',
+              totalReceived: 0,
+              evaluated: 0,
+              pending: 0,
+              packetsFormed: [],
+            });
+          }
+          const item = map.get(code)!;
+          item.totalReceived++;
+          const mark = intake.marks?.[code];
+          const hasMark = mark !== null && mark !== undefined && mark !== '';
+          if (hasMark) {
+            item.evaluated++;
+          } else {
+            const matchingEval = sessionCourseEvaluations.find(
+              (e: any) =>
+                (e.enrollmentNo === intake.enrollmentNo || e.Enrollment_No === intake.enrollmentNo) &&
+                (e.courseCode === code || e.Course_Code === code)
+            );
+            if (matchingEval && matchingEval.marks !== '' && matchingEval.marks !== undefined && matchingEval.marks !== null) {
+              item.evaluated++;
+            } else {
+              item.pending++;
+            }
+          }
+        });
+      }
+    });
+
+    // Also ensure every course in sessionCourseEvaluations is registered
+    sessionCourseEvaluations.forEach((evalItem: any) => {
+      const code = (evalItem.courseCode || evalItem.Course_Code || '').trim().toUpperCase();
+      if (!code) return;
+      if (!map.has(code)) {
+        const hasMark = evalItem.marks !== '' && evalItem.marks !== undefined && evalItem.marks !== null;
+        map.set(code, {
+          courseCode: code,
+          programmeCode: evalItem.programmeCode || evalItem.Programme || 'MEG',
+          totalReceived: 1,
+          evaluated: hasMark ? 1 : 0,
+          pending: hasMark ? 0 : 1,
+          packetsFormed: [],
+        });
+      }
     });
 
     // Attach packets for this session

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useApp } from '../context/AppContext';
+import { useApp, norm } from '../context/AppContext';
 import { IntakeStatus, SubmissionMode } from '../types';
 import { formatDate, calculateIGNOUGrade } from '../utils/helpers';
 import {
@@ -90,7 +90,7 @@ export const IntakeRegister: React.FC = () => {
   };
 
   // Flexible Session Filtering: normalizes activeSession so whitespace or case does not hide valid rows
-  const normalizeSession = (s: any) => (s || "").toString().trim().toLowerCase().replace(/\s+/g, '');
+  const normalizeSession = (s: any) => norm(s);
   const sessionRecords = useMemo(() => {
     const list = (intakeRegister && intakeRegister.length > 0)
       ? intakeRegister
@@ -99,7 +99,7 @@ export const IntakeRegister: React.FC = () => {
       : sessionIntakes;
     return list.filter((row: any) => {
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
-      return normalizeSession(row.Session || row.session) === normalizeSession(currentSession);
+      return norm(row.Session || row.session) === norm(currentSession);
     });
   }, [intakeRegister, allIntakes, sessionIntakes, currentSession]);
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateIGNOUGrade, formatDate, getIgnouGrade } from '../utils/helpers';
 import { SCRIPT_URL } from '../services/sheetsService';
@@ -36,11 +36,20 @@ export const MarksEntry: React.FC = () => {
   // Extract all unique course codes submitted in the current session
   const activeCourseCodes = useMemo(() => {
     const codes = new Set<string>();
-    sessionIntakes.forEach((r) => {
-      r.courseCodes.forEach((c) => codes.add(c));
+    sessionIntakes.forEach((r: any) => {
+      const courses = r.courseCodes || r.courses || [];
+      if (Array.isArray(courses)) {
+        courses.forEach((c: any) => {
+          if (c) codes.add(c.trim().toUpperCase());
+        });
+      }
     });
-    return Array.from(codes).sort();
-  }, [sessionIntakes]);
+    sessionCourseEvaluations.forEach((ce: any) => {
+      const code = ce.courseCode || ce.Course_Code;
+      if (code) codes.add(code.trim().toUpperCase());
+    });
+    return Array.from(codes).filter(Boolean).sort();
+  }, [sessionIntakes, sessionCourseEvaluations]);
 
   const [selectedCourse, setSelectedCourse] = useState<string>(() => {
     return activeCourseCodes[0] || '';
@@ -49,7 +58,7 @@ export const MarksEntry: React.FC = () => {
   const [searchFilter, setSearchFilter] = useState('');
   const [isAwardListModalOpen, setIsAwardListModalOpen] = useState(false);
 
-  // Update selected course if activeCourseCodes changes and current is empty
+  // Auto-populate Course Selection in Stage 3 & Registers & Tracking:
   React.useEffect(() => {
     if (!selectedCourse && activeCourseCodes.length > 0) {
       setSelectedCourse(activeCourseCodes[0]);
@@ -59,8 +68,34 @@ export const MarksEntry: React.FC = () => {
   // Students who submitted the selected course in current session
   const enrolledStudents = useMemo(() => {
     if (!selectedCourse) return [];
-    return sessionIntakes.filter((r) => r.courseCodes.includes(selectedCourse));
+    return sessionIntakes.filter((r: any) => {
+      const courses = r.courseCodes || r.courses || [];
+      return Array.isArray(courses) && courses.map((c: string) => c.toUpperCase()).includes(selectedCourse.toUpperCase());
+    });
   }, [sessionIntakes, selectedCourse]);
+
+  // Helper to get mark from intake or course evaluation ledger
+  const getStudentMark = useCallback(
+    (student: any, courseCode: string): number | null => {
+      const directMark = student.marks?.[courseCode];
+      if (directMark !== null && directMark !== undefined && directMark !== '') {
+        return Number(directMark);
+      }
+      const matchingEval = sessionCourseEvaluations.find(
+        (e: any) =>
+          (e.enrollmentNo === student.enrollmentNo || e.Enrollment_No === student.enrollmentNo) &&
+          (e.courseCode === courseCode || e.Course_Code === courseCode)
+      );
+      if (matchingEval) {
+        const m = matchingEval.marks !== undefined && matchingEval.marks !== '' ? matchingEval.marks : matchingEval.Marks;
+        if (m !== undefined && m !== null && m !== '' && !isNaN(Number(m))) {
+          return Number(m);
+        }
+      }
+      return null;
+    },
+    [sessionCourseEvaluations]
+  );
 
   // Filtered by search query
   const filteredStudents = useMemo(() => {
@@ -82,7 +117,7 @@ export const MarksEntry: React.FC = () => {
     let passed = 0;
 
     enrolledStudents.forEach((s) => {
-      const mark = s.marks[selectedCourse];
+      const mark = getStudentMark(s, selectedCourse);
       if (mark !== null && mark !== undefined) {
         evaluated++;
         totalMarks += mark;
@@ -94,18 +129,18 @@ export const MarksEntry: React.FC = () => {
     const passPercentage = evaluated > 0 ? Math.round((passed / evaluated) * 100) : 0;
 
     return { total, evaluated, pending: total - evaluated, average, passPercentage };
-  }, [enrolledStudents, selectedCourse]);
+  }, [enrolledStudents, selectedCourse, getStudentMark]);
 
   // Count of students with marks entered but not yet locked
   const evaluatedNotLockedCount = useMemo(() => {
     return enrolledStudents.filter((s) => {
-      const mark = s.marks[selectedCourse];
+      const mark = getStudentMark(s, selectedCourse);
       const matchingEval = sessionCourseEvaluations.find(
         (e) => e.enrollmentNo === s.enrollmentNo && e.courseCode === selectedCourse
       );
       return mark !== null && mark !== undefined && !matchingEval?.isLocked;
     }).length;
-  }, [enrolledStudents, sessionCourseEvaluations, selectedCourse]);
+  }, [enrolledStudents, sessionCourseEvaluations, selectedCourse, getStudentMark]);
 
   const handleMarkChange = (intakeId: string, valueStr: string) => {
     if (valueStr === '') {
@@ -122,7 +157,7 @@ export const MarksEntry: React.FC = () => {
     matchingEval: any,
     isLockAction: boolean
   ) => {
-    const currentMark = student.marks[selectedCourse];
+    const currentMark = getStudentMark(student, selectedCourse);
     if (currentMark === null || currentMark === undefined) {
       if (isLockAction) {
         alert('Cannot lock script: A valid numerical mark (0-100) must be recorded before locking.');
@@ -247,7 +282,10 @@ export const MarksEntry: React.FC = () => {
         ) : (
           <div className="flex flex-wrap gap-2">
             {activeCourseCodes.map((code) => {
-              const count = sessionIntakes.filter((r) => r.courseCodes.includes(code)).length;
+              const count = sessionIntakes.filter((r: any) => {
+                const courses = r.courseCodes || r.courses || [];
+                return Array.isArray(courses) && courses.map((c: string) => c.toUpperCase()).includes(code.toUpperCase());
+              }).length;
               const isSelected = selectedCourse === code;
               return (
                 <button
@@ -364,7 +402,7 @@ export const MarksEntry: React.FC = () => {
                     </tr>
                   ) : (
                     filteredStudents.map((student, idx) => {
-                      const currentMark = student.marks[selectedCourse];
+                      const currentMark = getStudentMark(student, selectedCourse);
                       const gradeInfo = calculateIGNOUGrade(currentMark);
                       const matchingEval = sessionCourseEvaluations.find(
                         (e) => e.enrollmentNo === student.enrollmentNo && e.courseCode === selectedCourse

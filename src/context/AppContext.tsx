@@ -26,9 +26,10 @@ import {
   IGNOU_PROGRAMMES,
 } from '../data/ignouMasterData';
 import { generateSessionCode, generateDeterministicSubmissionKey, calculateIGNOUGrade, getIgnouGrade } from '../utils/helpers';
-import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, SCRIPT_URL } from '../services/sheetsService';
+import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, SCRIPT_URL, normalizeSessionName, norm } from '../services/sheetsService';
 
-export const normalizeSession = (s: any): string => (s || "").toString().trim().toLowerCase().replace(/\s+/g, '');
+export { normalizeSessionName, norm };
+export const normalizeSession = (s: any): string => norm(s);
 
 interface AppContextType {
   // Session Isolation
@@ -1895,62 +1896,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const rawIntake = data.intakeRegister || data.intakes || data.Intake_Register || [];
         const rawLedger = data.courseLedger || data.course_ledger || data.Course_Ledger || [];
 
-        // 1. Normalize Intake Register
-        const normalizedIntake = rawIntake.map((r: any) => {
-          const timestamp = r.Timestamp || r.timestamp || r.createdAt || "";
-          const session = (r.Session || r.session || "July 2026").toString().trim();
-          const enrollmentNo = (r.Enrollment_No || r.enrollmentNo || "").toString().replace(/^'/, '').trim();
-          const candidateName = r.Candidate_Name || r.candidateName || r.studentName || "";
+        // 1. Universal Normalizer: Intake Register
+        const cleanIntake = rawIntake.map((r: any) => {
+          const rawCourses = r.Courses || r.courses || r.courseCodes || "";
+          const courseArr = Array.isArray(rawCourses)
+            ? rawCourses
+            : rawCourses.toString().split(",").map((c: string) => c.trim()).filter(Boolean);
+
+          const enrollment = (r.Enrollment_No || r.enrollmentNo || r["Enrollment No"] || "").toString().replace(/^'/, '').trim();
+          const candidate = (r.Candidate_Name || r.candidateName || r["Candidate Name"] || r.studentName || "").toString().trim();
+          const session = normalizeSessionName(r.Session || r.session || "July 2026");
+          const programme = (r.Programme || r.programme || r.programmeCode || "MEG").toString().trim();
           const contact = (r.Contact || r.contact || r.studentPhone || "").toString().replace(/^'/, '').trim();
-          const programme = r.Programme || r.programme || r.programmeCode || "";
-          const courses = Array.isArray(r.Courses || r.courses)
-            ? (r.Courses || r.courses)
-            : (r.Courses || r.courses || "").toString().split(",").map((c: string) => c.trim()).filter(Boolean);
-          const handledBy = r.Official || r.handledBy || r.official || "Desk Official";
-          const id = r.id || r.tokenNo || r.Token_No || `intake-${enrollmentNo}-${session}`;
+          const timestamp = r.Timestamp || r.timestamp || r.createdAt || "";
+          const official = r.Official || r.handledBy || r.official || "Desk Official";
+          const id = r.id || r.tokenNo || r.Token_No || `intake-${enrollment}-${session.replace(/\s+/g, '')}`;
           const tokenNo = r.tokenNo || r.Token_No || id;
 
           return {
             timestamp,
             session,
-            enrollmentNo,
-            candidateName,
+            enrollmentNo: enrollment,
+            candidateName: candidate,
             contact,
             programme,
-            courses,
-            handledBy,
-            // Dual compatibility keys for components
-            id,
-            tokenNo,
-            studentName: candidateName,
-            studentPhone: contact,
-            programmeCode: programme,
-            courseCodes: courses,
-            submissionDate: timestamp ? String(timestamp).split('T')[0] : new Date().toISOString().split('T')[0],
-            submissionMode: r.submissionMode || 'In-Person (Desk)',
-            status: r.status || 'Received',
-            marks: r.marks || {},
-            createdAt: timestamp,
-            Enrollment_No: enrollmentNo,
-            Candidate_Name: candidateName,
+            courses: courseArr,
+            coursesStr: courseArr.join(", "),
+            handledBy: official,
+            // Dual-key fallbacks
+            Timestamp: timestamp,
+            Session: session,
+            Enrollment_No: enrollment,
+            Candidate_Name: candidate,
             Contact: contact,
             Programme: programme,
-            Courses: courses,
-            Timestamp: timestamp,
-            Official: handledBy,
-            Session: session,
+            Courses: courseArr.join(", "),
+            Official: official,
+            // Component compatibility keys
+            id,
+            tokenNo,
+            studentName: candidate,
+            studentPhone: contact,
+            programmeCode: programme,
+            courseCodes: courseArr,
+            submissionDate: timestamp ? String(timestamp).split('T')[0] : new Date().toISOString().split('T')[0],
+            submissionMode: r.submissionMode || 'In-Person (Desk)',
+            status: r.status || r.Status || 'Received',
+            marks: r.marks || {},
+            createdAt: timestamp,
+            receiptNumber: r.receiptNumber || tokenNo,
           };
         });
 
-        // 2. Normalize Course Ledger
-        const normalizedLedger = rawLedger.map((r: any) => {
-          const subId = (r.Sub_ID || r.subId || r.submissionKey || r.id || "").toString().trim();
-          const session = (r.Session || r.session || "July 2026").toString().trim();
-          const enrollmentNo = (r.Enrollment_No || r.enrollmentNo || "").toString().replace(/^'/, '').trim();
-          const candidateName = r.Candidate_Name || r.candidateName || r.studentName || "";
-          const programme = r.Programme || r.programme || r.programmeCode || "";
-          const courseCode = (r.Course_Code || r.courseCode || "").toString().trim().toUpperCase();
-          const allottedEvaluator = r.Allotted_Evaluator || r.allottedEvaluator || r.evaluatorName || "Unallotted";
+        // 2. Universal Normalizer: Course Ledger
+        const cleanLedger = rawLedger.map((r: any) => {
+          const enrollment = (r.Enrollment_No || r.enrollmentNo || r["Enrollment No"] || "").toString().replace(/^'/, '').trim();
+          const course = (r.Course_Code || r.courseCode || r["Course Code"] || "").toString().trim().toUpperCase();
+          const session = normalizeSessionName(r.Session || r.session || "July 2026", r.Sub_ID || r.subId);
+          const subId = (r.Sub_ID || r.subId || r.id || `SUB_${enrollment}_${course}_${session.replace(/\s+/g, '')}`).toString().trim();
+          const candidate = (r.Candidate_Name || r.candidateName || r["Candidate Name"] || r.studentName || "").toString().trim();
+          const programme = (r.Programme || r.programme || r.programmeCode || "MEG").toString().trim();
+          const evaluator = r.Allotted_Evaluator || r.allottedEvaluator || r.evaluatorName || "Unallotted";
           const marks = (r.Marks !== undefined && r.Marks !== "") ? r.Marks : (r.marks !== undefined ? r.marks : "");
           const numMarks = (marks !== "" && marks !== null && !isNaN(Number(marks))) ? Number(marks) : null;
           const grade = r.Grade || r.grade || (numMarks !== null ? calculateIGNOUGrade(numMarks).grade : "");
@@ -1960,30 +1966,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return {
             subId,
             session,
-            enrollmentNo,
-            candidateName,
+            enrollmentNo: enrollment,
+            candidateName: candidate,
             programme,
-            courseCode,
-            allottedEvaluator,
+            courseCode: course,
+            allottedEvaluator: evaluator,
             marks,
             grade,
             status,
-            // Dual compatibility keys
-            id: subId || `SUB-${enrollmentNo}-${courseCode}`,
-            submissionKey: subId || `SUB-${enrollmentNo}-${courseCode}`,
+            // Dual-key fallbacks
             Sub_ID: subId,
             Session: session,
-            Enrollment_No: enrollmentNo,
-            Candidate_Name: candidateName,
-            studentName: candidateName,
-            programmeCode: programme,
+            Enrollment_No: enrollment,
+            Candidate_Name: candidate,
             Programme: programme,
-            Course_Code: courseCode,
-            Allotted_Evaluator: allottedEvaluator,
-            evaluatorName: allottedEvaluator !== 'Unallotted' ? allottedEvaluator : null,
+            Course_Code: course,
+            Allotted_Evaluator: evaluator,
             Marks: marks,
             Grade: grade,
             Status: status,
+            // Component compatibility keys
+            id: subId,
+            submissionKey: subId,
+            studentName: candidate,
+            programmeCode: programme,
+            evaluatorName: evaluator !== 'Unallotted' ? evaluator : null,
             isLocked,
             tokenNo: r.tokenNo || '',
             submissionDate: r.submissionDate || new Date().toISOString().split('T')[0],
@@ -1992,13 +1999,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
 
         // 3. Update React State
-        setIntakes(normalizedIntake as any);
-        setCourseEvaluations(normalizedLedger as any);
+        setIntakes(cleanIntake as any);
+        setCourseEvaluations(cleanLedger as any);
 
         // Also update Registration Receipts so receipts view has latest entries
         setRegistrationReceipts((prev) => {
           const map = new Map(prev.map((item) => [item.id || item.receiptNumber, item]));
-          normalizedIntake.forEach((item: any) => {
+          cleanIntake.forEach((item: any) => {
             map.set(item.id, {
               id: item.id,
               receiptNumber: item.tokenNo || item.id,
@@ -2024,13 +2031,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return Array.from(map.values());
         });
 
-        // 4. Update LocalStorage Cache so data survives reloads & login
-        localStorage.setItem("ignou_sc2033_intake", JSON.stringify(normalizedIntake));
-        localStorage.setItem("ignou_sc2033_ledger", JSON.stringify(normalizedLedger));
-        localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(normalizedIntake));
-        localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(normalizedLedger));
+        // Also update Assignment Submissions so Course Submissions Tracker is hydrated
+        setAssignmentSubmissions((prev) => {
+          const map = new Map(prev.map((s) => [s.id, s]));
+          cleanLedger.forEach((cl: any) => {
+            const id = cl.subId || `sub-${cl.enrollmentNo}-${cl.courseCode}`;
+            map.set(id, {
+              id,
+              studentId: cl.enrollmentNo,
+              studentName: cl.candidateName,
+              programmeCode: cl.programme,
+              courseCode: cl.courseCode,
+              session: cl.session,
+              status: cl.isLocked ? 'locked' : cl.status === 'Evaluated' ? 'evaluated' : 'submitted',
+              submissionDate: cl.submissionDate || new Date().toISOString().split('T')[0],
+              submissionMode: (cl.submissionMode as any) || 'In-Person (Desk)',
+              Session: cl.session,
+              Course_Code: cl.courseCode,
+              Enrollment_No: cl.enrollmentNo,
+            } as any);
+          });
+          return Array.from(map.values());
+        });
 
-        const syncMsg = `Synced (${normalizedIntake.length} receipts, ${normalizedLedger.length} scripts)`;
+        // 4. Update LocalStorage Cache immediately so data survives reloads & login
+        localStorage.setItem("ignou_sc2033_intake", JSON.stringify(cleanIntake));
+        localStorage.setItem("ignou_sc2033_ledger", JSON.stringify(cleanLedger));
+        localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(cleanIntake));
+        localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(cleanLedger));
+
+        // Auto-register any incoming sessions in settings
+        const incomingSessions = new Set<string>();
+        cleanIntake.forEach((r: any) => { if (r.session) incomingSessions.add(r.session); });
+        cleanLedger.forEach((r: any) => { if (r.session) incomingSessions.add(r.session); });
+        if (incomingSessions.size > 0) {
+          setSettings((prev) => {
+            const updated = Array.from(new Set([...prev.availableSessions, ...incomingSessions]));
+            if (updated.length !== prev.availableSessions.length) {
+              return { ...prev, availableSessions: updated };
+            }
+            return prev;
+          });
+        }
+
+        const syncMsg = `Synced (${cleanIntake.length} receipts, ${cleanLedger.length} scripts)`;
         setSyncStatus(syncMsg);
 
         const now = new Date();
