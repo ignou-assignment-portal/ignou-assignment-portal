@@ -28,6 +28,8 @@ import {
 import { generateSessionCode, generateDeterministicSubmissionKey, calculateIGNOUGrade, getIgnouGrade } from '../utils/helpers';
 import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, SCRIPT_URL } from '../services/sheetsService';
 
+export const normalizeSession = (s: any): string => (s || "").toString().trim().toLowerCase().replace(/\s+/g, '');
+
 interface AppContextType {
   // Session Isolation
   currentSession: string;
@@ -708,53 +710,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Flexible Session Isolation (Normalizes case and whitespace):
   // sessionIntakes, sessionPackets, sessionBills, sessionAssignmentSubmissions, sessionRegistrationReceipts
-  const cleanActiveSession = (currentSession || "July 2026").trim().toLowerCase();
-
   const sessionIntakes = useMemo(() => {
     return intakes.filter((r: any) => {
-      const rowSession = (r.Session || r.session || "July 2026").toString().trim().toLowerCase();
-      return rowSession === cleanActiveSession || cleanActiveSession === "all";
+      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
+      return normalizeSession(r.Session || r.session) === normalizeSession(currentSession);
     });
-  }, [intakes, cleanActiveSession]);
+  }, [intakes, currentSession]);
 
   const sessionCourseEvaluations = useMemo(() => {
     return courseEvaluations.filter((c: any) => {
-      const rowSession = (c.Session || c.session || "July 2026").toString().trim().toLowerCase();
-      return rowSession === cleanActiveSession || cleanActiveSession === "all";
+      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
+      return normalizeSession(c.Session || c.session) === normalizeSession(currentSession);
     });
-  }, [courseEvaluations, cleanActiveSession]);
+  }, [courseEvaluations, currentSession]);
 
   const sessionPackets = useMemo(() => {
     if (sessionCourseEvaluations.length === 0) {
       return [];
     }
-    const activeCourses = new Set(sessionCourseEvaluations.map((c) => c.courseCode.toUpperCase()));
+    const activeCourses = new Set(sessionCourseEvaluations.map((c: any) => (c.courseCode || c.Course_Code || '').toUpperCase()));
     return packets.filter((p: any) => {
-      const rowSession = (p.Session || p.session || "July 2026").toString().trim().toLowerCase();
-      return (rowSession === cleanActiveSession || cleanActiveSession === "all") && activeCourses.has((p.courseCode || p.Course_Code || '').toUpperCase());
+      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
+      return (
+        normalizeSession(p.Session || p.session) === normalizeSession(currentSession) &&
+        activeCourses.has((p.courseCode || p.Course_Code || '').toUpperCase())
+      );
     });
-  }, [packets, cleanActiveSession, sessionCourseEvaluations]);
+  }, [packets, currentSession, sessionCourseEvaluations]);
 
   const sessionBills = useMemo(() => {
     return bills.filter((b: any) => {
-      const rowSession = (b.Session || b.session || "July 2026").toString().trim().toLowerCase();
-      return rowSession === cleanActiveSession || cleanActiveSession === "all";
+      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
+      return normalizeSession(b.Session || b.session) === normalizeSession(currentSession);
     });
-  }, [bills, cleanActiveSession]);
+  }, [bills, currentSession]);
 
   const sessionAssignmentSubmissions = useMemo(() => {
     return assignmentSubmissions.filter((s: any) => {
-      const rowSession = (s.Session || s.session || "July 2026").toString().trim().toLowerCase();
-      return rowSession === cleanActiveSession || cleanActiveSession === "all";
+      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
+      return normalizeSession(s.Session || s.session) === normalizeSession(currentSession);
     });
-  }, [assignmentSubmissions, cleanActiveSession]);
+  }, [assignmentSubmissions, currentSession]);
 
   const sessionRegistrationReceipts = useMemo(() => {
     return registrationReceipts.filter((r: any) => {
-      const rowSession = (r.Session || r.session || "July 2026").toString().trim().toLowerCase();
-      return rowSession === cleanActiveSession || cleanActiveSession === "all";
+      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
+      return normalizeSession(r.Session || r.session) === normalizeSession(currentSession);
     });
-  }, [registrationReceipts, cleanActiveSession]);
+  }, [registrationReceipts, currentSession]);
 
   // Assignment Submissions Operations
   const updateSubmissionStatus = useCallback(
@@ -1623,7 +1626,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setCourseEvaluations((prev) =>
         prev.map((rec) => {
-          if (rec.id !== evaluationId) return rec;
+          if (rec.id !== evaluationId && rec.submissionKey !== evaluationId && (rec as any).Sub_ID !== evaluationId) return rec;
           if (rec.isLocked) {
             alert('Security Notice: This assignment script is locked. Marks cannot be edited unless unlocked by an Administrator.');
             return rec;
@@ -1683,9 +1686,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const toggleLockMarks = useCallback(
     (evaluationId: string, shouldLock: boolean) => {
-      const rec = courseEvaluations.find((e) => e.id === evaluationId || e.submissionKey === evaluationId);
+      const rec = courseEvaluations.find(
+        (e) =>
+          e.id === evaluationId ||
+          e.submissionKey === evaluationId ||
+          (e as any).Sub_ID === evaluationId ||
+          (e as any).subId === evaluationId
+      );
       if (!rec) return;
-      saveOrUpdateMarksAndLock(rec, rec.marks, shouldLock);
+      saveOrUpdateMarksAndLock(
+        rec,
+        (rec as any).Marks !== undefined && (rec as any).Marks !== '' ? (rec as any).Marks : (rec as any).marks,
+        shouldLock
+      );
     },
     [courseEvaluations, saveOrUpdateMarksAndLock]
   );
@@ -1901,6 +1914,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 studentPhone: contact,
                 programmeCode: prog,
                 session: sess,
+                Session: sess,
                 registeredCourses: courseCodesArr,
                 issuedBy: official,
                 issuedAt: ts,

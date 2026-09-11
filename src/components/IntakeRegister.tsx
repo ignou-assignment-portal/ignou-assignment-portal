@@ -90,7 +90,7 @@ export const IntakeRegister: React.FC = () => {
   };
 
   // Flexible Session Filtering: normalizes activeSession so whitespace or case does not hide valid rows
-  const cleanActiveSession = (currentSession || "July 2026").trim().toLowerCase();
+  const normalizeSession = (s: any) => (s || "").toString().trim().toLowerCase().replace(/\s+/g, '');
   const sessionRecords = useMemo(() => {
     const list = (intakeRegister && intakeRegister.length > 0)
       ? intakeRegister
@@ -98,10 +98,10 @@ export const IntakeRegister: React.FC = () => {
       ? allIntakes
       : sessionIntakes;
     return list.filter((row: any) => {
-      const rowSession = (row.Session || row.session || "July 2026").toString().trim().toLowerCase();
-      return rowSession === cleanActiveSession || cleanActiveSession === "all";
+      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
+      return normalizeSession(row.Session || row.session) === normalizeSession(currentSession);
     });
-  }, [intakeRegister, allIntakes, sessionIntakes, cleanActiveSession]);
+  }, [intakeRegister, allIntakes, sessionIntakes, currentSession]);
 
   // Filtered records supporting both snake_case and camelCase keys
   const filteredRecords = useMemo(() => {
@@ -152,12 +152,12 @@ export const IntakeRegister: React.FC = () => {
     const list = (intakeRegister && intakeRegister.length > 0) ? intakeRegister : allIntakes;
     list.forEach((r: any) => {
       const rowSession = (r.Session || r.session || '').toString().trim();
-      if (rowSession.toLowerCase() !== cleanActiveSession) {
+      if (normalizeSession(rowSession) !== normalizeSession(currentSession)) {
         counts[rowSession] = (counts[rowSession] || 0) + 1;
       }
     });
     return counts;
-  }, [intakeRegister, allIntakes, cleanActiveSession]);
+  }, [intakeRegister, allIntakes, currentSession]);
 
   const handleStatusChange = (id: string, newStatus: IntakeStatus) => {
     updateIntakeRecord(id, { status: newStatus });
@@ -305,7 +305,7 @@ export const IntakeRegister: React.FC = () => {
         <div className="flex items-center justify-between text-xs text-zinc-500 pt-1 border-t border-zinc-100">
           <span>
             Showing <strong className="text-zinc-800">{filteredRecords.length}</strong> of{' '}
-            <strong className="text-zinc-800">{sessionIntakes.length}</strong> submissions in {currentSession}
+            <strong className="text-zinc-800">{sessionRecords.length}</strong> submissions in {currentSession}
           </span>
           {(searchQuery || selectedStatus !== 'ALL' || selectedMode !== 'ALL' || selectedProgramme !== 'ALL') && (
             <button

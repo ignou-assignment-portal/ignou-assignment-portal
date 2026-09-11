@@ -44,6 +44,7 @@ export const IntakeDesk: React.FC = () => {
     deleteIntakeRecord,
     sessionIntakes,
     allIntakes,
+    intakeRegister,
     allCourseEvaluations,
     openReceiptModal,
     currentRole,
@@ -87,16 +88,29 @@ export const IntakeDesk: React.FC = () => {
   const [editingRecord, setEditingRecord] = useState<any | null>(null);
 
   // Flexible Session Filtering: normalizes activeSession so whitespace or case does not hide valid rows
-  const cleanActiveSession = (currentSession || "July 2026").trim().toLowerCase();
+  const normalizeSession = (s: any) => (s || "").toString().trim().toLowerCase().replace(/\s+/g, '');
+
+  const filteredIntake = useMemo(() => {
+    const list = (intakeRegister && intakeRegister.length > 0)
+      ? intakeRegister
+      : (allIntakes && allIntakes.length > 0)
+      ? allIntakes
+      : sessionIntakes;
+    return list.filter((row: any) => {
+      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
+      return normalizeSession(row.Session || row.session) === normalizeSession(currentSession);
+    });
+  }, [intakeRegister, allIntakes, sessionIntakes, currentSession]);
+
   const filteredReceipts = useMemo(() => {
     const list = (allRegistrationReceipts && allRegistrationReceipts.length > 0)
       ? allRegistrationReceipts
       : sessionRegistrationReceipts;
     return list.filter((row: any) => {
-      const rowSession = (row.Session || row.session || "July 2026").toString().trim().toLowerCase();
-      return rowSession === cleanActiveSession || cleanActiveSession === "all";
+      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
+      return normalizeSession(row.Session || row.session) === normalizeSession(currentSession);
     });
-  }, [allRegistrationReceipts, sessionRegistrationReceipts, cleanActiveSession]);
+  }, [allRegistrationReceipts, sessionRegistrationReceipts, currentSession]);
 
   const handleEditClick = (record: any) => {
     setEditingRecord(record);
@@ -1143,7 +1157,7 @@ export const IntakeDesk: React.FC = () => {
                     </h3>
                   </div>
                   <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700 font-semibold">
-                    {sessionIntakes.length} Intake Records
+                    {filteredIntake.length} Intake Records
                   </span>
                 </div>
 
@@ -1152,100 +1166,116 @@ export const IntakeDesk: React.FC = () => {
                 </p>
 
                 <div className="space-y-2.5 max-h-[560px] overflow-y-auto pr-1">
-                  {sessionIntakes.length === 0 ? (
+                  {filteredIntake.length === 0 ? (
                     <div className="text-center py-12 text-zinc-400 text-xs">
                       No submissions recorded yet for {currentSession}.
                       <br />
                       Use the registration form on the left to register a student.
                     </div>
                   ) : (
-                    sessionIntakes.map((record) => (
-                      <div
-                        key={record.id}
-                        className="p-3 bg-zinc-50 hover:bg-indigo-50/40 border border-zinc-200 hover:border-indigo-300 rounded-xl transition group text-xs"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="font-mono font-bold text-indigo-950 text-xs flex items-center gap-1.5">
-                              {record.tokenNo}
-                              {record.tokenNo === justSubmittedToken && (
-                                <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-sans font-bold">
-                                  JUST GENERATED
+                    filteredIntake.map((record: any) => {
+                      const enr = record.Enrollment_No || record.enrollmentNo || record["Enrollment No"] || "-";
+                      const candName = record.Candidate_Name || record.candidateName || record["Candidate Name"] || record.studentName || "-";
+                      const prog = record.Programme || record.programme || record.programmeCode || "-";
+                      const rawCourses = record.Courses || record.courses || record.courseCodes || [];
+                      const coursesArr: string[] = Array.isArray(rawCourses)
+                        ? rawCourses
+                        : typeof rawCourses === 'string'
+                        ? rawCourses.split(',').map((c: string) => c.trim()).filter(Boolean)
+                        : [];
+                      const token = record.Token_No || record.tokenNo || record.receiptNumber || record.id || "-";
+                      const subMode = record.submissionMode || record.mode || "In-Person (Desk)";
+                      const subDate = record.Timestamp ? String(record.Timestamp).split('T')[0] : (record.submissionDate || record.createdAt || "");
+                      const status = record.Status || record.status || "Received";
+
+                      return (
+                        <div
+                          key={record.id || token || enr}
+                          className="p-3 bg-zinc-50 hover:bg-indigo-50/40 border border-zinc-200 hover:border-indigo-300 rounded-xl transition group text-xs"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="font-mono font-bold text-indigo-950 text-xs flex items-center gap-1.5">
+                                {token}
+                                {token === justSubmittedToken && (
+                                  <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-sans font-bold">
+                                    JUST GENERATED
+                                  </span>
+                                )}
+                              </div>
+                              <div className="font-semibold text-zinc-800 mt-0.5">
+                                {candName}
+                                <span className="text-zinc-500 font-normal ml-1">
+                                  ({enr})
                                 </span>
-                              )}
+                              </div>
                             </div>
-                            <div className="font-semibold text-zinc-800 mt-0.5">
-                              {record.studentName}
-                              <span className="text-zinc-500 font-normal ml-1">
-                                ({record.enrollmentNo})
-                              </span>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              {/* Edit Intake Receipt */}
+                              <button
+                                id={`recent-edit-btn-${record.id || token}`}
+                                onClick={() => handleEditClick(record)}
+                                className="p-1.5 text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 border border-zinc-200 rounded-lg text-xs font-semibold transition cursor-pointer"
+                                title="Edit Intake Receipt"
+                              >
+                                <Pencil className="w-3.5 h-3.5 text-indigo-600" />
+                              </button>
+
+                              {/* Delete Intake Record */}
+                              <button
+                                id={`recent-delete-btn-${record.id || token}`}
+                                onClick={() => handleDeleteClick(record)}
+                                className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 border border-zinc-200 rounded-lg text-xs font-semibold transition cursor-pointer"
+                                title="Delete Intake Record (Coordinator PIN 2033 Required)"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Print Receipt */}
+                              <button
+                                id={`recent-receipt-btn-${record.id || token}`}
+                                onClick={() => openReceiptModal(record)}
+                                className="px-2 py-1 bg-white hover:bg-indigo-600 hover:text-white border border-zinc-300 text-zinc-700 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 shrink-0 shadow-2xs cursor-pointer"
+                                title="Print Official Acknowledgment Receipt"
+                              >
+                                <Printer className="w-3 h-3" />
+                                <span>Receipt</span>
+                              </button>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-1 shrink-0">
-                            {/* Edit Intake Receipt */}
-                            <button
-                              id={`recent-edit-btn-${record.id}`}
-                              onClick={() => handleEditClick(record)}
-                              className="p-1.5 text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 border border-zinc-200 rounded-lg text-xs font-semibold transition cursor-pointer"
-                              title="Edit Intake Receipt"
-                            >
-                              <Pencil className="w-3.5 h-3.5 text-indigo-600" />
-                            </button>
-
-                            {/* Delete Intake Record */}
-                            <button
-                              id={`recent-delete-btn-${record.id}`}
-                              onClick={() => handleDeleteClick(record)}
-                              className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 border border-zinc-200 rounded-lg text-xs font-semibold transition cursor-pointer"
-                              title="Delete Intake Record (Coordinator PIN 2033 Required)"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-
-                            {/* Print Receipt */}
-                            <button
-                              id={`recent-receipt-btn-${record.id}`}
-                              onClick={() => openReceiptModal(record)}
-                              className="px-2 py-1 bg-white hover:bg-indigo-600 hover:text-white border border-zinc-300 text-zinc-700 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 shrink-0 shadow-2xs cursor-pointer"
-                              title="Print Official Acknowledgment Receipt"
-                            >
-                              <Printer className="w-3 h-3" />
-                              <span>Receipt</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-800">
-                            {record.programmeCode}
-                          </span>
-                          {record.courseCodes.map((c) => (
-                            <span
-                              key={c}
-                              className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white text-zinc-700 border border-zinc-200"
-                            >
-                              {c}
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-800">
+                              {prog}
                             </span>
-                          ))}
-                        </div>
+                            {coursesArr.map((c: string) => (
+                              <span
+                                key={c}
+                                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white text-zinc-700 border border-zinc-200"
+                              >
+                                {c}
+                              </span>
+                            ))}
+                          </div>
 
-                        <div className="mt-2 pt-2 border-t border-zinc-200/60 flex items-center justify-between text-[10px] text-zinc-500">
-                          <span>{record.submissionMode} • {formatDate(record.submissionDate)}</span>
-                          <span
-                            className={`px-1.5 py-0.2 rounded font-medium ${
-                              record.status === 'Evaluated'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : record.status === 'Under Evaluation'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-zinc-100 text-zinc-600'
-                            }`}
-                          >
-                            {record.status}
-                          </span>
+                          <div className="mt-2 pt-2 border-t border-zinc-200/60 flex items-center justify-between text-[10px] text-zinc-500">
+                            <span>{subMode} • {subDate ? formatDate(subDate) : '-'}</span>
+                            <span
+                              className={`px-1.5 py-0.2 rounded font-medium ${
+                                status === 'Evaluated'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : status === 'Under Evaluation'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-zinc-100 text-zinc-600'
+                              }`}
+                            >
+                              {status}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -1346,7 +1376,7 @@ export const IntakeDesk: React.FC = () => {
           </div>
 
           {/* Desktop Table View (screens >= 768px) */}
-          <div className="hidden md:block overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
             <table className="w-full text-left text-xs">
               <thead className="bg-zinc-50 text-zinc-600 uppercase text-[10px] font-bold border-b border-zinc-200">
                 <tr>

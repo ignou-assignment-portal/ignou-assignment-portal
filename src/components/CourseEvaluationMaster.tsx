@@ -66,12 +66,29 @@ export const CourseEvaluationMaster: React.FC = () => {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [printCourseCode, setPrintCourseCode] = useState<string>('');
 
+  const normalizeSession = (s: any) => (s || "").toString().trim().toLowerCase().replace(/\s+/g, '');
+
+  const filteredLedger = useMemo(() => {
+    const list = (courseLedger && courseLedger.length > 0)
+      ? courseLedger
+      : (allCourseEvaluations && allCourseEvaluations.length > 0)
+      ? allCourseEvaluations
+      : sessionCourseEvaluations;
+    return list.filter((row: any) => {
+      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
+      return normalizeSession(row.Session || row.session) === normalizeSession(currentSession);
+    });
+  }, [courseLedger, allCourseEvaluations, sessionCourseEvaluations, currentSession]);
+
   // Extract all distinct course codes in active session
   const distinctCourses = useMemo(() => {
     const set = new Set<string>();
-    sessionCourseEvaluations.forEach((rec) => set.add(rec.courseCode));
+    filteredLedger.forEach((rec: any) => {
+      const code = rec.Course_Code || rec.courseCode || rec["Course Code"];
+      if (code) set.add(code);
+    });
     return Array.from(set).sort();
-  }, [sessionCourseEvaluations]);
+  }, [filteredLedger]);
 
   // Active academic counsellors sorted alphabetically
   const activeEvaluatorsSorted = useMemo(() => {
@@ -86,35 +103,46 @@ export const CourseEvaluationMaster: React.FC = () => {
 
   // Filtered rows
   const filteredRecords = useMemo(() => {
-    return sessionCourseEvaluations.filter((rec) => {
+    return filteredLedger.filter((rec: any) => {
+      const course = rec.Course_Code || rec.courseCode || rec["Course Code"] || "";
+      const status = rec.Status || rec.status || "Pending";
+      const isLocked = Boolean(rec.isLocked || rec.Status === 'Locked' || rec.status === 'Locked' || rec.status === 'Marks Locked');
+      const enr = String(rec.Enrollment_No || rec.enrollmentNo || rec["Enrollment No"] || "");
+      const name = String(rec.Candidate_Name || rec.candidateName || rec["Candidate Name"] || rec.studentName || "");
+      const subKey = String(rec.Sub_ID || rec.subId || rec.submissionKey || rec.id || "");
+      const evaluator = String(rec.Allotted_Evaluator || rec.allottedEvaluator || rec.evaluatorName || "");
+      const token = String(rec.Token_No || rec.tokenNo || "");
+      const prog = String(rec.Programme || rec.programme || rec.programmeCode || "");
+
       // Course code filter
-      if (selectedCourseFilter !== 'ALL' && rec.courseCode !== selectedCourseFilter) {
+      if (selectedCourseFilter !== 'ALL' && course !== selectedCourseFilter) {
         return false;
       }
       // Status filter
-      if (statusFilter !== 'ALL' && rec.status !== statusFilter) {
+      if (statusFilter !== 'ALL' && status !== statusFilter) {
         return false;
       }
       // Lock filter
-      if (lockFilter === 'LOCKED' && !rec.isLocked) return false;
-      if (lockFilter === 'UNLOCKED' && rec.isLocked) return false;
+      if (lockFilter === 'LOCKED' && !isLocked) return false;
+      if (lockFilter === 'UNLOCKED' && isLocked) return false;
 
       // Search filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const matchEnr = rec.enrollmentNo.toLowerCase().includes(q);
-        const matchName = rec.studentName.toLowerCase().includes(q);
-        const matchKey = rec.submissionKey.toLowerCase().includes(q);
-        const matchCourse = rec.courseCode.toLowerCase().includes(q);
-        const matchEvaluator = rec.evaluatorName?.toLowerCase().includes(q);
-        const matchToken = rec.tokenNo.toLowerCase().includes(q);
-        if (!matchEnr && !matchName && !matchKey && !matchCourse && !matchEvaluator && !matchToken) {
+        const matchEnr = enr.toLowerCase().includes(q);
+        const matchName = name.toLowerCase().includes(q);
+        const matchKey = subKey.toLowerCase().includes(q);
+        const matchCourse = course.toLowerCase().includes(q);
+        const matchEvaluator = evaluator.toLowerCase().includes(q);
+        const matchToken = token.toLowerCase().includes(q);
+        const matchProg = prog.toLowerCase().includes(q);
+        if (!matchEnr && !matchName && !matchKey && !matchCourse && !matchEvaluator && !matchToken && !matchProg) {
           return false;
         }
       }
       return true;
     });
-  }, [sessionCourseEvaluations, selectedCourseFilter, statusFilter, lockFilter, searchQuery]);
+  }, [filteredLedger, selectedCourseFilter, statusFilter, lockFilter, searchQuery]);
 
   // Evaluator lookup
   const getEvaluator = (id: string | null | undefined) => {
@@ -191,8 +219,9 @@ export const CourseEvaluationMaster: React.FC = () => {
         (e.evaluatorCode && selectedEvaluator.toLowerCase().includes(e.evaluatorCode.toLowerCase()))
       ))
     );
-    if (row.id) {
-      allotEvaluatorToEvaluations([row.id], matchedEv ? matchedEv.id : null);
+    const targetRowId = row.id || row.Sub_ID || row.subId || row.submissionKey;
+    if (targetRowId) {
+      allotEvaluatorToEvaluations([targetRowId], matchedEv ? matchedEv.id : null);
     }
 
     // Dispatch POST request to Google Apps Script:
@@ -296,11 +325,24 @@ export const CourseEvaluationMaster: React.FC = () => {
 
   // Statistics calculation for active session
   const summaryStats = useMemo(() => {
-    const total = sessionCourseEvaluations.length;
-    const pendingAllotment = sessionCourseEvaluations.filter((r) => !r.evaluatorId).length;
-    const allotted = sessionCourseEvaluations.filter((r) => r.evaluatorId && r.marks === null).length;
-    const evaluated = sessionCourseEvaluations.filter((r) => r.marks !== null && !r.isLocked).length;
-    const locked = sessionCourseEvaluations.filter((r) => r.isLocked).length;
+    const total = filteredLedger.length;
+    const pendingAllotment = filteredLedger.filter((r: any) => {
+      const ev = r.Allotted_Evaluator || r.allottedEvaluator || r.evaluatorName || r.evaluatorId;
+      return !ev || ev === "Unallotted";
+    }).length;
+    const allotted = filteredLedger.filter((r: any) => {
+      const ev = r.Allotted_Evaluator || r.allottedEvaluator || r.evaluatorName || r.evaluatorId;
+      const m = r.Marks !== undefined && r.Marks !== "" && r.Marks !== null ? r.Marks : r.marks;
+      return ev && ev !== "Unallotted" && (m === null || m === undefined || m === "");
+    }).length;
+    const evaluated = filteredLedger.filter((r: any) => {
+      const m = r.Marks !== undefined && r.Marks !== "" && r.Marks !== null ? r.Marks : r.marks;
+      const isLocked = Boolean(r.isLocked || r.Status === 'Locked' || r.status === 'Locked' || r.status === 'Marks Locked');
+      return m !== null && m !== undefined && m !== "" && !isLocked;
+    }).length;
+    const locked = filteredLedger.filter((r: any) => {
+      return Boolean(r.isLocked || r.Status === 'Locked' || r.status === 'Locked' || r.status === 'Marks Locked');
+    }).length;
 
     // Grades tally
     let gradeA = 0;
@@ -311,15 +353,18 @@ export const CourseEvaluationMaster: React.FC = () => {
     let totalMarksSum = 0;
     let marksCount = 0;
 
-    sessionCourseEvaluations.forEach((r) => {
-      if (r.marks !== null) {
+    filteredLedger.forEach((r: any) => {
+      const rawM = r.Marks !== undefined && r.Marks !== "" && r.Marks !== null ? r.Marks : r.marks;
+      const numM = rawM !== null && rawM !== undefined && rawM !== "" && !isNaN(Number(rawM)) ? Number(rawM) : null;
+      if (numM !== null) {
         marksCount++;
-        totalMarksSum += r.marks;
-        if (r.grade === 'A') gradeA++;
-        else if (r.grade === 'B') gradeB++;
-        else if (r.grade === 'C') gradeC++;
-        else if (r.grade === 'D') gradeD++;
-        else if (r.grade === 'E') gradeE++;
+        totalMarksSum += numM;
+        const g = calculateIGNOUGrade(numM).grade;
+        if (g === 'A') gradeA++;
+        else if (g === 'B') gradeB++;
+        else if (g === 'C') gradeC++;
+        else if (g === 'D') gradeD++;
+        else if (g === 'E') gradeE++;
       }
     });
 
@@ -342,7 +387,7 @@ export const CourseEvaluationMaster: React.FC = () => {
       averageMark,
       passRate,
     };
-  }, [sessionCourseEvaluations]);
+  }, [filteredLedger]);
 
   return (
     <div className="space-y-6">
@@ -654,12 +699,210 @@ export const CourseEvaluationMaster: React.FC = () => {
         </div>
 
         <div className="text-xs text-zinc-500 font-mono">
-          Showing <strong>{filteredRecords.length}</strong> of {sessionCourseEvaluations.length} ledger rows
+          Showing <strong>{filteredRecords.length}</strong> of {filteredLedger.length} ledger rows
         </div>
       </div>
 
-      {/* Primary Unpacked Ledger Table */}
-      <div className="bg-white border border-zinc-200 rounded-2xl shadow-xs overflow-hidden">
+      {/* Mobile Card View (screens < 768px) */}
+      <div className="block md:hidden space-y-3">
+        {filteredRecords.length === 0 ? (
+          <div className="p-8 text-center bg-white rounded-xl border border-zinc-200 text-zinc-400 text-xs">
+            No evaluation ledger records found in {currentSession}.
+          </div>
+        ) : (
+          filteredRecords.map((record: any) => {
+            const recordId = record.id || record.Sub_ID || record.subId || record.submissionKey;
+            const enr = record.Enrollment_No || record.enrollmentNo || record["Enrollment No"] || "-";
+            const studentName = record.Candidate_Name || record.candidateName || record["Candidate Name"] || record.studentName || "-";
+            const programmeCode = record.Programme || record.programme || record.programmeCode || "-";
+            const courseCode = record.Course_Code || record.courseCode || record["Course Code"] || "-";
+            const evaluator = record.Allotted_Evaluator || record.allottedEvaluator || (record.evaluatorName && record.evaluatorCode ? `${record.evaluatorName} (${record.evaluatorCode})` : record.evaluatorName) || "Unallotted";
+            const rawMarks = record.Marks !== undefined && record.Marks !== "" && record.Marks !== null ? record.Marks : (record.marks !== undefined && record.marks !== null ? record.marks : null);
+            const numericMarks = rawMarks !== null && rawMarks !== undefined && rawMarks !== "" && !isNaN(Number(rawMarks)) ? Number(rawMarks) : null;
+            const gradeInfo = calculateIGNOUGrade(numericMarks);
+            const isLocked = Boolean(record.isLocked || record.Status === 'Locked' || record.status === 'Locked' || record.status === 'Marks Locked');
+            const submissionKey = record.Sub_ID || record.subId || record.submissionKey || record.id || `SUB-${enr}-${courseCode}`;
+            const tokenNo = record.Token_No || record.tokenNo || `TOK-${enr.slice(-4)}`;
+            const isSelected = selectedIds.includes(recordId);
+            const status = record.Status || record.status || (isLocked ? 'Marks Locked' : numericMarks !== null ? 'Evaluated' : (evaluator && evaluator !== 'Unallotted') ? 'Allotted' : 'Pending');
+
+            return (
+              <div
+                key={recordId}
+                className={`bg-white border rounded-xl p-4 space-y-3 transition shadow-xs ${
+                  isLocked ? 'border-purple-200 bg-purple-50/20' : isSelected ? 'border-indigo-300 bg-indigo-50/20' : 'border-zinc-200'
+                }`}
+              >
+                {/* Header: Course Code, Checkbox & Primary Key */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => handleToggleSelect(recordId)}
+                      className="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    <span className="px-2.5 py-1 bg-zinc-900 text-white font-mono font-bold rounded-md text-xs">
+                      {courseCode}
+                    </span>
+                    <span className="px-2 py-0.5 bg-zinc-100 text-zinc-800 font-mono text-[11px] rounded font-semibold">
+                      {programmeCode}
+                    </span>
+                  </div>
+                  <span className="font-mono text-[10px] text-indigo-950 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                    {submissionKey}
+                  </span>
+                </div>
+
+                {/* Candidate Info */}
+                <div>
+                  <div className="font-bold text-zinc-900 text-sm">{studentName}</div>
+                  <div className="text-zinc-500 font-mono text-xs flex items-center gap-2 mt-0.5">
+                    <span>Enr: {enr}</span>
+                    <span>•</span>
+                    <span>{tokenNo}</span>
+                  </div>
+                </div>
+
+                {/* Evaluator Allotment */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-zinc-600 block">
+                    Academic Counsellor Allotment:
+                  </label>
+                  {isLocked ? (
+                    <div className="text-xs font-medium text-zinc-800 bg-zinc-100 px-2.5 py-1.5 rounded-lg border border-zinc-200">
+                      {evaluator || 'Unallotted'}
+                    </div>
+                  ) : (
+                    <select
+                      id={`mobile-allot-eval-${recordId}`}
+                      value={evaluator}
+                      onChange={(e) => handleAllotEvaluator(record, e)}
+                      className="w-full text-xs py-2 px-2.5 rounded-lg border border-zinc-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="Unallotted">-- Select Academic Counsellor --</option>
+                      {activeEvaluatorsSorted.map((ev) => {
+                        const evalName = ev.evaluatorName || ev.name;
+                        const evalDept = ev.department ? ev.department : ev.designation || 'Academic Counsellor';
+                        return (
+                          <option key={ev.evaluatorCode || ev.id} value={`${evalName} (${ev.evaluatorCode})`}>
+                            {evalName} ({evalDept})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
+                </div>
+
+                {/* Marks & IGNOU Grade */}
+                <div className="pt-2 border-t border-zinc-100 flex items-center justify-between gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
+                      Marks (0-100)
+                    </label>
+                    {isLocked ? (
+                      <span className="font-mono font-black text-sm text-zinc-900 bg-zinc-100 px-3 py-1 rounded-lg border border-zinc-200">
+                        {numericMarks !== null ? `${numericMarks} / 100` : '—'}
+                      </span>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={numericMarks !== null ? numericMarks : ''}
+                          placeholder="0-100"
+                          onChange={(e) => {
+                            const valStr = e.target.value;
+                            if (valStr === '') {
+                              updateEvaluationMarks(recordId, null);
+                              return;
+                            }
+                            const n = parseInt(valStr, 10);
+                            if (isNaN(n) || n < 0 || n > 100) return;
+                            updateEvaluationMarks(recordId, n);
+                          }}
+                          className="w-20 px-2.5 py-1 text-xs font-mono font-bold border border-zinc-300 rounded-lg text-zinc-900 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <span className="text-xs text-zinc-400 font-mono">/100</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="text-right">
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
+                      IGNOU Grade
+                    </label>
+                    <span className={`px-2 py-0.5 text-xs font-bold rounded border ${gradeInfo.badgeClass}`}>
+                      Grade {gradeInfo.grade}
+                    </span>
+                    <span className="text-[10px] text-zinc-500 block mt-0.5 font-medium">
+                      {gradeInfo.label}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Lock Status & Action */}
+                <div className="pt-2 border-t border-zinc-100 flex items-center justify-between">
+                  <div>
+                    {isLocked ? (
+                      <div className="flex items-center gap-1 text-[11px] font-bold text-purple-900">
+                        <Stamp className="w-3.5 h-3.5 text-purple-700" />
+                        <span>LOCKED & SEALED</span>
+                      </div>
+                    ) : (
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold ${
+                        status === 'Evaluated'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : status === 'Allotted'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}>
+                        {status}
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    {isLocked ? (
+                      isAdmin ? (
+                        <button
+                          onClick={() => handleLockMarks(recordId, false)}
+                          className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                        >
+                          <Unlock className="w-3 h-3 text-rose-600" />
+                          <span>Unlock</span>
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-zinc-400 bg-zinc-100 px-2 py-1 rounded border border-zinc-200">
+                          <Lock className="w-3 h-3" />
+                          <span>Sealed</span>
+                        </span>
+                      )
+                    ) : (
+                      <button
+                        onClick={() => handleLockMarks(recordId, true)}
+                        disabled={numericMarks === null}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs ${
+                          numericMarks !== null
+                            ? 'bg-purple-100 hover:bg-purple-200 text-purple-900 border border-purple-300'
+                            : 'bg-zinc-100 text-zinc-400 border border-zinc-200 cursor-not-allowed opacity-60'
+                        }`}
+                      >
+                        <Lock className="w-3 h-3" />
+                        <span>Lock</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Primary Unpacked Ledger Table (Desktop >= 768px) */}
+      <div className="hidden md:block bg-white border border-zinc-200 rounded-2xl shadow-xs overflow-hidden">
         <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
           <table className="w-full text-left border-collapse text-xs min-w-[950px]">
             <thead>
@@ -669,7 +912,7 @@ export const CourseEvaluationMaster: React.FC = () => {
                     type="checkbox"
                     checked={
                       filteredRecords.length > 0 &&
-                      filteredRecords.every((r) => selectedIds.includes(r.id))
+                      filteredRecords.every((r: any) => selectedIds.includes(r.id || r.Sub_ID || r.subId || r.submissionKey))
                     }
                     onChange={handleSelectAll}
                     className="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
@@ -699,16 +942,27 @@ export const CourseEvaluationMaster: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((record) => {
-                  const isSelected = selectedIds.includes(record.id);
-                  const currentEvaluator = getEvaluator(record.evaluatorId);
-                  const gradeInfo = calculateIGNOUGrade(record.marks);
+                filteredRecords.map((record: any) => {
+                  const recordId = record.id || record.Sub_ID || record.subId || record.submissionKey;
+                  const enr = record.Enrollment_No || record.enrollmentNo || record["Enrollment No"] || "-";
+                  const studentName = record.Candidate_Name || record.candidateName || record["Candidate Name"] || record.studentName || "-";
+                  const programmeCode = record.Programme || record.programme || record.programmeCode || "-";
+                  const courseCode = record.Course_Code || record.courseCode || record["Course Code"] || "-";
+                  const evaluator = record.Allotted_Evaluator || record.allottedEvaluator || (record.evaluatorName && record.evaluatorCode ? `${record.evaluatorName} (${record.evaluatorCode})` : record.evaluatorName) || "Unallotted";
+                  const rawMarks = record.Marks !== undefined && record.Marks !== "" && record.Marks !== null ? record.Marks : (record.marks !== undefined && record.marks !== null ? record.marks : null);
+                  const numericMarks = rawMarks !== null && rawMarks !== undefined && rawMarks !== "" && !isNaN(Number(rawMarks)) ? Number(rawMarks) : null;
+                  const gradeInfo = calculateIGNOUGrade(numericMarks);
+                  const isLocked = Boolean(record.isLocked || record.Status === 'Locked' || record.status === 'Locked' || record.status === 'Marks Locked');
+                  const submissionKey = record.Sub_ID || record.subId || record.submissionKey || record.id || `SUB-${enr}-${courseCode}`;
+                  const tokenNo = record.Token_No || record.tokenNo || `TOK-${enr.slice(-4)}`;
+                  const submissionMode = record.submissionMode || record.mode || "In-Person (Desk)";
+                  const isSelected = selectedIds.includes(recordId);
 
                   return (
                     <tr
-                      key={record.id}
+                      key={recordId}
                       className={`hover:bg-zinc-50/70 transition ${
-                        record.isLocked
+                        isLocked
                           ? 'bg-purple-50/15'
                           : isSelected
                           ? 'bg-indigo-50/40'
@@ -720,7 +974,7 @@ export const CourseEvaluationMaster: React.FC = () => {
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          onChange={() => handleToggleSelect(record.id)}
+                          onChange={() => handleToggleSelect(recordId)}
                           className="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                         />
                       </td>
@@ -729,11 +983,11 @@ export const CourseEvaluationMaster: React.FC = () => {
                       <td className="p-3.5 font-mono">
                         <div className="flex items-center gap-1.5">
                           <span className="font-bold text-indigo-950 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 text-[11px]">
-                            {record.submissionKey}
+                            {submissionKey}
                           </span>
                         </div>
                         <div className="text-[10px] text-zinc-400 mt-1 flex items-center gap-1">
-                          <span>Mode: {record.submissionMode}</span>
+                          <span>Mode: {submissionMode}</span>
                           {record.consignmentNo && (
                             <span className="text-zinc-600 font-mono font-medium">
                               ({record.consignmentNo})
@@ -745,54 +999,39 @@ export const CourseEvaluationMaster: React.FC = () => {
                       {/* Candidate */}
                       <td className="p-3.5">
                         <div className="font-bold text-zinc-900 text-xs">
-                          {record.studentName}
+                          {studentName}
                         </div>
                         <div className="text-zinc-500 font-mono text-[11px]">
-                          Enr: {record.enrollmentNo}
+                          Enr: {enr}
                         </div>
                         <div className="text-[10px] text-zinc-400 mt-0.5 font-mono">
-                          {record.tokenNo} • {record.programmeCode}
+                          {tokenNo} • {programmeCode}
                         </div>
                       </td>
 
                       {/* Course Code */}
                       <td className="p-3.5">
                         <span className="inline-block px-2.5 py-1 bg-zinc-100 text-zinc-800 font-mono font-bold rounded-lg border border-zinc-200 text-xs">
-                          {record.courseCode}
+                          {courseCode}
                         </span>
                       </td>
 
-                      {/* Academic Counsellor Allotment (with eligibility validation) */}
+                      {/* Academic Counsellor Allotment */}
                       <td className="p-3.5">
-                        {record.isLocked ? (
+                        {isLocked ? (
                           <div className="flex items-center gap-1.5">
                             <span className="font-medium text-zinc-800">
-                              {record.evaluatorName || 'Unallotted'}
+                              {evaluator || 'Unallotted'}
                             </span>
-                            {record.evaluatorCode && (
-                              <span className="text-[10px] font-mono bg-zinc-100 text-zinc-600 px-1 rounded">
-                                {record.evaluatorCode}
-                              </span>
-                            )}
                           </div>
                         ) : (
                           <div className="space-y-1">
                             <select
-                              id={`allot-evaluator-select-${record.id || (record as any).Sub_ID || record.courseCode}`}
-                              value={
-                                (record as any).Allotted_Evaluator ||
-                                record.Allotted_Evaluator ||
-                                (record.evaluatorName && record.evaluatorCode
-                                  ? `${record.evaluatorName} (${record.evaluatorCode})`
-                                  : record.evaluatorId
-                                  ? evaluators.find((e) => e.id === record.evaluatorId)
-                                    ? `${evaluators.find((e) => e.id === record.evaluatorId)?.evaluatorName || evaluators.find((e) => e.id === record.evaluatorId)?.name} (${evaluators.find((e) => e.id === record.evaluatorId)?.evaluatorCode})`
-                                    : record.evaluatorId
-                                  : 'Unallotted')
-                              }
+                              id={`allot-evaluator-select-${recordId}`}
+                              value={evaluator}
                               onChange={(e) => handleAllotEvaluator(record, e)}
                               className={`w-full max-w-[240px] text-xs py-1.5 px-2 rounded-lg border focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer ${
-                                record.evaluatorId || (record as any).Allotted_Evaluator
+                                evaluator && evaluator !== 'Unallotted'
                                   ? 'bg-blue-50/50 border-blue-200 text-blue-950 font-medium'
                                   : 'bg-zinc-50 border-zinc-200 text-zinc-600'
                               }`}
@@ -820,9 +1059,9 @@ export const CourseEvaluationMaster: React.FC = () => {
 
                       {/* Numeric Marks Input (0 - 100) */}
                       <td className="p-3.5">
-                        {record.isLocked ? (
+                        {isLocked ? (
                           <span className="font-mono font-black text-sm text-zinc-900 bg-zinc-100 px-3 py-1 rounded-lg border border-zinc-200">
-                            {record.marks !== null ? `${record.marks} / 100` : '—'}
+                            {numericMarks !== null ? `${numericMarks} / 100` : '—'}
                           </span>
                         ) : (
                           <div className="flex items-center gap-1.5">
@@ -830,17 +1069,17 @@ export const CourseEvaluationMaster: React.FC = () => {
                               type="number"
                               min="0"
                               max="100"
-                              value={record.marks !== null && record.marks !== undefined ? record.marks : ''}
+                              value={numericMarks !== null ? numericMarks : ''}
                               placeholder="0-100"
                               onChange={(e) => {
                                 const valStr = e.target.value;
                                 if (valStr === '') {
-                                  updateEvaluationMarks(record.id, null);
+                                  updateEvaluationMarks(recordId, null);
                                   return;
                                 }
                                 const n = parseInt(valStr, 10);
                                 if (isNaN(n) || n < 0 || n > 100) return;
-                                updateEvaluationMarks(record.id, n);
+                                updateEvaluationMarks(recordId, n);
                               }}
                               className="w-20 px-2.5 py-1 text-xs font-mono font-bold border border-zinc-300 rounded-lg text-zinc-900 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             />
@@ -865,7 +1104,7 @@ export const CourseEvaluationMaster: React.FC = () => {
 
                       {/* Status & Official Verification Seal */}
                       <td className="p-3.5">
-                        {record.isLocked ? (
+                        {isLocked ? (
                           <div className="bg-purple-50 border border-purple-200 p-2 rounded-xl text-[11px] space-y-0.5">
                             <div className="flex items-center gap-1.5 text-purple-900 font-bold tracking-tight">
                               <Stamp className="w-3.5 h-3.5 text-purple-700" />
@@ -882,17 +1121,17 @@ export const CourseEvaluationMaster: React.FC = () => {
                           <div>
                             <span
                               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold ${
-                                record.status === 'Evaluated'
+                                record.status === 'Evaluated' || numericMarks !== null
                                   ? 'bg-emerald-100 text-emerald-800'
-                                  : record.status === 'Allotted'
+                                  : record.status === 'Allotted' || (evaluator && evaluator !== 'Unallotted')
                                   ? 'bg-blue-100 text-blue-800'
                                   : 'bg-amber-100 text-amber-800'
                               }`}
                             >
-                              {record.status}
+                              {record.status || (numericMarks !== null ? 'Evaluated' : evaluator && evaluator !== 'Unallotted' ? 'Allotted' : 'Pending')}
                             </span>
                             <div className="text-[10px] text-zinc-400 mt-1">
-                              {record.marks !== null ? 'Ready to Lock' : 'Pending Entry'}
+                              {numericMarks !== null ? 'Ready to Lock' : 'Pending Entry'}
                             </div>
                           </div>
                         )}
@@ -900,10 +1139,10 @@ export const CourseEvaluationMaster: React.FC = () => {
 
                       {/* Lock / Unlock Toggle Button */}
                       <td className="p-3.5 text-center">
-                        {record.isLocked ? (
+                        {isLocked ? (
                           isAdmin ? (
                             <button
-                              onClick={() => handleLockMarks(record.id, false)}
+                              onClick={() => handleLockMarks(recordId, false)}
                               className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer mx-auto shadow-2xs"
                               title="Administrator Override: Click to Unlock"
                             >
@@ -921,15 +1160,15 @@ export const CourseEvaluationMaster: React.FC = () => {
                           )
                         ) : (
                           <button
-                            onClick={() => handleLockMarks(record.id, true)}
-                            disabled={record.marks === null || record.marks === undefined}
+                            onClick={() => handleLockMarks(recordId, true)}
+                            disabled={numericMarks === null}
                             className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer mx-auto shadow-2xs ${
-                              record.marks !== null && record.marks !== undefined
+                              numericMarks !== null
                                 ? 'bg-purple-100 hover:bg-purple-200 text-purple-900 border border-purple-300'
                                 : 'bg-zinc-100 text-zinc-400 border border-zinc-200 cursor-not-allowed opacity-60'
                             }`}
                             title={
-                              record.marks !== null
+                              numericMarks !== null
                                 ? 'Lock and verify marks'
                                 : 'Enter marks before locking'
                             }

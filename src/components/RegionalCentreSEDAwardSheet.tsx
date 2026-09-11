@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { IGNOU_PROGRAMMES } from '../data/ignouMasterData';
-import { marksToWords, formatDate } from '../utils/helpers';
+import { marksToWords, formatDate, calculateIGNOUGrade } from '../utils/helpers';
 import { postGenerateSedPdf } from '../services/sheetsService';
 import {
   FileCheck2,
@@ -29,6 +29,7 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
   const {
     currentSession,
     sessionCourseEvaluations,
+    allCourseEvaluations,
     courseLedger,
     settings,
     isAdmin,
@@ -48,20 +49,38 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isGeneratingSedPdf, setIsGeneratingSedPdf] = useState<boolean>(false);
 
+  const normalizeSession = (s: any) => (s || "").toString().trim().toLowerCase().replace(/\s+/g, '');
+
+  const filteredLedger = useMemo(() => {
+    const list = (courseLedger && courseLedger.length > 0)
+      ? courseLedger
+      : (allCourseEvaluations && allCourseEvaluations.length > 0)
+      ? allCourseEvaluations
+      : sessionCourseEvaluations;
+    return list.filter((row: any) => {
+      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
+      return normalizeSession(row.Session || row.session) === normalizeSession(currentSession);
+    });
+  }, [courseLedger, allCourseEvaluations, sessionCourseEvaluations, currentSession]);
+
   // Extract all distinct course codes available in the session
   const distinctCourses = useMemo(() => {
     const map = new Map<string, { count: number; lockedCount: number; evaluatedCount: number }>();
-    sessionCourseEvaluations.forEach((r) => {
-      const cur = map.get(r.courseCode) || { count: 0, lockedCount: 0, evaluatedCount: 0 };
+    filteredLedger.forEach((r: any) => {
+      const code = (r.Course_Code || r.courseCode || r["Course Code"] || "").toString().trim().toUpperCase();
+      if (!code) return;
+      const isLocked = Boolean(r.isLocked || r.Status === 'Locked' || r.status === 'Locked' || r.status === 'Marks Locked');
+      const rawMarks = r.Marks !== undefined && r.Marks !== "" && r.Marks !== null ? r.Marks : r.marks;
+      const cur = map.get(code) || { count: 0, lockedCount: 0, evaluatedCount: 0 };
       cur.count += 1;
-      if (r.isLocked) cur.lockedCount += 1;
-      if (r.marks !== null) cur.evaluatedCount += 1;
-      map.set(r.courseCode, cur);
+      if (isLocked) cur.lockedCount += 1;
+      if (rawMarks !== null && rawMarks !== undefined && rawMarks !== "") cur.evaluatedCount += 1;
+      map.set(code, cur);
     });
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [sessionCourseEvaluations]);
+  }, [filteredLedger]);
 
-  // Set default selected course if not set
+  // Auto-select first course if empty or no longer valid
   React.useEffect(() => {
     if ((!selectedCourse || !distinctCourses.some(([c]) => c === selectedCourse)) && distinctCourses.length > 0) {
       setSelectedCourse(distinctCourses[0][0]);
@@ -88,46 +107,46 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
       }
     }
     // Fallback if not found in master catalogue
-    const sample = sessionCourseEvaluations.find((r) => r.courseCode === selectedCourse);
+    const sample = filteredLedger.find((r: any) => {
+      const c = (r.Course_Code || r.courseCode || r["Course Code"] || "").toString().trim().toUpperCase();
+      return c === selectedCourse.trim().toUpperCase();
+    });
+    const progCode = sample?.Programme || sample?.programme || sample?.programmeCode || 'IGNOU';
     return {
       title: `${selectedCourse} Assignment Course`,
       credits: 6,
-      programmeCode: sample?.programmeCode || 'IGNOU',
-      programmeName: sample?.programmeCode || 'Academic Programme',
+      programmeCode: progCode,
+      programmeName: progCode,
     };
-  }, [selectedCourse, sessionCourseEvaluations]);
+  }, [selectedCourse, filteredLedger]);
 
-  // Dynamically extract Academic Counsellor from corresponding courseLedger records:
-  const currentCourseLedgerRecords = useMemo(() => {
-    return (courseLedger || []).filter((r: any) => {
-      const rowSession = (r.Session || r.session || "").toString().trim().toLowerCase();
-      const activeSes = (currentSession || "").toString().trim().toLowerCase();
-      const course = (r.Course_Code || r.courseCode || "").toString().trim().toUpperCase();
-      const targetCourse = (selectedCourse || "").toString().trim().toUpperCase();
-      return (rowSession === activeSes || activeSes === "all") && course === targetCourse;
+  // Records for the selected course
+  const currentCourseRecords = useMemo(() => {
+    return filteredLedger.filter((r: any) => {
+      const code = (r.Course_Code || r.courseCode || r["Course Code"] || "").toString().trim().toUpperCase();
+      return code === selectedCourse.trim().toUpperCase();
     });
-  }, [courseLedger, currentSession, selectedCourse]);
+  }, [filteredLedger, selectedCourse]);
 
   const detectedEvaluator = useMemo(() => {
-    const found = currentCourseLedgerRecords.find(
+    const found = currentCourseRecords.find(
       (r: any) => {
-        const ev = r.Allotted_Evaluator || r.allottedEvaluator;
+        const ev = r.Allotted_Evaluator || r.allottedEvaluator || r.evaluatorName;
         return ev && ev !== 'Unallotted' && ev.trim() !== '';
       }
     );
-    if (found) return found.Allotted_Evaluator || found.allottedEvaluator;
+    if (found) return found.Allotted_Evaluator || found.allottedEvaluator || found.evaluatorName;
 
-    // Fallback to evaluatorName or evaluatorId from sessionCourseEvaluations
-    const sample = sessionCourseEvaluations.find(
-      (r) => r.courseCode === selectedCourse && (r.evaluatorName || r.evaluatorId)
+    // Fallback to evaluatorName or evaluatorId from sample
+    const sample = currentCourseRecords.find(
+      (r: any) => r.evaluatorId || r.evaluatorCode
     );
-    if (sample?.evaluatorName) return sample.evaluatorName;
     if (sample?.evaluatorId) {
-      const ev = evaluators.find((e) => e.id === sample.evaluatorId);
+      const ev = evaluators.find((e) => e.id === sample.evaluatorId || e.evaluatorCode === sample.evaluatorId);
       if (ev) return `${ev.evaluatorName || ev.name} (${ev.evaluatorCode})`;
     }
     return 'Not Allotted';
-  }, [currentCourseLedgerRecords, sessionCourseEvaluations, selectedCourse, evaluators]);
+  }, [currentCourseRecords, evaluators]);
 
   // Active Evaluator displayed on Award Sheet
   const activeEvaluatorName = overrideEvaluator || (detectedEvaluator !== 'Not Allotted' ? detectedEvaluator : 'Academic Evaluation Panel');
@@ -142,25 +161,20 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
     }) || null;
   }, [evaluators, activeEvaluatorName]);
 
-  // Records for the selected course
-  const currentCourseRecords = useMemo(() => {
-    return sessionCourseEvaluations.filter((r) => r.courseCode === selectedCourse);
-  }, [sessionCourseEvaluations, selectedCourse]);
-
   // Filtered rows for the award sheet
   const displayRecords = useMemo(() => {
     let list = currentCourseRecords;
     if (filterLockedOnly) {
-      list = list.filter((r) => r.isLocked);
+      list = list.filter((r: any) => Boolean(r.isLocked || r.Status === 'Locked' || r.status === 'Locked' || r.status === 'Marks Locked'));
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      list = list.filter(
-        (r) =>
-          r.enrollmentNo.toLowerCase().includes(q) ||
-          r.studentName.toLowerCase().includes(q) ||
-          r.submissionKey.toLowerCase().includes(q)
-      );
+      list = list.filter((r: any) => {
+        const enr = String(r.Enrollment_No || r.enrollmentNo || r["Enrollment No"] || "");
+        const name = String(r.Candidate_Name || r.candidateName || r["Candidate Name"] || r.studentName || "");
+        const subKey = String(r.Sub_ID || r.subId || r.submissionKey || r.id || "");
+        return enr.toLowerCase().includes(q) || name.toLowerCase().includes(q) || subKey.toLowerCase().includes(q);
+      });
     }
     return list;
   }, [currentCourseRecords, filterLockedOnly, searchQuery]);
@@ -168,8 +182,13 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
   // Statistics for this course
   const courseStats = useMemo(() => {
     const total = currentCourseRecords.length;
-    const evaluated = currentCourseRecords.filter((r) => r.marks !== null).length;
-    const locked = currentCourseRecords.filter((r) => r.isLocked).length;
+    const evaluated = currentCourseRecords.filter((r: any) => {
+      const m = r.Marks !== undefined && r.Marks !== "" && r.Marks !== null ? r.Marks : r.marks;
+      return m !== null && m !== undefined && m !== "";
+    }).length;
+    const locked = currentCourseRecords.filter((r: any) => {
+      return Boolean(r.isLocked || r.Status === 'Locked' || r.status === 'Locked' || r.status === 'Marks Locked');
+    }).length;
     const unlocked = total - locked;
 
     let a = 0,
@@ -177,12 +196,15 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
       c = 0,
       d = 0,
       e = 0;
-    currentCourseRecords.forEach((r) => {
-      if (r.grade === 'A') a++;
-      else if (r.grade === 'B') b++;
-      else if (r.grade === 'C') c++;
-      else if (r.grade === 'D') d++;
-      else if (r.grade === 'E') e++;
+    currentCourseRecords.forEach((r: any) => {
+      const rawM = r.Marks !== undefined && r.Marks !== "" && r.Marks !== null ? r.Marks : r.marks;
+      const numM = rawM !== null && rawM !== undefined && rawM !== "" && !isNaN(Number(rawM)) ? Number(rawM) : null;
+      const g = r.Grade || r.grade || (numM !== null ? calculateIGNOUGrade(numM).grade : '-');
+      if (g === 'A') a++;
+      else if (g === 'B') b++;
+      else if (g === 'C') c++;
+      else if (g === 'D') d++;
+      else if (g === 'E') e++;
     });
 
     return { total, evaluated, locked, unlocked, a, b, c, d, e };
@@ -207,21 +229,34 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
       'Evaluator Name',
     ];
 
-    const rows = displayRecords.map((r, idx) => [
-      idx + 1,
-      `"${r.enrollmentNo}"`,
-      `"${r.studentName}"`,
-      r.programmeCode,
-      r.courseCode,
-      `"${r.session}"`,
-      `"${r.submissionKey}"`,
-      r.marks !== null ? r.marks : 'AB',
-      r.grade,
-      `"${marksToWords(r.marks, wordsStyle)}"`,
-      r.isLocked ? 'LOCKED_VERIFIED' : 'DRAFT',
-      `"${r.evaluatorCode || ''}"`,
-      `"${r.evaluatorName || ''}"`,
-    ]);
+    const rows = displayRecords.map((r: any, idx: number) => {
+      const enr = r.Enrollment_No || r.enrollmentNo || r["Enrollment No"] || "-";
+      const name = r.Candidate_Name || r.candidateName || r["Candidate Name"] || r.studentName || "-";
+      const prog = r.Programme || r.programme || r.programmeCode || "-";
+      const course = r.Course_Code || r.courseCode || r["Course Code"] || selectedCourse;
+      const session = r.Session || r.session || currentSession;
+      const subKey = r.Sub_ID || r.subId || r.submissionKey || r.id || `SUB-${enr}-${course}`;
+      const rawMarks = r.Marks !== undefined && r.Marks !== "" && r.Marks !== null ? r.Marks : (r.marks !== undefined && r.marks !== null ? r.marks : null);
+      const numMarks = rawMarks !== null && rawMarks !== undefined && rawMarks !== "" && !isNaN(Number(rawMarks)) ? Number(rawMarks) : null;
+      const grade = r.Grade || r.grade || (numMarks !== null ? calculateIGNOUGrade(numMarks).grade : '-');
+      const isLocked = Boolean(r.isLocked || r.Status === 'Locked' || r.status === 'Locked' || r.status === 'Marks Locked');
+      const ev = r.Allotted_Evaluator || r.allottedEvaluator || r.evaluatorName || activeEvaluatorName;
+      return [
+        idx + 1,
+        `"${enr}"`,
+        `"${name}"`,
+        prog,
+        course,
+        `"${session}"`,
+        `"${subKey}"`,
+        numMarks !== null ? numMarks : 'AB',
+        grade,
+        `"${marksToWords(numMarks, wordsStyle)}"`,
+        isLocked ? 'LOCKED_VERIFIED' : 'DRAFT',
+        activeEvaluatorObj?.evaluatorCode || 'SC2033',
+        `"${ev}"`,
+      ];
+    });
 
     const csvContent =
       'data:text/csv;charset=utf-8,' +
@@ -244,10 +279,46 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
     if (displayRecords.length === 0) return;
     setIsGeneratingSedPdf(true);
     try {
+      const normalizedRecords = displayRecords.map((r: any) => {
+        const enr = r.Enrollment_No || r.enrollmentNo || r["Enrollment No"] || "";
+        const name = r.Candidate_Name || r.candidateName || r["Candidate Name"] || r.studentName || "";
+        const prog = r.Programme || r.programme || r.programmeCode || "";
+        const course = r.Course_Code || r.courseCode || r["Course Code"] || selectedCourse;
+        const session = r.Session || r.session || currentSession;
+        const subKey = r.Sub_ID || r.subId || r.submissionKey || r.id || `SUB-${enr}-${course}`;
+        const rawMarks = r.Marks !== undefined && r.Marks !== "" && r.Marks !== null ? r.Marks : (r.marks !== undefined && r.marks !== null ? r.marks : null);
+        const numMarks = rawMarks !== null && rawMarks !== undefined && rawMarks !== "" && !isNaN(Number(rawMarks)) ? Number(rawMarks) : null;
+        const grade = r.Grade || r.grade || (numMarks !== null ? calculateIGNOUGrade(numMarks).grade : '-');
+        const isLocked = Boolean(r.isLocked || r.Status === 'Locked' || r.status === 'Locked' || r.status === 'Marks Locked');
+        const ev = r.Allotted_Evaluator || r.allottedEvaluator || r.evaluatorName || activeEvaluatorName;
+        return {
+          enrollmentNo: enr,
+          Enrollment_No: enr,
+          studentName: name,
+          Candidate_Name: name,
+          programmeCode: prog,
+          Programme: prog,
+          courseCode: course,
+          Course_Code: course,
+          session: session,
+          Session: session,
+          submissionKey: subKey,
+          Sub_ID: subKey,
+          marks: numMarks,
+          Marks: numMarks,
+          grade: grade,
+          Grade: grade,
+          marksInWords: marksToWords(numMarks, wordsStyle),
+          isLocked: isLocked,
+          evaluatorName: ev,
+          Allotted_Evaluator: ev,
+        };
+      });
+
       const downloadUrl = await postGenerateSedPdf({
         courseCode: selectedCourse,
         session: currentSession,
-        records: displayRecords,
+        records: normalizedRecords,
         dispatchMemoNo,
         dispatchDate,
         centreCode: settings.centreCode,
@@ -398,8 +469,107 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
           </div>
         </div>
 
-        {/* Data Table */}
-        <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        {/* Mobile View (< 768px): Responsive Award Sheet Cards */}
+        <div className="block md:hidden space-y-3 print:hidden">
+          {displayRecords.length === 0 ? (
+            <div className="p-6 text-center text-zinc-500 border border-zinc-200 rounded-xl bg-zinc-50">
+              <p className="font-semibold text-zinc-700 text-xs">
+                No evaluation records available for {selectedCourse}
+              </p>
+              <p className="text-[11px] text-zinc-400 mt-1">
+                {filterLockedOnly
+                  ? 'Ensure marks are entered and locked by the Coordinator in Stage 2 (Course Evaluation Master).'
+                  : 'No registrations exist for this course in the active cycle.'}
+              </p>
+            </div>
+          ) : (
+            displayRecords.map((rec: any, index: number) => {
+              const recId = rec.id || rec.Sub_ID || rec.subId || rec.submissionKey || `award-mob-${index}`;
+              const enr = rec.Enrollment_No || rec.enrollmentNo || rec["Enrollment No"] || "-";
+              const name = rec.Candidate_Name || rec.candidateName || rec["Candidate Name"] || rec.studentName || "-";
+              const rawMarks = rec.Marks !== undefined && rec.Marks !== "" && rec.Marks !== null ? rec.Marks : (rec.marks !== undefined && rec.marks !== null ? rec.marks : null);
+              const numMarks = rawMarks !== null && rawMarks !== undefined && rawMarks !== "" && !isNaN(Number(rawMarks)) ? Number(rawMarks) : null;
+              const grade = rec.Grade || rec.grade || (numMarks !== null ? calculateIGNOUGrade(numMarks).grade : '-');
+              const marksWords = marksToWords(numMarks, wordsStyle);
+              const subKey = rec.Sub_ID || rec.subId || rec.submissionKey || rec.id || `SUB-${enr}-${selectedCourse}`;
+              const isLocked = Boolean(rec.isLocked || rec.Status === 'Locked' || rec.status === 'Locked' || rec.status === 'Marks Locked');
+
+              return (
+                <div
+                  key={recId}
+                  className="bg-zinc-50 border-2 border-zinc-900 rounded-xl p-3.5 space-y-2.5 shadow-2xs"
+                >
+                  <div className="flex items-start justify-between gap-2 border-b border-zinc-200 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-zinc-200 text-zinc-800 text-[10px] font-bold flex items-center justify-center font-mono shrink-0">
+                        {index + 1}
+                      </span>
+                      <div>
+                        <div className="font-bold text-zinc-900 text-xs">{name}</div>
+                        <div className="text-[11px] font-mono text-zinc-600 font-semibold">{enr}</div>
+                      </div>
+                    </div>
+                    <div>
+                      {isLocked ? (
+                        <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-900 font-mono text-[10px] font-black border border-purple-300">
+                          SEALED
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-black border border-amber-300">
+                          DRAFT
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-white border border-zinc-200 rounded-lg p-2">
+                      <div className="text-[9px] font-bold text-zinc-500 uppercase">Marks (Max 100)</div>
+                      <div className="font-mono font-black text-base text-zinc-900">
+                        {numMarks !== null ? numMarks : 'AB'}
+                      </div>
+                    </div>
+                    <div className="bg-white border border-zinc-200 rounded-lg p-2">
+                      <div className="text-[9px] font-bold text-zinc-500 uppercase">Awarded Grade</div>
+                      <div className="font-bold text-base">
+                        <span
+                          className={
+                            grade === 'A'
+                              ? 'text-emerald-700'
+                              : grade === 'B'
+                              ? 'text-blue-700'
+                              : grade === 'C'
+                              ? 'text-amber-700'
+                              : grade === 'D'
+                              ? 'text-orange-700'
+                              : 'text-rose-700'
+                          }
+                        >
+                          {grade}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-zinc-200 rounded-lg p-2 text-xs">
+                    <div className="text-[9px] font-bold text-zinc-500 uppercase">Statutory Marks in Words</div>
+                    <div className="font-mono font-semibold text-zinc-800 text-[11px] mt-0.5">
+                      {marksWords}
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] font-mono text-zinc-500 truncate flex items-center justify-between pt-1">
+                    <span>Key: {subKey}</span>
+                    <span className="text-zinc-400 font-semibold">{selectedCourse}</span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Data Table (Desktop & Printable View) */}
+        <div className="hidden md:block print:block overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
           <table className="w-full text-left border-collapse border-2 border-zinc-900 text-xs">
             <thead>
               <tr className="bg-zinc-100 border-b-2 border-zinc-900 text-zinc-800 text-[10px] font-bold uppercase">
@@ -432,49 +602,59 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                displayRecords.map((rec, index) => {
+                displayRecords.map((rec: any, index: number) => {
+                  const recId = rec.id || rec.Sub_ID || rec.subId || rec.submissionKey || `award-${index}`;
+                  const enr = rec.Enrollment_No || rec.enrollmentNo || rec["Enrollment No"] || "-";
+                  const name = rec.Candidate_Name || rec.candidateName || rec["Candidate Name"] || rec.studentName || "-";
+                  const rawMarks = rec.Marks !== undefined && rec.Marks !== "" && rec.Marks !== null ? rec.Marks : (rec.marks !== undefined && rec.marks !== null ? rec.marks : null);
+                  const numMarks = rawMarks !== null && rawMarks !== undefined && rawMarks !== "" && !isNaN(Number(rawMarks)) ? Number(rawMarks) : null;
+                  const grade = rec.Grade || rec.grade || (numMarks !== null ? calculateIGNOUGrade(numMarks).grade : '-');
+                  const marksWords = marksToWords(numMarks, wordsStyle);
+                  const subKey = rec.Sub_ID || rec.subId || rec.submissionKey || rec.id || `SUB-${enr}-${selectedCourse}`;
+                  const isLocked = Boolean(rec.isLocked || rec.Status === 'Locked' || rec.status === 'Locked' || rec.status === 'Marks Locked');
+
                   return (
-                    <tr key={rec.id} className="border-b border-zinc-400 hover:bg-zinc-50/50">
+                    <tr key={recId} className="border-b border-zinc-400 hover:bg-zinc-50/50">
                       <td className="border border-zinc-400 p-2 text-center font-mono text-zinc-700">
                         {index + 1}
                       </td>
                       <td className="border border-zinc-400 p-2 font-mono font-bold text-zinc-950 text-xs">
-                        {rec.enrollmentNo}
+                        {enr}
                       </td>
                       <td className="border border-zinc-400 p-2 font-semibold text-zinc-900">
-                        {rec.studentName}
+                        {name}
                       </td>
                       <td className="border border-zinc-400 p-2 text-center font-mono font-black text-sm text-zinc-950 bg-zinc-50/50">
-                        {rec.marks !== null && rec.marks !== undefined ? rec.marks : 'AB'}
+                        {numMarks !== null ? numMarks : 'AB'}
                       </td>
                       <td className="border border-zinc-400 p-2 text-center font-bold">
                         <span
                           className={`px-1.5 py-0.5 rounded text-[11px] ${
-                            rec.grade === 'A'
+                            grade === 'A'
                               ? 'text-emerald-800'
-                              : rec.grade === 'B'
+                              : grade === 'B'
                               ? 'text-blue-800'
-                              : rec.grade === 'C'
+                              : grade === 'C'
                               ? 'text-amber-800'
-                              : rec.grade === 'D'
+                              : grade === 'D'
                               ? 'text-orange-800'
                               : 'text-rose-800'
-                          }`}
+                          } font-bold`}
                         >
-                          {rec.grade}
+                          {grade}
                         </span>
                       </td>
                       <td className="border border-zinc-400 p-2 font-mono text-xs font-semibold text-zinc-900">
-                        {marksToWords(rec.marks, wordsStyle)}
+                        {marksWords}
                       </td>
                       <td className="border border-zinc-400 p-2 font-mono text-[10px] text-zinc-600 truncate max-w-[140px]">
-                        {rec.submissionKey}
+                        {subKey}
                       </td>
                       <td className="border border-zinc-400 p-2 text-center text-[10px] font-bold">
-                        {rec.isLocked ? (
-                          <span className="text-purple-800 font-mono">SEALED</span>
+                        {isLocked ? (
+                          <span className="text-purple-800 font-mono font-black">SEALED</span>
                         ) : (
-                          <span className="text-amber-700 font-mono">DRAFT</span>
+                          <span className="text-amber-700 font-mono font-bold">DRAFT</span>
                         )}
                       </td>
                     </tr>
@@ -497,9 +677,22 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
             </span>
           </div>
           <div className="flex items-center gap-4 text-[11px] font-mono">
-            <span>Pass (A-D): {displayRecords.filter((r) => r.grade !== 'E' && r.grade !== '-').length}</span>
-            <span>Failed (E): {displayRecords.filter((r) => r.grade === 'E').length}</span>
-            <span>Absent (AB): {displayRecords.filter((r) => r.marks === null).length}</span>
+            <span>Pass (A-D): {displayRecords.filter((r: any) => {
+              const rawM = r.Marks !== undefined && r.Marks !== "" && r.Marks !== null ? r.Marks : r.marks;
+              const numM = rawM !== null && rawM !== undefined && rawM !== "" && !isNaN(Number(rawM)) ? Number(rawM) : null;
+              const g = r.Grade || r.grade || (numM !== null ? calculateIGNOUGrade(numM).grade : '-');
+              return g !== 'E' && g !== '-' && g !== '—';
+            }).length}</span>
+            <span>Failed (E): {displayRecords.filter((r: any) => {
+              const rawM = r.Marks !== undefined && r.Marks !== "" && r.Marks !== null ? r.Marks : r.marks;
+              const numM = rawM !== null && rawM !== undefined && rawM !== "" && !isNaN(Number(rawM)) ? Number(rawM) : null;
+              const g = r.Grade || r.grade || (numM !== null ? calculateIGNOUGrade(numM).grade : '-');
+              return g === 'E';
+            }).length}</span>
+            <span>Absent (AB): {displayRecords.filter((r: any) => {
+              const rawM = r.Marks !== undefined && r.Marks !== "" && r.Marks !== null ? r.Marks : r.marks;
+              return rawM === null || rawM === undefined || rawM === "" || String(rawM).toUpperCase() === 'AB';
+            }).length}</span>
           </div>
         </div>
 
