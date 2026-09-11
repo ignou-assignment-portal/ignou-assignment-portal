@@ -25,7 +25,34 @@ export const SystemSettingsView: React.FC = () => {
     evaluators,
     currentSession,
     showToast,
+    securityPins,
+    updateSecurityPins,
   } = useApp();
+
+  const [deskPinInput, setDeskPinInput] = useState(securityPins.deskPin || '1001');
+  const [adminPinInput, setAdminPinInput] = useState(securityPins.adminPin || '2033');
+  const [pinSuccess, setPinSuccess] = useState(false);
+  const [pinError, setPinError] = useState('');
+
+  const handleSavePins = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin) return;
+    if (!deskPinInput.trim() || deskPinInput.trim().length < 4) {
+      setPinError('Desk Official PIN must be at least 4 digits.');
+      return;
+    }
+    if (!adminPinInput.trim() || adminPinInput.trim().length < 4) {
+      setPinError('Administrator PIN must be at least 4 digits.');
+      return;
+    }
+    setPinError('');
+    updateSecurityPins({
+      deskPin: deskPinInput.trim(),
+      adminPin: adminPinInput.trim(),
+    });
+    setPinSuccess(true);
+    setTimeout(() => setPinSuccess(false), 3000);
+  };
 
   const [systemSettings, setSystemSettings] = useState(() => {
     const saved = localStorage.getItem("ignou_sc2033_settings");
@@ -316,7 +343,7 @@ export const SystemSettingsView: React.FC = () => {
                 </label>
                 <input
                   type="password"
-                  maxLength={4}
+                  maxLength={6}
                   value={systemSettings.adminPin}
                   onChange={(e) => setSystemSettings({ ...systemSettings, adminPin: e.target.value })}
                   placeholder="2033"
@@ -326,6 +353,88 @@ export const SystemSettingsView: React.FC = () => {
                   Default PIN is 2033. Required when switching roles to Coordinator (Admin).
                 </span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Security Credentials Management (Admin Only) */}
+        {!isUrlLockedDeskMode && isAdmin && (
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+              <div className="flex items-center gap-2 font-bold text-sm text-zinc-900">
+                <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                <span>Security Credentials Management (Gatekeeper PINs)</span>
+              </div>
+              <span className="text-[10px] font-mono bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded-full font-bold">
+                LocalStorage: ignou_sc2033_pins
+              </span>
+            </div>
+
+            <p className="text-xs text-zinc-500">
+              Customize the institutional authentication credentials required at the Gatekeeper terminal login screen. Changes are saved immediately to local storage and take effect across all sessions.
+            </p>
+
+            {pinSuccess && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs text-emerald-800 font-semibold">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Security PINs updated and stored in LocalStorage successfully.</span>
+              </div>
+            )}
+
+            {pinError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-xs text-rose-800 font-semibold">
+                <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{pinError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs pt-2">
+              <div className="p-3.5 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-zinc-800">Desk Official Terminal PIN</label>
+                  <span className="text-[10px] text-zinc-400 font-mono">Default: 1001</span>
+                </div>
+                <input
+                  type="password"
+                  maxLength={6}
+                  value={deskPinInput}
+                  onChange={(e) => setDeskPinInput(e.target.value)}
+                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono text-center tracking-widest text-sm font-bold bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  placeholder="1001"
+                />
+                <p className="text-[10px] text-zinc-500">
+                  Grants restricted terminal access to Stage 1 (Intake Desk) and Stage 2 (Draft Evaluation Ledger).
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-zinc-800">Administrator (Coordinator) PIN</label>
+                  <span className="text-[10px] text-zinc-400 font-mono">Default: 2033</span>
+                </div>
+                <input
+                  type="password"
+                  maxLength={6}
+                  value={adminPinInput}
+                  onChange={(e) => setAdminPinInput(e.target.value)}
+                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono text-center tracking-widest text-sm font-bold bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  placeholder="2033"
+                />
+                <p className="text-[10px] text-zinc-500">
+                  Grants master access to all stages, marks locking, billing, rate config, and delete operations.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={handleSavePins}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Update Institutional PINs</span>
+              </button>
             </div>
           </div>
         )}

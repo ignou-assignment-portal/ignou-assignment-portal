@@ -16,6 +16,7 @@ import { ReceiptModal } from './components/ReceiptModal';
 import { RegistrationReceiptModal } from './components/RegistrationReceiptModal';
 import { StudentSearchModal } from './components/StudentSearchModal';
 import { AdminPinModal } from './components/AdminPinModal';
+import { GatekeeperLockScreen } from './components/GatekeeperLockScreen';
 import { Toast } from './components/Toast';
 
 const DashboardContent: React.FC = () => {
@@ -24,6 +25,7 @@ const DashboardContent: React.FC = () => {
     currentSession,
     isAdmin,
     isUrlLockedDeskMode,
+    userRole,
     settings,
     toastMessage,
     toastType,
@@ -36,12 +38,14 @@ const DashboardContent: React.FC = () => {
     fetchAllData();
   }, []);
 
-  // Ensure restricted tabs are redirected in URL locked mode
+  // Ensure restricted tabs are redirected in desk mode
   React.useEffect(() => {
-    if (isUrlLockedDeskMode && (activeTab === 'REMUNERATION' || activeTab === 'SETTINGS')) {
-      setActiveTab('INTAKE_DESK');
+    if (userRole === 'desk' || isUrlLockedDeskMode) {
+      if (activeTab !== 'INTAKE_DESK' && activeTab !== 'EVALUATION_MASTER') {
+        setActiveTab('INTAKE_DESK');
+      }
     }
-  }, [isUrlLockedDeskMode, activeTab]);
+  }, [userRole, isUrlLockedDeskMode, activeTab]);
 
   return (
     <div className="min-h-screen bg-zinc-100 text-zinc-900 flex flex-col font-sans">
@@ -65,7 +69,7 @@ const DashboardContent: React.FC = () => {
             {activeTab === 'COURSE_LEDGER' && <CourseLedgerView />}
             {activeTab === 'EVALUATORS' && <EvaluatorDirectory />}
             {activeTab === 'REMUNERATION' && (!isUrlLockedDeskMode && isAdmin ? <RemunerationBilling /> : <IntakeDesk />)}
-            {activeTab === 'SETTINGS' && (!isUrlLockedDeskMode ? <SystemSettingsView /> : <IntakeDesk />)}
+            {activeTab === 'SETTINGS' && (!isUrlLockedDeskMode && isAdmin ? <SystemSettingsView /> : <IntakeDesk />)}
           </main>
 
           {/* Institutional Footer */}
@@ -117,10 +121,25 @@ const DashboardContent: React.FC = () => {
   );
 };
 
+const MainApp: React.FC = () => {
+  const { isAuthenticated, toastMessage, toastType, hideToast } = useApp();
+
+  if (!isAuthenticated) {
+    return (
+      <>
+        <GatekeeperLockScreen />
+        <Toast message={toastMessage} type={toastType} onClose={hideToast} />
+      </>
+    );
+  }
+
+  return <DashboardContent />;
+};
+
 export default function App() {
   return (
     <AppProvider>
-      <DashboardContent />
+      <MainApp />
     </AppProvider>
   );
 }

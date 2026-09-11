@@ -386,13 +386,15 @@ export const IntakeRegister: React.FC = () => {
                     >
                       Edit
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteClick(row)}
-                      className="px-2 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-600 hover:text-white rounded-md border border-rose-200"
-                    >
-                      Delete
-                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteClick(row)}
+                        className="px-2 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-600 hover:text-white rounded-md border border-rose-200"
+                      >
+                        Delete
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => openReceiptModal(row)}
@@ -580,16 +582,18 @@ export const IntakeRegister: React.FC = () => {
                             <span>Edit</span>
                           </button>
 
-                          {/* Delete Button */}
-                          <button
-                            id={`delete-btn-${record.id}`}
-                            onClick={() => handleDeleteClick(record)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-lg transition shadow-2xs cursor-pointer"
-                            title="Delete Intake Record (Coordinator PIN 2033 Required)"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>Delete</span>
-                          </button>
+                          {/* Delete Button (Coordinator Only) */}
+                          {isAdmin && (
+                            <button
+                              id={`delete-btn-${record.id}`}
+                              onClick={() => handleDeleteClick(record)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-lg transition shadow-2xs cursor-pointer"
+                              title="Delete Intake Record (Coordinator PIN Required)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete</span>
+                            </button>
+                          )}
 
                           {/* Print / View Acknowledgment Slip */}
                           <button

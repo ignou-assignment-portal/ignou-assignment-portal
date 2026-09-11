@@ -15,6 +15,7 @@ import {
   ChevronsRight,
   X,
   Sparkles,
+  Search,
 } from 'lucide-react';
 
 export type TabType =
@@ -38,6 +39,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
   const {
     isAdmin,
     isUrlLockedDeskMode,
+    userRole,
+    openSearchModal,
     sessionIntakes,
     sessionAssignmentSubmissions,
     sessionCourseEvaluations,
@@ -55,12 +58,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
     syncStatus,
   } = useApp();
 
-  // Guard against navigating to Stage 4 or Settings in URL locked mode
+  // Guard against navigating to unauthorized tabs in Desk Official mode
   React.useEffect(() => {
-    if (isUrlLockedDeskMode && (activeTab === 'REMUNERATION' || activeTab === 'SETTINGS')) {
+    if (
+      (userRole === 'desk' || isUrlLockedDeskMode) &&
+      activeTab !== 'INTAKE_DESK' &&
+      activeTab !== 'EVALUATION_MASTER'
+    ) {
       setActiveTab('INTAKE_DESK');
     }
-  }, [isUrlLockedDeskMode, activeTab, setActiveTab]);
+  }, [userRole, isUrlLockedDeskMode, activeTab, setActiveTab]);
 
   // Dynamic calculations for stage counters
   const intakeCount = sessionIntakes.length;
@@ -269,15 +276,41 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
 
         {/* Scrollable Navigation Items */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-4 divide-y divide-zinc-100">
+          {/* Quick Access: Student Lookup */}
+          <div className="pt-1">
+            <button
+              id="sidebar-student-lookup-btn"
+              type="button"
+              onClick={() => {
+                openSearchModal();
+                if (window.innerWidth < 768) {
+                  setIsSidebarHidden(true);
+                }
+              }}
+              className={`group w-full flex items-center rounded-xl transition-all cursor-pointer relative bg-zinc-50 hover:bg-indigo-50 border border-zinc-200 hover:border-indigo-300 text-zinc-800 hover:text-indigo-950 font-semibold shadow-2xs ${
+                isSidebarCollapsed ? 'justify-center p-3' : 'px-3 py-2 gap-3'
+              }`}
+              title="Instant Student Status & Evaluation Lookup (Ctrl+K)"
+            >
+              <Search className="w-4 h-4 text-indigo-600 shrink-0" />
+              {!isSidebarCollapsed && (
+                <div className="text-left truncate flex-1 flex items-center justify-between">
+                  <span className="text-xs truncate font-bold">Student Lookup</span>
+                  <span className="text-[10px] text-zinc-500 font-mono bg-white px-1.5 py-0.5 rounded border border-zinc-200">
+                    Ctrl+K
+                  </span>
+                </div>
+              )}
+            </button>
+          </div>
+
           {navSections
             .map((section) => ({
               ...section,
               items: section.items.filter((item) => {
-                if (isUrlLockedDeskMode) {
-                  // Strictly hide Stage 4 (Billing & Remuneration) and rate configuration/settings in Desk Official mode
-                  if (item.id === 'REMUNERATION' || item.id === 'SETTINGS') {
-                    return false;
-                  }
+                if (userRole === 'desk' || isUrlLockedDeskMode) {
+                  // If userRole === 'desk', show ONLY Stage 1 and Stage 2
+                  return item.id === 'INTAKE_DESK' || item.id === 'EVALUATION_MASTER';
                 }
                 return true;
               }),

@@ -51,6 +51,17 @@ interface AppContextType {
   closeAdminPinModal: () => void;
   verifyAndSetAdminRole: (pin: string) => boolean;
 
+  // Gatekeeper Authentication & RBAC (SC-2033)
+  isAuthenticated: boolean;
+  setIsAuthenticated: (auth: boolean) => void;
+  userRole: string;
+  setUserRole: (role: string) => void;
+  securityPins: { deskPin: string; adminPin: string };
+  setSecurityPins: React.Dispatch<React.SetStateAction<{ deskPin: string; adminPin: string }>>;
+  updateSecurityPins: (newPins: { deskPin: string; adminPin: string }) => void;
+  handleLogin: (role: 'desk' | 'admin', inputPin: string) => boolean;
+  logout: () => void;
+
   // Intake Master (Strictly Session Filtered)
   sessionIntakes: IntakeRecord[];
   allIntakes: IntakeRecord[];
@@ -311,6 +322,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
+  // 1. Authentication & Session State Management (IGNOU SC-2033 Gatekeeper)
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return sessionStorage.getItem("ignou_sc2033_auth") === "true";
+  });
+  const [userRole, setUserRoleState] = useState<string>(() => {
+    return sessionStorage.getItem("ignou_sc2033_role") || "desk";
+  });
+  const [securityPins, setSecurityPins] = useState<{ deskPin: string; adminPin: string }>(() => {
+    const saved = localStorage.getItem("ignou_sc2033_pins");
+    return saved ? JSON.parse(saved) : { deskPin: "1001", adminPin: "2033" };
+  });
+
   // User Role (RBAC) - strictly enforced to OFFICIAL if isUrlLockedDeskMode
   const [currentRole, setCurrentRole] = useState<UserRole>(() => {
     if (typeof window !== 'undefined') {
@@ -323,6 +346,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       } catch {}
     }
+    const sessionRole = typeof window !== 'undefined' ? sessionStorage.getItem("ignou_sc2033_role") : null;
+    if (sessionRole === 'admin') return 'ADMIN';
+    if (sessionRole === 'desk') return 'OFFICIAL';
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.ROLE);
       return (saved as UserRole) || 'OFFICIAL';
@@ -330,6 +356,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return 'OFFICIAL';
     }
   });
+
+  const setUserRole = useCallback((role: string) => {
+    setUserRoleState(role);
+    sessionStorage.setItem("ignou_sc2033_role", role);
+    if (role === 'admin') {
+      setCurrentRole('ADMIN');
+    } else {
+      setCurrentRole('OFFICIAL');
+    }
+  }, []);
+
+  const updateSecurityPins = useCallback((newPins: { deskPin: string; adminPin: string }) => {
+    setSecurityPins(newPins);
+    localStorage.setItem("ignou_sc2033_pins", JSON.stringify(newPins));
+    setSettings((prev) => ({ ...prev, adminPin: newPins.adminPin }));
+  }, []);
+
+  const logout = useCallback(() => {
+    sessionStorage.removeItem("ignou_sc2033_auth");
+    sessionStorage.removeItem("ignou_sc2033_role");
+    setIsAuthenticated(false);
+  }, []);
+
+  // Inactivity Auto-Lock Protection (Mobile & Desktop): 30 minutes
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let timer: NodeJS.Timeout;
+    const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+
+    const resetTimer = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        sessionStorage.removeItem("ignou_sc2033_auth");
+        sessionStorage.removeItem("ignou_sc2033_role");
+        setIsAuthenticated(false);
+        console.warn("Terminal auto-locked after 30 minutes of user inactivity.");
+      }, INACTIVITY_TIMEOUT_MS);
+    };
+
+    const events = ['mousemove', 'keydown', 'touchstart', 'click'];
+    events.forEach((evt) => window.addEventListener(evt, resetTimer, { passive: true }));
+    resetTimer();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      events.forEach((evt) => window.removeEventListener(evt, resetTimer));
+    };
+  }, [isAuthenticated]);
 
   // Admin PIN Protection State
   const [isAdminPinModalOpen, setIsAdminPinModalOpen] = useState<boolean>(false);
@@ -667,34 +742,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (isUrlLockedDeskMode) {
         setAdminPinError('Terminal is locked strictly in Desk Official Mode.');
         setCurrentRole('OFFICIAL');
+        setUserRoleState('desk');
         return false;
       }
-      const expectedPin = (settings.adminPin || '2033').trim();
+      const expectedPin = (securityPins.adminPin || settings.adminPin || '2033').trim();
       if (enteredPin.trim() === expectedPin) {
         setCurrentRole('ADMIN');
+        setUserRoleState('admin');
+        sessionStorage.setItem("ignou_sc2033_role", "admin");
         setIsAdminPinModalOpen(false);
         setAdminPinError(null);
         return true;
       } else {
         setAdminPinError('Invalid Administrator PIN. Access denied. Reverting to Desk Official role.');
         setCurrentRole('OFFICIAL');
+        setUserRoleState('desk');
         return false;
       }
     },
-    [isUrlLockedDeskMode, settings.adminPin]
+    [isUrlLockedDeskMode, securityPins.adminPin, settings.adminPin]
   );
+
+  // Ref to invoke fetchAllData before its declaration without hoisting errors
+  const fetchAllDataRef = useRef<(isSilent?: boolean) => Promise<void>>(() => Promise.resolve());
+
+  // Authentication Handler for Terminal Login Gatekeeper
+  const handleLogin = useCallback((role: 'desk' | 'admin', inputPin: string): boolean => {
+    const currentDeskPin = (securityPins.deskPin || "1001").trim();
+    const currentAdminPin = (securityPins.adminPin || "2033").trim();
+    const entered = (inputPin || "").trim();
+
+    if (role === "desk" && (entered === currentDeskPin || entered === currentAdminPin)) {
+      sessionStorage.setItem("ignou_sc2033_auth", "true");
+      sessionStorage.setItem("ignou_sc2033_role", "desk");
+      setIsAuthenticated(true);
+      setUserRoleState("desk");
+      setCurrentRole("OFFICIAL");
+      fetchAllDataRef.current(true);
+      return true;
+    }
+    if (role === "admin" && entered === currentAdminPin) {
+      sessionStorage.setItem("ignou_sc2033_auth", "true");
+      sessionStorage.setItem("ignou_sc2033_role", "admin");
+      setIsAuthenticated(true);
+      setUserRoleState("admin");
+      setCurrentRole("ADMIN");
+      fetchAllDataRef.current(true);
+      return true;
+    }
+    return false;
+  }, [securityPins]);
 
   // Role switching
   const setRole = useCallback(
     (role: UserRole) => {
       if (isUrlLockedDeskMode) {
         setCurrentRole('OFFICIAL');
+        setUserRoleState('desk');
         return;
       }
       if (role === 'ADMIN') {
         openAdminPinModal();
       } else {
         setCurrentRole('OFFICIAL');
+        setUserRoleState('desk');
+        sessionStorage.setItem("ignou_sc2033_role", "desk");
       }
     },
     [isUrlLockedDeskMode, openAdminPinModal]
@@ -704,15 +816,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (isUrlLockedDeskMode) {
       return;
     }
-    if (currentRole === 'ADMIN') {
+    if (currentRole === 'ADMIN' || userRole === 'admin') {
       setCurrentRole('OFFICIAL');
+      setUserRoleState('desk');
+      sessionStorage.setItem("ignou_sc2033_role", "desk");
     } else {
       openAdminPinModal();
     }
-  }, [isUrlLockedDeskMode, currentRole, openAdminPinModal]);
+  }, [isUrlLockedDeskMode, currentRole, userRole, openAdminPinModal]);
 
-  const isAdmin = !isUrlLockedDeskMode && currentRole === 'ADMIN';
-  const isOfficial = isUrlLockedDeskMode || currentRole === 'OFFICIAL';
+  const isAdmin = !isUrlLockedDeskMode && (userRole === 'admin' || currentRole === 'ADMIN');
+  const isOfficial = !isAdmin;
 
   // Flexible Session Isolation (Normalizes case and whitespace):
   // sessionIntakes, sessionPackets, sessionBills, sessionAssignmentSubmissions, sessionRegistrationReceipts
@@ -2112,6 +2226,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [showToast]);
 
+  fetchAllDataRef.current = fetchAllData;
+
   const syncGoogleSheets = fetchAllData;
 
   const [isSyncingEvaluators, setIsSyncingEvaluators] = useState<boolean>(false);
@@ -2313,6 +2429,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         openAdminPinModal,
         closeAdminPinModal,
         verifyAndSetAdminRole,
+        // Gatekeeper Authentication & RBAC (SC-2033)
+        isAuthenticated,
+        setIsAuthenticated,
+        userRole,
+        setUserRole,
+        securityPins,
+        setSecurityPins,
+        updateSecurityPins,
+        handleLogin,
+        logout,
         sessionIntakes,
         allIntakes: intakes,
         intakeRegister: intakes,

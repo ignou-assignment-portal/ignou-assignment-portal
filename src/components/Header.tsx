@@ -29,6 +29,8 @@ export const Header: React.FC = () => {
     toggleRole,
     isAdmin,
     isUrlLockedDeskMode,
+    userRole,
+    setIsAuthenticated,
     sessionIntakes,
     settings,
     openSearchModal,
@@ -235,27 +237,43 @@ export const Header: React.FC = () => {
           )}
 
           {/* Active Role Indicator Badge */}
-          <div className="hidden lg:flex items-center">
-            {isUrlLockedDeskMode ? (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-teal-50 border border-teal-200 text-teal-900 rounded-lg text-xs">
-                <span className="w-2 h-2 rounded-full bg-teal-600 animate-pulse"></span>
-                <span className="font-semibold">Desk Terminal Mode</span>
-                <span className="text-[11px] text-teal-600 font-mono">(URL Enforced)</span>
-              </div>
-            ) : isAdmin ? (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-lg text-xs">
-                <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
-                <span className="font-semibold">Full Admin Access</span>
-                <span className="text-[11px] text-indigo-600">(Billing, Rates & Allocation)</span>
+          <div className="flex items-center">
+            {isAdmin ? (
+              <div
+                id="active-role-badge-admin"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 border border-rose-300 text-rose-800 rounded-xl text-xs font-bold shadow-2xs"
+                title="Master Administrator Mode: Full Access"
+              >
+                <span className="w-2 h-2 rounded-full bg-rose-600"></span>
+                <span>Coordinator / Admin (Master Mode)</span>
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-teal-50 border border-teal-200 text-teal-900 rounded-lg text-xs">
-                <span className="w-2 h-2 rounded-full bg-teal-600"></span>
-                <span className="font-semibold">Desk Official Mode</span>
-                <span className="text-[11px] text-teal-600">(Registration & Marks Entry)</span>
+              <div
+                id="active-role-badge-desk"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl text-xs font-bold shadow-2xs"
+                title="Desk Official Terminal Mode: Intake & Records Draft"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
+                <span>Desk Official (Terminal Mode)</span>
               </div>
             )}
           </div>
+
+          {/* Lock / Sign Out Action Button */}
+          <button
+            id="btn-lock-signout"
+            type="button"
+            onClick={() => {
+              sessionStorage.removeItem("ignou_sc2033_auth");
+              sessionStorage.removeItem("ignou_sc2033_role");
+              setIsAuthenticated(false);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-950 text-white border border-zinc-700 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Lock terminal and end session (requires PIN to re-enter)"
+          >
+            <Lock className="w-3.5 h-3.5 text-amber-400" />
+            <span>Lock / Sign Out</span>
+          </button>
 
           {/* Google Sheets Backend Sync Button */}
           <button
