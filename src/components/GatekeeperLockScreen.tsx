@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 
 export const GatekeeperLockScreen: React.FC = () => {
-  const { handleLogin, securityPins, settings } = useApp();
+  const { handleLogin, settings } = useApp();
   const [selectedRole, setSelectedRole] = useState<'desk' | 'admin'>('desk');
   const [inputPin, setInputPin] = useState('');
   const [showPin, setShowPin] = useState(false);
@@ -207,12 +207,12 @@ export const GatekeeperLockScreen: React.FC = () => {
               </button>
             </form>
 
-            {/* Institutional PIN Helper Note */}
-            <div className="p-3 bg-zinc-950/60 border border-zinc-800 rounded-xl text-center">
-              <p className="text-[11px] text-zinc-400 font-mono">
-                Default Counter Desk PIN: <strong className="text-teal-400">1001</strong> | Coordinator Master PIN: <strong className="text-indigo-400">2033</strong>
+            {/* Institutional Confidentiality Notice */}
+            <div className="p-3.5 bg-zinc-950/70 border border-zinc-800/90 rounded-2xl text-center space-y-1">
+              <p className="text-xs text-zinc-300 font-medium leading-relaxed">
+                Authorized institutional personnel only. Enter the terminal PIN assigned by the Centre Coordinator (SC-2033).
               </p>
-              <p className="text-[10px] text-zinc-500 mt-1">
+              <p className="text-[10px] text-zinc-500">
                 Inactivity protection auto-locks after 30 minutes. Tab closure securely terminates session.
               </p>
             </div>

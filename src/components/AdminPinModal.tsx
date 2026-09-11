@@ -78,7 +78,7 @@ export const AdminPinModal: React.FC = () => {
           <div>
             <span className="font-bold block">Privileged Operational Role</span>
             <p className="text-[11px] text-indigo-900 mt-0.5 leading-normal">
-              Switching to the <strong>Administrator (Coordinator)</strong> persona allows evaluator remuneration billing, sanction approvals, rate overrides, and marks unlocking. Default master PIN: <code className="px-1 py-0.5 bg-white font-mono font-bold text-indigo-950 rounded border border-indigo-200">2033</code>.
+              Switching to the <strong>Administrator (Coordinator)</strong> persona allows evaluator remuneration billing, sanction approvals, rate overrides, and marks unlocking. Authorized institutional personnel only.
             </p>
           </div>
         </div>
