@@ -117,7 +117,8 @@ interface AppContextType {
   updateEvaluator: (id: string, updates: Partial<Evaluator>) => void;
   deleteEvaluator: (id: string) => void;
   isSyncingSheets: boolean;
-  syncGoogleSheets: () => Promise<void>;
+  syncGoogleSheets: (isSilent?: boolean) => Promise<void>;
+  fetchAllData: (isSilent?: boolean) => Promise<void>;
   isSyncingEvaluators: boolean;
   syncEvaluatorsDirectory: () => Promise<void>;
   lastSheetSync: string;
@@ -339,10 +340,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [isUrlLockedDeskMode, currentRole]);
 
-  // Database States: Start cleanly with empty arrays (0 records) if cache is empty
+  // Database States: Start cleanly from localStorage cache (ignou_sc2033_intake, ignou_sc2033_ledger)
   const [intakes, setIntakes] = useState<IntakeRecord[]>(() => {
     try {
       const saved =
+        localStorage.getItem("ignou_sc2033_intake") ||
         localStorage.getItem(STORAGE_KEYS.INTAKES) ||
         localStorage.getItem('ignou_intake_register');
       return saved ? JSON.parse(saved) : [];
@@ -410,6 +412,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [courseEvaluations, setCourseEvaluations] = useState<CourseEvaluationRecord[]>(() => {
     try {
       const saved =
+        localStorage.getItem("ignou_sc2033_ledger") ||
         localStorage.getItem(STORAGE_KEYS.COURSE_EVALUATIONS) ||
         localStorage.getItem('ignou_course_ledger');
       const data: CourseEvaluationRecord[] = saved ? JSON.parse(saved) : [];
@@ -566,6 +569,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     try {
+      localStorage.setItem("ignou_sc2033_intake", JSON.stringify(intakes));
       localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(intakes));
     } catch (e) {
       console.error('Failed to persist intakes', e);
@@ -617,6 +621,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     try {
+      localStorage.setItem("ignou_sc2033_ledger", JSON.stringify(courseEvaluations));
       localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(courseEvaluations));
     } catch (e) {
       console.error('Failed to persist course evaluations', e);
@@ -1832,211 +1837,238 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEvaluators((prev) => prev.filter((ev) => ev.id !== id));
   }, []);
 
-  // 1. Google Sheets Backend Hydration (doGet)
-  const syncGoogleSheets = useCallback(async (isSilent = false) => {
+  // 1. Google Sheets Backend Hydration & Persistent Storage Sync (fetchAllData / syncGoogleSheets)
+  const fetchAllData = useCallback(async (isSilent = false) => {
     setIsSyncingSheets(true);
-    setSyncStatus('Syncing...');
+    setSyncStatus('Syncing with Google Sheets...');
     try {
-      const res = await doGet();
-      if (res.success) {
-        if (res.intakes && res.intakes.length > 0) {
-          setIntakes((prev) => {
-            const map = new Map(prev.map((i) => [i.tokenNo || i.id, i]));
-            res.intakes?.forEach((item: any) => {
-              const enr = item.Enrollment_No || item.enrollmentNo || item.studentId || item['Enrollment No'] || '';
-              const sess = item.Session || item.session || currentSession || 'July 2026';
-              const key = item.Token_No || item.tokenNo || item.id || `intake-${enr}-${sess}`;
-              const candName = item.Candidate_Name || item.candidateName || item.studentName || item['Candidate Name'] || '';
-              const contact = item.Contact || item.contact || item.studentPhone || item['Contact Number'] || '';
-              const prog = item.Programme || item.programme || item.programmeCode || '';
-              const courseRaw = item.Courses || item.courses || item.courseCodes || item.Course_Codes || [];
-              const courseCodesArr = Array.isArray(courseRaw)
-                ? courseRaw
-                : typeof courseRaw === 'string'
-                ? courseRaw.split(',').map((c: string) => c.trim()).filter(Boolean)
-                : [];
-              const ts = item.Timestamp || item.timestamp || item.createdAt || new Date().toISOString();
-              const official = item.Official || item.handledBy || item.official || 'Desk Official';
-              map.set(key, {
-                id: item.id || key,
-                tokenNo: item.tokenNo || item.Token_No || key,
-                enrollmentNo: enr,
-                studentName: candName,
-                studentPhone: contact,
-                studentEmail: item.Email || item.studentEmail || '',
-                programmeCode: prog,
-                courseCodes: courseCodesArr,
-                submissionDate: item.Timestamp ? String(item.Timestamp).split('T')[0] : (item.submissionDate || new Date().toISOString().split('T')[0]),
-                submissionMode: item.submissionMode || 'In-Person (Desk)',
-                consignmentNo: item.consignmentNo,
-                session: sess,
-                status: item.status || 'Received',
-                marks: item.marks || {},
-                remarks: item.remarks || '',
-                createdAt: ts,
-                // Also store raw / alternate keys for transparent access
-                Enrollment_No: enr,
-                Candidate_Name: candName,
-                Contact: contact,
-                Programme: prog,
-                Courses: courseCodesArr,
-                Timestamp: ts,
-                Official: official,
-              } as any);
-            });
-            return Array.from(map.values());
-          });
+      let data: any = null;
 
-          // Also populate registrationReceipts so Receipts Register reflects all synced intakes
-          setRegistrationReceipts((prev) => {
-            const map = new Map(prev.map((r) => [r.id || r.receiptNumber, r]));
-            res.intakes?.forEach((item: any) => {
-              const enr = item.Enrollment_No || item.enrollmentNo || item.studentId || item['Enrollment No'] || '';
-              const sess = item.Session || item.session || currentSession || 'July 2026';
-              const candName = item.Candidate_Name || item.candidateName || item.studentName || item['Candidate Name'] || '';
-              const contact = item.Contact || item.contact || item.studentPhone || item['Contact Number'] || '';
-              const prog = item.Programme || item.programme || item.programmeCode || '';
-              const official = item.Official || item.handledBy || item.official || item.issuedBy || 'Desk Official';
-              const ts = item.Timestamp || item.timestamp || item.createdAt || item.submissionDate || new Date().toISOString();
-              const token = item.Token_No || item.tokenNo || item.id || `REG-${enr}-${sess}`;
-              const courseRaw = item.Courses || item.courses || item.courseCodes || item.Course_Codes || [];
-              const courseCodesArr = Array.isArray(courseRaw)
-                ? courseRaw
-                : typeof courseRaw === 'string'
-                ? courseRaw.split(',').map((c: string) => c.trim()).filter(Boolean)
-                : [];
-              const key = item.id || token;
-              map.set(key, {
-                id: key,
-                receiptNumber: item.receiptNumber || token,
-                studentId: enr,
-                studentName: candName,
-                studentPhone: contact,
-                programmeCode: prog,
-                session: sess,
-                Session: sess,
-                registeredCourses: courseCodesArr,
-                issuedBy: official,
-                issuedAt: ts,
-                remarks: item.remarks || '',
-                // Dual keys
-                Enrollment_No: enr,
-                Candidate_Name: candName,
-                Contact: contact,
-                Programme: prog,
-                Courses: courseCodesArr,
-                Timestamp: ts,
-                Official: official,
-              } as any);
-            });
-            return Array.from(map.values());
-          });
+      // 1. Try direct fetch from SCRIPT_URL with redirect: "follow"
+      try {
+        const res = await fetch(SCRIPT_URL, { method: "GET", redirect: "follow" });
+        if (res.ok) {
+          const contentType = res.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            data = await res.json();
+          } else {
+            const text = await res.text();
+            try {
+              data = JSON.parse(text);
+            } catch {
+              // Not direct JSON
+            }
+          }
         }
+      } catch (directErr) {
+        console.warn('[Direct SCRIPT_URL fetch failed, trying proxy]:', directErr);
+      }
 
-        if (res.courseLedger && res.courseLedger.length > 0) {
-          setCourseEvaluations((prev) => {
-            const map = new Map<string, CourseEvaluationRecord>(prev.map((c) => [c.submissionKey || c.id, c]));
-            res.courseLedger?.forEach((item: any) => {
-              const key: string = String(item.Sub_ID || item.subId || item.submissionKey || item.id || '');
-              if (!key) return;
-              const existing: CourseEvaluationRecord | undefined = map.get(key);
-              const rawMark = (item.Marks !== undefined && item.Marks !== '' && item.Marks !== null)
-                ? item.Marks
-                : (item.marks !== undefined && item.marks !== '' && item.marks !== null)
-                ? item.marks
-                : null;
-              const markVal = rawMark !== null && rawMark !== undefined ? Number(rawMark) : null;
-              const gradeInfo = calculateIGNOUGrade(markVal);
-              const isLocked = item.Status === 'Locked' || item.status === 'Locked' || item.isLocked === true || item.isLocked === 'true';
-              const evaluatorName = item.Allotted_Evaluator || item.allottedEvaluator || item.evaluatorName || existing?.evaluatorName || null;
-              const merged: CourseEvaluationRecord = {
-                // Clean Google Sheets Course_Ledger keys
-                Sub_ID: key,
-                subId: key,
-                Session: item.Session || item.session || existing?.session || currentSession,
-                Enrollment_No: item.Enrollment_No || item.enrollmentNo || existing?.enrollmentNo || '',
-                Candidate_Name: item.Candidate_Name || item.candidateName || item.studentName || existing?.studentName || '',
-                Programme: item.Programme || item.programme || item.programmeCode || existing?.programmeCode || '',
-                Course_Code: item.Course_Code || item.courseCode || existing?.courseCode || '',
-                Allotted_Evaluator: evaluatorName && evaluatorName !== 'Unallotted' ? evaluatorName : '',
-                Marks: markVal,
-                Grade: item.Grade || item.grade || gradeInfo.grade,
-                Status: isLocked ? 'Marks Locked' : markVal !== null ? 'Evaluated' : (evaluatorName && evaluatorName !== 'Unallotted') ? 'Allotted' : 'Pending Allotment',
-
-                id: key,
-                submissionKey: key,
-                tokenNo: item.tokenNo || existing?.tokenNo || '',
-                enrollmentNo: item.Enrollment_No || item.enrollmentNo || existing?.enrollmentNo || '',
-                studentName: item.Candidate_Name || item.candidateName || item.studentName || existing?.studentName || '',
-                studentPhone: existing?.studentPhone || '',
-                studentEmail: existing?.studentEmail || '',
-                programmeCode: item.Programme || item.programme || item.programmeCode || existing?.programmeCode || '',
-                courseCode: item.Course_Code || item.courseCode || existing?.courseCode || '',
-                session: item.Session || item.session || existing?.session || currentSession,
-                submissionDate: item.submissionDate || existing?.submissionDate || new Date().toISOString().split('T')[0],
-                submissionMode: item.submissionMode || existing?.submissionMode || 'In-Person (Desk)',
-                consignmentNo: item.consignmentNo || existing?.consignmentNo,
-                evaluatorId: existing?.evaluatorId || null,
-                evaluatorCode: existing?.evaluatorCode || null,
-                evaluatorName: evaluatorName && evaluatorName !== 'Unallotted' ? evaluatorName : null,
-                allottedDate: existing?.allottedDate || null,
-                allottedBy: existing?.allottedBy || null,
-                marks: markVal,
-                grade: item.Grade || item.grade || gradeInfo.grade,
-                gradeLabel: gradeInfo.label,
-                isLocked,
-                lockedAt: existing?.lockedAt || (isLocked ? new Date().toISOString() : null),
-                lockedBy: existing?.lockedBy || (isLocked ? 'Coordinator' : null),
-                status: isLocked ? 'Marks Locked' : markVal !== null ? 'Evaluated' : (evaluatorName && evaluatorName !== 'Unallotted') ? 'Allotted' : 'Pending Allotment',
-                updatedAt: new Date().toISOString(),
-                remarks: existing?.remarks || '',
-              };
-              map.set(key, merged);
-            });
-            return Array.from(map.values());
+      // 2. If direct fetch failed or gave non-JSON, try the Express backend proxy
+      if (!data || (!data.intakeRegister && !data.intakes && !data.courseLedger)) {
+        try {
+          const proxyRes = await fetch(`/api/sheets?action=doGet&scriptUrl=${encodeURIComponent(SCRIPT_URL)}`, {
+            method: "GET",
+            headers: { Accept: "application/json" },
           });
+          if (proxyRes.ok) {
+            data = await proxyRes.json();
+          }
+        } catch (proxyErr) {
+          console.warn('[Proxy fetch error]:', proxyErr);
         }
       }
-      // Hydrate evaluators master if present
-      if (res.evaluatorsMaster && res.evaluatorsMaster.length > 0) {
-        const parsedEvaluators = parseEvaluatorsMaster(res.evaluatorsMaster);
-        if (parsedEvaluators.length > 0) {
-          setEvaluators(parsedEvaluators);
-          try {
+
+      // 3. Fallback to doGet() if data still empty
+      if (!data || (!data.intakeRegister && !data.intakes && !data.courseLedger)) {
+        const dogetRes = await doGet();
+        if (dogetRes.success) {
+          data = {
+            intakeRegister: dogetRes.intakes,
+            courseLedger: dogetRes.courseLedger,
+            evaluatorsMaster: dogetRes.evaluatorsMaster,
+          };
+        }
+      }
+
+      if (data) {
+        const rawIntake = data.intakeRegister || data.intakes || data.Intake_Register || [];
+        const rawLedger = data.courseLedger || data.course_ledger || data.Course_Ledger || [];
+
+        // 1. Normalize Intake Register
+        const normalizedIntake = rawIntake.map((r: any) => {
+          const timestamp = r.Timestamp || r.timestamp || r.createdAt || "";
+          const session = (r.Session || r.session || "July 2026").toString().trim();
+          const enrollmentNo = (r.Enrollment_No || r.enrollmentNo || "").toString().replace(/^'/, '').trim();
+          const candidateName = r.Candidate_Name || r.candidateName || r.studentName || "";
+          const contact = (r.Contact || r.contact || r.studentPhone || "").toString().replace(/^'/, '').trim();
+          const programme = r.Programme || r.programme || r.programmeCode || "";
+          const courses = Array.isArray(r.Courses || r.courses)
+            ? (r.Courses || r.courses)
+            : (r.Courses || r.courses || "").toString().split(",").map((c: string) => c.trim()).filter(Boolean);
+          const handledBy = r.Official || r.handledBy || r.official || "Desk Official";
+          const id = r.id || r.tokenNo || r.Token_No || `intake-${enrollmentNo}-${session}`;
+          const tokenNo = r.tokenNo || r.Token_No || id;
+
+          return {
+            timestamp,
+            session,
+            enrollmentNo,
+            candidateName,
+            contact,
+            programme,
+            courses,
+            handledBy,
+            // Dual compatibility keys for components
+            id,
+            tokenNo,
+            studentName: candidateName,
+            studentPhone: contact,
+            programmeCode: programme,
+            courseCodes: courses,
+            submissionDate: timestamp ? String(timestamp).split('T')[0] : new Date().toISOString().split('T')[0],
+            submissionMode: r.submissionMode || 'In-Person (Desk)',
+            status: r.status || 'Received',
+            marks: r.marks || {},
+            createdAt: timestamp,
+            Enrollment_No: enrollmentNo,
+            Candidate_Name: candidateName,
+            Contact: contact,
+            Programme: programme,
+            Courses: courses,
+            Timestamp: timestamp,
+            Official: handledBy,
+            Session: session,
+          };
+        });
+
+        // 2. Normalize Course Ledger
+        const normalizedLedger = rawLedger.map((r: any) => {
+          const subId = (r.Sub_ID || r.subId || r.submissionKey || r.id || "").toString().trim();
+          const session = (r.Session || r.session || "July 2026").toString().trim();
+          const enrollmentNo = (r.Enrollment_No || r.enrollmentNo || "").toString().replace(/^'/, '').trim();
+          const candidateName = r.Candidate_Name || r.candidateName || r.studentName || "";
+          const programme = r.Programme || r.programme || r.programmeCode || "";
+          const courseCode = (r.Course_Code || r.courseCode || "").toString().trim().toUpperCase();
+          const allottedEvaluator = r.Allotted_Evaluator || r.allottedEvaluator || r.evaluatorName || "Unallotted";
+          const marks = (r.Marks !== undefined && r.Marks !== "") ? r.Marks : (r.marks !== undefined ? r.marks : "");
+          const numMarks = (marks !== "" && marks !== null && !isNaN(Number(marks))) ? Number(marks) : null;
+          const grade = r.Grade || r.grade || (numMarks !== null ? calculateIGNOUGrade(numMarks).grade : "");
+          const status = r.Status || r.status || "Pending";
+          const isLocked = Boolean(status === 'Locked' || status === 'Marks Locked' || r.isLocked);
+
+          return {
+            subId,
+            session,
+            enrollmentNo,
+            candidateName,
+            programme,
+            courseCode,
+            allottedEvaluator,
+            marks,
+            grade,
+            status,
+            // Dual compatibility keys
+            id: subId || `SUB-${enrollmentNo}-${courseCode}`,
+            submissionKey: subId || `SUB-${enrollmentNo}-${courseCode}`,
+            Sub_ID: subId,
+            Session: session,
+            Enrollment_No: enrollmentNo,
+            Candidate_Name: candidateName,
+            studentName: candidateName,
+            programmeCode: programme,
+            Programme: programme,
+            Course_Code: courseCode,
+            Allotted_Evaluator: allottedEvaluator,
+            evaluatorName: allottedEvaluator !== 'Unallotted' ? allottedEvaluator : null,
+            Marks: marks,
+            Grade: grade,
+            Status: status,
+            isLocked,
+            tokenNo: r.tokenNo || '',
+            submissionDate: r.submissionDate || new Date().toISOString().split('T')[0],
+            submissionMode: r.submissionMode || 'In-Person (Desk)',
+          };
+        });
+
+        // 3. Update React State
+        setIntakes(normalizedIntake as any);
+        setCourseEvaluations(normalizedLedger as any);
+
+        // Also update Registration Receipts so receipts view has latest entries
+        setRegistrationReceipts((prev) => {
+          const map = new Map(prev.map((item) => [item.id || item.receiptNumber, item]));
+          normalizedIntake.forEach((item: any) => {
+            map.set(item.id, {
+              id: item.id,
+              receiptNumber: item.tokenNo || item.id,
+              studentId: item.enrollmentNo,
+              studentName: item.candidateName,
+              studentPhone: item.contact,
+              programmeCode: item.programme,
+              session: item.session,
+              registeredCourses: item.courses,
+              issuedBy: item.handledBy,
+              issuedAt: item.timestamp || new Date().toISOString(),
+              remarks: '',
+              Enrollment_No: item.enrollmentNo,
+              Candidate_Name: item.candidateName,
+              Contact: item.contact,
+              Programme: item.programme,
+              Courses: item.courses,
+              Timestamp: item.timestamp,
+              Official: item.handledBy,
+              Session: item.session,
+            } as any);
+          });
+          return Array.from(map.values());
+        });
+
+        // 4. Update LocalStorage Cache so data survives reloads & login
+        localStorage.setItem("ignou_sc2033_intake", JSON.stringify(normalizedIntake));
+        localStorage.setItem("ignou_sc2033_ledger", JSON.stringify(normalizedLedger));
+        localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(normalizedIntake));
+        localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(normalizedLedger));
+
+        const syncMsg = `Synced (${normalizedIntake.length} receipts, ${normalizedLedger.length} scripts)`;
+        setSyncStatus(syncMsg);
+
+        const now = new Date();
+        const formattedDate = `${now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} ${now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
+        setLastSheetSync(formattedDate);
+        localStorage.setItem(STORAGE_KEYS.LAST_SHEET_SYNC, formattedDate);
+
+        // Also handle evaluatorsMaster if present
+        if (data.evaluatorsMaster && data.evaluatorsMaster.length > 0) {
+          const parsedEvaluators = parseEvaluatorsMaster(data.evaluatorsMaster);
+          if (parsedEvaluators.length > 0) {
+            setEvaluators(parsedEvaluators);
             localStorage.setItem(STORAGE_KEYS.EVALUATORS_MASTER, JSON.stringify(parsedEvaluators));
             localStorage.setItem(STORAGE_KEYS.EVALUATORS, JSON.stringify(parsedEvaluators));
-          } catch {}
+          }
+        }
+
+        if (!isSilent) {
+          showToast(syncMsg, 'success');
+        }
+      } else {
+        setSyncStatus('Using Cached Data (Offline)');
+        if (!isSilent) {
+          showToast('Offline mode: Using cached data', 'info');
         }
       }
-
-      const now = new Date();
-      const formattedDate = `${now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} ${now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
-      setLastSheetSync(formattedDate);
-      localStorage.setItem(STORAGE_KEYS.LAST_SHEET_SYNC, formattedDate);
-      setEvaluators((prev) =>
-        prev.map((ev) => ({
-          ...ev,
-          lastSyncedAt: now.toISOString(),
-        }))
-      );
-
-      const receiptsCount = res.intakes?.length || 0;
-      const scriptsCount = res.courseLedger?.length || 0;
-      const statusText = `Synced (${receiptsCount} receipts, ${scriptsCount} scripts)`;
-      setSyncStatus(statusText);
-      if (!isSilent) {
-        showToast(statusText, 'success');
-      }
     } catch (err) {
-      console.warn('[Google Sheets Sync Error]:', err);
-      setSyncStatus('Sync Failed');
+      console.warn('[fetchAllData error]:', err);
+      setSyncStatus('Sync Failed (Using Cache)');
       if (!isSilent) {
-        showToast('Sync failed. Please check network.', 'warning');
+        showToast('Sync failed. Using cached data.', 'warning');
       }
     } finally {
       setIsSyncingSheets(false);
     }
-  }, [currentSession, showToast]);
+  }, [showToast]);
+
+  const syncGoogleSheets = fetchAllData;
 
   const [isSyncingEvaluators, setIsSyncingEvaluators] = useState<boolean>(false);
 
@@ -2282,6 +2314,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isSyncingSheets,
         syncStatus,
         syncGoogleSheets,
+        fetchAllData,
         isSyncingEvaluators,
         syncEvaluatorsDirectory,
         lastSheetSync,

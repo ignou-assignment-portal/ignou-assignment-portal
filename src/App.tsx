@@ -20,7 +20,21 @@ import { Toast } from './components/Toast';
 
 const DashboardContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('INTAKE_DESK');
-  const { currentSession, isAdmin, isUrlLockedDeskMode, settings, toastMessage, toastType, hideToast } = useApp();
+  const {
+    currentSession,
+    isAdmin,
+    isUrlLockedDeskMode,
+    settings,
+    toastMessage,
+    toastType,
+    hideToast,
+    fetchAllData,
+  } = useApp();
+
+  // Automatic Sync on Startup & Login (PC & Mobile)
+  React.useEffect(() => {
+    fetchAllData();
+  }, []);
 
   // Ensure restricted tabs are redirected in URL locked mode
   React.useEffect(() => {
