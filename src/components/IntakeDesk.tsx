@@ -25,6 +25,7 @@ import {
   Phone,
   BarChart3,
   ChevronDown,
+  ChevronUp,
   Edit3,
   Check,
   TableProperties,
@@ -86,6 +87,23 @@ export const IntakeDesk: React.FC = () => {
   // Sub-view toggle for Desk Official
   const [deskView, setDeskView] = useState<'REGISTER' | 'SUBMISSIONS_REGISTER' | 'RECEIPTS'>('REGISTER');
   const [editingRecord, setEditingRecord] = useState<any | null>(null);
+  const [isBannerCollapsed, setIsBannerCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ignou_sc2033_intake_banner_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleBannerCollapsed = () => {
+    setIsBannerCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('ignou_sc2033_intake_banner_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Flexible Session Filtering: normalizes activeSession so whitespace, date formatting, or case does not hide valid rows
   const normalizeSession = (s: any) => norm(s);
@@ -479,39 +497,59 @@ export const IntakeDesk: React.FC = () => {
   const handleIntakeSubmit = handleSubmitAndGenerateReceipt;
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner Notice */}
-      <div className="bg-gradient-to-r from-indigo-950 via-zinc-900 to-indigo-900 text-white p-5 rounded-2xl shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-400 text-zinc-950 uppercase">
-              Module A: Student Intake & Status Dashboard
-            </span>
-            <span className="text-xs text-indigo-200">
-              Active Cycle: <strong className="text-white">{currentSession}</strong>
-            </span>
+    <div className="space-y-4">
+      {/* Top Banner Notice - Collapsible for maximum vertical screen space */}
+      <div className="bg-gradient-to-r from-indigo-950 via-zinc-900 to-indigo-900 text-white rounded-2xl shadow-sm transition-all duration-200">
+        <div className={`p-3 sm:p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 ${
+          isBannerCollapsed ? 'py-2.5 sm:py-3' : ''
+        }`}>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-400 text-zinc-950 uppercase tracking-wide">
+                Module A: Student Intake
+              </span>
+              <span className="text-xs text-indigo-200">
+                Cycle: <strong className="text-white">{currentSession}</strong>
+              </span>
+            </div>
+            {!isBannerCollapsed && (
+              <>
+                <h2 className="text-base sm:text-lg font-black mt-1 tracking-tight">
+                  IGNOU Study Centre SC-2033 Assignment Operations
+                </h2>
+                <p className="text-xs text-zinc-300 mt-0.5 max-w-2xl">
+                  Dynamic Multi-Course Registration Desk, printable acknowledgment receipt, and status matrix.
+                </p>
+              </>
+            )}
           </div>
-          <h2 className="text-lg sm:text-xl font-black mt-1 tracking-tight">
-            IGNOU Study Centre SC-2033 Assignment Operations
-          </h2>
-          <p className="text-xs text-zinc-300 mt-0.5 max-w-2xl">
-            Dynamic Multi-Course Registration Desk, instant printable statutory acknowledgment receipt, and comprehensive real-time status matrix.
-          </p>
-        </div>
 
-        <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 text-xs border border-white/15 flex items-center gap-4">
-          <div className="text-right">
-            <div className="text-zinc-300 text-[10px] uppercase font-bold">Candidates This Cycle</div>
-            <div className="text-xl font-black text-white">
-              {new Set(sessionIntakes.map((r) => r.enrollmentNo)).size}
+          <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+            <div className="bg-white/10 backdrop-blur-md rounded-xl px-3 py-1.5 text-xs border border-white/15 flex items-center gap-4">
+              <div className="text-right">
+                <div className="text-zinc-300 text-[10px] uppercase font-bold">Candidates</div>
+                <div className="text-base sm:text-lg font-black text-white leading-tight">
+                  {new Set(sessionIntakes.map((r) => r.enrollmentNo)).size}
+                </div>
+              </div>
+              <div className="w-px h-6 bg-white/20"></div>
+              <div className="text-right">
+                <div className="text-zinc-300 text-[10px] uppercase font-bold">Scripts</div>
+                <div className="text-base sm:text-lg font-black text-amber-300 leading-tight">
+                  {sessionIntakes.reduce((sum, r) => sum + r.courseCodes.length, 0)}
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="w-px h-8 bg-white/20"></div>
-          <div className="text-right">
-            <div className="text-zinc-300 text-[10px] uppercase font-bold">Total Scripts</div>
-            <div className="text-xl font-black text-amber-300">
-              {sessionIntakes.reduce((sum, r) => sum + r.courseCodes.length, 0)}
-            </div>
+
+            <button
+              type="button"
+              onClick={toggleBannerCollapsed}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-zinc-200 hover:text-white transition cursor-pointer shrink-0"
+              title={isBannerCollapsed ? "Expand Banner Overview" : "Collapse Banner to save screen space"}
+              aria-label="Toggle Banner Overview"
+            >
+              <ChevronUp className={`w-4 h-4 transition-transform duration-200 ${isBannerCollapsed ? 'rotate-180' : ''}`} />
+            </button>
           </div>
         </div>
       </div>

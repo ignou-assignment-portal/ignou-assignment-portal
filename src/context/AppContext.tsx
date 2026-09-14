@@ -165,6 +165,14 @@ interface AppContextType {
   setIsSidebarCollapsed: (val: boolean) => void;
   toggleSidebarCollapsed: () => void;
 
+  // Header & Full-Page Workspace View Modes
+  isHeaderCompact: boolean;
+  setIsHeaderCompact: (val: boolean) => void;
+  toggleHeaderCompact: () => void;
+  isContentFullWidth: boolean;
+  setIsContentFullWidth: (val: boolean) => void;
+  toggleContentFullWidth: () => void;
+
   // Toast Notification System
   toastMessage: string | null;
   toastType: 'success' | 'info' | 'warning' | 'error';
@@ -592,6 +600,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const next = !prev;
       try {
         localStorage.setItem('ignou_sc2033_sidebar_collapsed', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  // Header & Full-Page Workspace View Modes
+  const [isHeaderCompact, setIsHeaderCompactState] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('ignou_sc2033_header_compact');
+      return saved !== null ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const [isContentFullWidth, setIsContentFullWidthState] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('ignou_sc2033_content_fullwidth');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const setIsHeaderCompact = useCallback((val: boolean) => {
+    setIsHeaderCompactState(val);
+    try {
+      localStorage.setItem('ignou_sc2033_header_compact', JSON.stringify(val));
+    } catch {}
+  }, []);
+
+  const toggleHeaderCompact = useCallback(() => {
+    setIsHeaderCompactState((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('ignou_sc2033_header_compact', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  const setIsContentFullWidth = useCallback((val: boolean) => {
+    setIsContentFullWidthState(val);
+    try {
+      localStorage.setItem('ignou_sc2033_content_fullwidth', JSON.stringify(val));
+    } catch {}
+  }, []);
+
+  const toggleContentFullWidth = useCallback(() => {
+    setIsContentFullWidthState((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('ignou_sc2033_content_fullwidth', JSON.stringify(next));
       } catch {}
       return next;
     });
@@ -2510,6 +2571,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isSidebarCollapsed,
         setIsSidebarCollapsed,
         toggleSidebarCollapsed,
+        // Header & Full-Page Workspace View Modes
+        isHeaderCompact,
+        setIsHeaderCompact,
+        toggleHeaderCompact,
+        isContentFullWidth,
+        setIsContentFullWidth,
+        toggleContentFullWidth,
         // Toast Notification System
         toastMessage,
         toastType,

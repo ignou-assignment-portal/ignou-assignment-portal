@@ -14,6 +14,9 @@ import {
   FileCheck2,
   Search,
   Menu,
+  Maximize2,
+  Minimize2,
+  ChevronUp,
   Lock,
   RefreshCw,
 } from 'lucide-react';
@@ -42,6 +45,10 @@ export const Header: React.FC = () => {
     syncEvaluatorsDirectory,
     lastSheetSync,
     syncStatus,
+    isHeaderCompact,
+    toggleHeaderCompact,
+    isContentFullWidth,
+    toggleContentFullWidth,
   } = useApp();
 
   const [isSessionDropdownOpen, setIsSessionDropdownOpen] = useState(false);
@@ -58,62 +65,106 @@ export const Header: React.FC = () => {
   };
 
   return (
-    <header className="bg-white border-b border-zinc-200 sticky top-0 z-30 shadow-xs">
-      {/* Top institution bar */}
-      <div className="bg-zinc-900 text-zinc-100 text-xs px-4 py-1.5 flex flex-wrap items-center justify-between border-b border-zinc-800">
-        <div className="flex items-center gap-2">
-          <span className="font-bold tracking-wider text-amber-400">IGNOU</span>
-          <span className="text-zinc-400">|</span>
-          <span className="text-zinc-300 font-medium">INDIRA GANDHI NATIONAL OPEN UNIVERSITY</span>
-          <span className="hidden sm:inline text-zinc-500">•</span>
-          <span className="hidden sm:inline text-zinc-400">Regional Centre: {settings.regionalCentreCode}</span>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 text-zinc-300">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>Study Centre Portal (SC-2033)</span>
+    <header className="bg-white border-b border-zinc-200 sticky top-0 z-30 shadow-xs transition-all duration-200">
+      {/* Top institution bar (can be collapsed to preserve vertical screen real estate) */}
+      {!isHeaderCompact && (
+        <div className="bg-zinc-900 text-zinc-100 text-xs px-4 py-1.5 flex flex-wrap items-center justify-between border-b border-zinc-800 transition-all duration-200">
+          <div className="flex items-center gap-2">
+            <span className="font-bold tracking-wider text-amber-400">IGNOU</span>
+            <span className="text-zinc-400">|</span>
+            <span className="text-zinc-300 font-medium truncate max-w-[200px] sm:max-w-none">INDIRA GANDHI NATIONAL OPEN UNIVERSITY</span>
+            <span className="hidden sm:inline text-zinc-500">•</span>
+            <span className="hidden sm:inline text-zinc-400">Regional Centre: {settings.regionalCentreCode}</span>
           </div>
-          <span className="text-zinc-600 hidden md:inline">|</span>
-          <span className="text-zinc-400 hidden md:inline">Coordinator: {settings.coordinatorName}</span>
+
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 text-zinc-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>Study Centre Portal (SC-2033)</span>
+            </div>
+            <span className="text-zinc-600 hidden md:inline">|</span>
+            <span className="text-zinc-400 hidden md:inline">Coordinator: {settings.coordinatorName}</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Main header toolbar */}
-      <div className="px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div className={`px-3 sm:px-5 flex flex-wrap items-center justify-between gap-3 transition-all duration-200 ${
+        isHeaderCompact ? 'py-1.5' : 'py-2.5'
+      }`}>
         {/* Left: Burger Button & Centre branding */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button
             id="sidebar-burger-btn"
             type="button"
             onClick={toggleSidebarHidden}
-            className="p-2 rounded-xl text-zinc-700 hover:text-zinc-950 hover:bg-zinc-100 border border-zinc-200 transition shadow-2xs cursor-pointer flex items-center justify-center shrink-0"
+            className="p-1.5 rounded-lg text-zinc-700 hover:text-zinc-950 hover:bg-zinc-100 border border-zinc-200 transition shadow-2xs cursor-pointer flex items-center justify-center shrink-0"
             title={isSidebarHidden ? 'Show Left Navigation Drawer' : 'Hide Left Navigation Drawer'}
             aria-label="Toggle Navigation Sidebar"
           >
-            <Menu className="w-5 h-5 text-indigo-950" />
+            <Menu className="w-4 h-4 text-indigo-950" />
           </button>
 
-          <div className="w-10 h-10 rounded-lg bg-indigo-950 flex items-center justify-center text-white font-bold text-lg border border-indigo-800 shadow-xs">
+          <div className="w-8 h-8 rounded-lg bg-indigo-950 flex items-center justify-center text-white font-bold text-sm border border-indigo-800 shadow-xs shrink-0">
             2033
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base sm:text-lg font-bold text-zinc-900 leading-tight">
+              <h1 className={`font-bold text-zinc-900 leading-tight transition-all ${
+                isHeaderCompact ? 'text-sm' : 'text-base'
+              }`}>
                 Assignment Operations Cell
               </h1>
-              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-zinc-100 text-zinc-700 border border-zinc-300">
+              <span className="px-1.5 py-0.2 text-[10px] font-semibold bg-zinc-100 text-zinc-700 border border-zinc-300 rounded">
                 SC-2033
               </span>
             </div>
-            <p className="text-xs text-zinc-500 font-normal">
-              {settings.institutionName}
-            </p>
+            {!isHeaderCompact && (
+              <p className="text-[11px] text-zinc-500 font-normal truncate max-w-xs sm:max-w-md">
+                {settings.institutionName}
+              </p>
+            )}
           </div>
         </div>
 
         {/* Right Controls: Global Search + Session Isolation Selector + RBAC Role Switcher */}
-        <div className="flex items-center flex-wrap gap-3">
+        <div className="flex items-center flex-wrap gap-2">
+          {/* Viewport Width & Header Compactness Controls */}
+          <div className="flex items-center bg-zinc-100 p-0.5 rounded-lg border border-zinc-200">
+            <button
+              type="button"
+              onClick={toggleHeaderCompact}
+              className={`p-1.5 rounded-md text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
+                isHeaderCompact
+                  ? 'bg-white text-indigo-700 shadow-xs'
+                  : 'text-zinc-600 hover:text-zinc-900'
+              }`}
+              title={isHeaderCompact ? 'Expand Top Institutional Bar' : 'Compact Header (Free up vertical space)'}
+              aria-label="Toggle Compact Header Mode"
+            >
+              <ChevronUp className={`w-3.5 h-3.5 transition-transform duration-200 ${isHeaderCompact ? 'rotate-180 text-indigo-600' : ''}`} />
+              <span className="hidden lg:inline text-[11px]">{isHeaderCompact ? 'Expanded' : 'Compact'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleContentFullWidth}
+              className={`p-1.5 rounded-md text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
+                isContentFullWidth
+                  ? 'bg-white text-indigo-700 shadow-xs'
+                  : 'text-zinc-600 hover:text-zinc-900'
+              }`}
+              title={isContentFullWidth ? 'Standard Centered Layout (1280px)' : 'Full Width Fluid Layout (100%)'}
+              aria-label="Toggle Full Width Layout"
+            >
+              {isContentFullWidth ? (
+                <Minimize2 className="w-3.5 h-3.5 text-indigo-600" />
+              ) : (
+                <Maximize2 className="w-3.5 h-3.5 text-zinc-600" />
+              )}
+              <span className="hidden lg:inline text-[11px]">{isContentFullWidth ? 'Full Width' : 'Standard'}</span>
+            </button>
+          </div>
           {/* Module E: Global Student Search & Status Lookup Trigger */}
           <button
             id="global-student-search-btn"

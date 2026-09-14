@@ -31,6 +31,7 @@ const DashboardContent: React.FC = () => {
     toastType,
     hideToast,
     fetchAllData,
+    isContentFullWidth,
   } = useApp();
 
   // Automatic Sync on Startup & Login (PC & Mobile)
@@ -59,7 +60,9 @@ const DashboardContent: React.FC = () => {
 
         {/* Workspace Content Area */}
         <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">
-          <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
+          <main className={`flex-1 w-full mx-auto p-3 sm:p-5 space-y-5 transition-all duration-200 ${
+            isContentFullWidth ? 'max-w-none px-4 sm:px-6' : 'max-w-7xl px-4 sm:p-6'
+          }`}>
             {activeTab === 'INTAKE_DESK' && <IntakeDesk />}
             {activeTab === 'SUBMISSIONS_TRACKER' && <CourseSubmissionsTracker />}
             {activeTab === 'INTAKE_REGISTER' && <IntakeRegister />}
