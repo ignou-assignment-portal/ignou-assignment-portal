@@ -237,29 +237,27 @@ export const RegistrationReceiptModal: React.FC = () => {
           </div>
 
           {/* Dual Signature & Seal Blocks */}
-          <div className="mt-8 pt-4 border-t-2 border-dashed border-zinc-300 grid grid-cols-2 gap-8 text-xs">
-            <div className="text-center pt-8">
-              <div className="w-3/4 mx-auto border-t border-zinc-500 pt-1 text-zinc-600 font-medium">
+          <div className="mt-4 print:mt-3 pt-3 print:pt-2 border-t border-dashed border-zinc-300 grid grid-cols-2 gap-6 text-xs items-end">
+            <div className="text-center">
+              <div className="w-3/4 mx-auto border-t border-zinc-500 pt-1 text-zinc-600 font-medium text-[11px] print:text-[9.5px]">
                 Candidate / Student Signature
               </div>
-              <div className="text-[10px] text-zinc-400 mt-0.5">
+              <div className="text-[9px] text-zinc-400 mt-0.5">
                 (I certify that the assignments submitted are my original handwritten work)
               </div>
             </div>
 
-            <div className="text-center pt-8 relative">
-              {/* Simulated Stamp */}
-              <div className="absolute top-0 right-1/4 border-2 border-indigo-900 text-indigo-900 rounded-lg px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rotate-[-5deg] opacity-80 pointer-events-none bg-indigo-50/60 leading-tight">
+            <div className="text-center relative">
+              {/* Simulated Stamp - Study Centre Official Stamp without Dr. Sant Kumar Gupta */}
+              <div className="inline-block border-2 border-indigo-900 text-indigo-900 rounded-md px-3 py-1 text-[9px] font-black uppercase tracking-wider rotate-[-4deg] bg-indigo-50/60 leading-tight mb-2">
                 VERIFIED & RECEIVED
                 <br />
                 IGNOU {settings.centreCode}
-                <br />
-                <span className="text-[7.5px] font-semibold text-indigo-800">{settings.coordinatorName || 'Dr. Sant K. Gupta'}</span>
               </div>
-              <div className="w-3/4 mx-auto border-t border-zinc-900 pt-1 text-zinc-900 font-bold">
-                {settings.coordinatorName || 'Dr. Sant K. Gupta'}
+              <div className="w-3/4 mx-auto border-t border-zinc-900 pt-1 text-zinc-900 font-bold text-[11px] print:text-[10px]">
+                Coordinator / Authorised Official
               </div>
-              <div className="text-[10px] text-zinc-500 mt-0.5">
+              <div className="text-[9px] text-zinc-500 mt-0.5">
                 {settings.coordinatorDesignation || 'Coordinator, IGNOU SC-2033'} • {settings.institutionName}
               </div>
             </div>

@@ -120,8 +120,8 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
       return;
     }
 
-    if (parsedCourses.length > 8) {
-      setFormError('Maximum 8 courses can be registered in a single intake receipt.');
+    if (parsedCourses.length > 20) {
+      setFormError('Maximum 20 courses can be registered in a single intake receipt.');
       return;
     }
 
@@ -344,7 +344,7 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
               className="w-full px-3 py-2 text-xs font-mono border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
             />
             <p className="text-[10px] text-zinc-500 mt-1">
-              Separate course codes with commas. Up to 8 courses allowed per student intake.
+              Separate course codes with commas. Multiple courses allowed per student intake.
             </p>
 
             {/* Real-time recognized course chips */}

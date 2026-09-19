@@ -228,7 +228,7 @@ export const IntakeDesk: React.FC = () => {
       });
     });
 
-    return matches.slice(0, 8);
+    return matches.slice(0, 15);
   }, [courseSearchInput, selectedCourses]);
 
   const handleSelectStandardProgramme = (progCode: string) => {
@@ -251,7 +251,7 @@ export const IntakeDesk: React.FC = () => {
     setErrorMsg('');
   };
 
-  // Course addition with strict max 8 limit and duplicate check
+  // Course addition with dynamic multi-course support and duplicate check
   const handleAddCourse = (courseCode: string) => {
     if (!courseCode.trim()) return;
     const splitCourses = courseCode
@@ -261,8 +261,8 @@ export const IntakeDesk: React.FC = () => {
 
     if (splitCourses.length === 0) return;
 
-    if (selectedCourses.length + splitCourses.length > 8) {
-      setErrorMsg('Maximum 8 course codes allowed per registration cycle in IGNOU academic term.');
+    if (selectedCourses.length + splitCourses.length > 20) {
+      setErrorMsg('Maximum 20 course codes can be registered per submission batch.');
       return;
     }
 
@@ -371,11 +371,11 @@ export const IntakeDesk: React.FC = () => {
       .filter(Boolean);
 
     if (coursesArray.length === 0) {
-      setErrorMsg('Please enter or select at least one Course Code (up to 8 courses).');
+      setErrorMsg('Please enter or select at least one Course Code.');
       return;
     }
-    if (coursesArray.length > 8) {
-      setErrorMsg('Maximum 8 course codes allowed per registration cycle.');
+    if (coursesArray.length > 20) {
+      setErrorMsg('Maximum 20 course codes can be registered in a single intake receipt.');
       return;
     }
     if (submissionMode !== 'In-Person (Desk)' && !consignmentNo.trim()) {
@@ -619,7 +619,7 @@ export const IntakeDesk: React.FC = () => {
                       Dynamic Multi-Course Registration Desk
                     </h3>
                     <p className="text-[11px] text-zinc-500">
-                      Enter student details, select up to 8 courses, and issue instant acknowledgment receipt.
+                      Enter student details, select course codes, and issue instant acknowledgment receipt.
                     </p>
                   </div>
                 </div>
@@ -980,22 +980,20 @@ export const IntakeDesk: React.FC = () => {
                   )}
                 </div>
 
-                {/* 4. Course Selection: Up to 8 course codes with dynamic chips & auto-suggestions */}
+                {/* 4. Course Selection: Dynamic multi-course codes with chips & suggestions */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-semibold text-zinc-700">
-                      Course Selection (Up to 8 Course Codes) <span className="text-rose-500">*</span>
+                      Course Selection <span className="text-rose-500">*</span>
                     </label>
                     <span
                       className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                        selectedCourses.length >= 8
-                          ? 'bg-rose-100 text-rose-800'
-                          : selectedCourses.length > 0
+                        selectedCourses.length > 0
                           ? 'bg-indigo-100 text-indigo-800'
                           : 'bg-zinc-100 text-zinc-500'
                       }`}
                     >
-                      {selectedCourses.length} / 8 courses selected
+                      {selectedCourses.length} {selectedCourses.length === 1 ? 'course' : 'courses'} selected
                     </span>
                   </div>
 
@@ -1012,7 +1010,7 @@ export const IntakeDesk: React.FC = () => {
                             <button
                               type="button"
                               key={c.code}
-                              disabled={isAlreadySelected || selectedCourses.length >= 8}
+                              disabled={isAlreadySelected}
                               onClick={() => handleAddCourse(c.code)}
                               className={`px-2 py-0.5 text-[11px] font-mono rounded font-bold transition cursor-pointer flex items-center gap-1 ${
                                 isAlreadySelected
@@ -1037,12 +1035,7 @@ export const IntakeDesk: React.FC = () => {
                         <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-2.5" />
                         <input
                           type="text"
-                          placeholder={
-                            selectedCourses.length >= 8
-                              ? 'Maximum 8 courses reached'
-                              : 'Type course code (e.g. BEGC-101, MCS-011) and press Enter or Add'
-                          }
-                          disabled={selectedCourses.length >= 8}
+                          placeholder="Type course code (e.g. BEGC-101, MCS-011) or comma-separated list and press Enter or Add"
                           value={courseSearchInput}
                           onChange={(e) => setCourseSearchInput(e.target.value)}
                           onKeyDown={(e) => {
@@ -1053,12 +1046,12 @@ export const IntakeDesk: React.FC = () => {
                               }
                             }
                           }}
-                          className="w-full pl-8 pr-3 py-1.5 text-xs font-mono border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden disabled:bg-zinc-100 disabled:cursor-not-allowed"
+                          className="w-full pl-8 pr-3 py-1.5 text-xs font-mono border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
                         />
                       </div>
                       <button
                         type="button"
-                        disabled={selectedCourses.length >= 8 || !courseSearchInput.trim()}
+                        disabled={!courseSearchInput.trim()}
                         onClick={() => {
                           if (courseSearchInput.trim()) {
                             handleAddCourse(courseSearchInput.trim());
@@ -1071,7 +1064,7 @@ export const IntakeDesk: React.FC = () => {
                     </div>
 
                     {/* Autocomplete Dropdown List */}
-                    {courseAutocompleteList.length > 0 && selectedCourses.length < 8 && (
+                    {courseAutocompleteList.length > 0 && (
                       <div className="absolute left-0 right-0 mt-1 bg-white border border-zinc-200 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto divide-y divide-zinc-100">
                         {courseAutocompleteList.map((match) => (
                           <button
@@ -1099,7 +1092,7 @@ export const IntakeDesk: React.FC = () => {
                   <div className="mt-2.5">
                     {selectedCourses.length === 0 ? (
                       <div className="text-xs text-zinc-400 italic p-2.5 border border-dashed border-zinc-200 rounded-lg text-center">
-                        No course codes added yet. Click above suggestions or search/type to add (up to 8).
+                        No course codes added yet. Click above suggestions or search/type to add courses.
                       </div>
                     ) : (
                       <div className="flex flex-wrap gap-2 p-2.5 bg-indigo-50/40 border border-indigo-200 rounded-lg">

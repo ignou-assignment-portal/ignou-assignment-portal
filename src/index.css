@@ -1,12 +1,18 @@
 @import "tailwindcss";
 
 @media print {
-  body {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  html, body {
     background-color: #ffffff !important;
     color: #000000 !important;
-    font-size: 12pt;
+    font-size: 11pt;
     margin: 0 !important;
     padding: 0 !important;
+    height: auto !important;
   }
 
   header,
@@ -26,9 +32,10 @@
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 10mm !important;
+    padding: 2mm 0 !important;
     box-shadow: none !important;
     border: none !important;
-    page-break-inside: avoid;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }
