@@ -13,6 +13,8 @@ import {
   RegistrationReceiptFees,
   CourseEvaluationRecord,
   EvaluationStatus,
+  IGNOUProgramme,
+  IGNOUCourse,
 } from '../types';
 import {
   INITIAL_SETTINGS,
@@ -25,6 +27,12 @@ import {
   INITIAL_COURSE_EVALUATIONS,
   IGNOU_PROGRAMMES,
 } from '../data/ignouMasterData';
+import {
+  EXTENDED_IGNOU_PROGRAMMES,
+  formatIgnouCourseCode,
+  lookupCatalogCourse,
+  cleanIgnouTitle,
+} from '../data/ignouComprehensiveCatalog';
 import { generateSessionCode, generateDeterministicSubmissionKey, calculateIGNOUGrade, getIgnouGrade } from '../utils/helpers';
 import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, SCRIPT_URL, normalizeSessionName, norm } from '../services/sheetsService';
 
@@ -178,6 +186,19 @@ interface AppContextType {
   toastType: 'success' | 'info' | 'warning' | 'error';
   showToast: (message?: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
   hideToast: () => void;
+
+  // Custom Programmes, Course Registry & IGNOU Resolution
+  allProgrammes: IGNOUProgramme[];
+  customProgrammes: IGNOUProgramme[];
+  customCourses: Record<string, IGNOUCourse[]>;
+  courseTitlesRegistry: Record<string, { title: string; credits: number; source?: string }>;
+  saveCustomProgramme: (prog: { code: string; name?: string; level?: 'Bachelor' | 'Master' | 'Diploma' | 'Certificate'; department?: string }) => IGNOUProgramme;
+  removeCustomProgramme: (progCode: string) => void;
+  saveCustomCourse: (progCode: string, course: { code: string; title?: string; credits?: number }) => void;
+  getProgrammeCourses: (progCode: string) => IGNOUCourse[];
+  getCourseTitle: (courseCode: string, progCode?: string) => string;
+  getCourseInfo: (courseCode: string, progCode?: string) => { title: string; credits: number; source?: string };
+  updateCourseTitleFromIgnou: (courseCode: string, progCode?: string, forceLive?: boolean) => Promise<{ title: string; credits: number; source: string }>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -195,6 +216,9 @@ const STORAGE_KEYS = {
   ROLE: 'ignou_sc2033_user_role',
   CURRENT_SESSION: 'ignou_sc2033_current_session',
   LAST_SHEET_SYNC: 'ignou_sc2033_last_sheet_sync',
+  CUSTOM_PROGRAMMES: 'ignou_sc2033_custom_programmes',
+  CUSTOM_COURSES: 'ignou_sc2033_custom_courses',
+  COURSE_TITLES_REGISTRY: 'ignou_sc2033_course_titles_registry',
 };
 
 export const parseEvaluatorsMaster = (rawList: any[]): Evaluator[] => {
@@ -544,6 +568,406 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     setToastMessage(null);
   }, []);
+
+  // Persistent Custom Programmes, Custom Courses, and Course Titles Registry
+  const [customProgrammes, setCustomProgrammes] = useState<IGNOUProgramme[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.CUSTOM_PROGRAMMES);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [customCourses, setCustomCourses] = useState<Record<string, IGNOUCourse[]>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.CUSTOM_COURSES);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const [courseTitlesRegistry, setCourseTitlesRegistry] = useState<Record<string, { title: string; credits: number; source?: string }>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.COURSE_TITLES_REGISTRY);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // LocalStorage persistence for custom programmes and courses
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.CUSTOM_PROGRAMMES, JSON.stringify(customProgrammes));
+    } catch (e) {
+      console.warn('Failed to save custom programmes to localStorage', e);
+    }
+  }, [customProgrammes]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.CUSTOM_COURSES, JSON.stringify(customCourses));
+    } catch (e) {
+      console.warn('Failed to save custom courses to localStorage', e);
+    }
+  }, [customCourses]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.COURSE_TITLES_REGISTRY, JSON.stringify(courseTitlesRegistry));
+    } catch (e) {
+      console.warn('Failed to save course titles registry to localStorage', e);
+    }
+  }, [courseTitlesRegistry]);
+
+  // Unified list of all standard + custom + discovered programmes
+  const allProgrammes = useMemo<IGNOUProgramme[]>(() => {
+    const list: IGNOUProgramme[] = [...EXTENDED_IGNOU_PROGRAMMES];
+    const seen = new Set(list.map((p) => p.code.toUpperCase()));
+
+    // 1. Merge user-defined custom programmes
+    for (const cp of customProgrammes) {
+      const codeUpper = cp.code.trim().toUpperCase();
+      if (!seen.has(codeUpper)) {
+        seen.add(codeUpper);
+        list.push({
+          ...cp,
+          code: codeUpper,
+          courses: cp.courses || [],
+        });
+      }
+    }
+
+    // 2. Also include any programme code discovered in recorded intakes
+    for (const it of intakes) {
+      const pCode = (it.programmeCode || '').trim().toUpperCase();
+      if (pCode && !seen.has(pCode)) {
+        seen.add(pCode);
+        list.push({
+          code: pCode,
+          name: `${pCode} Programme`,
+          level: pCode.startsWith('M') ? 'Master' : pCode.startsWith('D') ? 'Diploma' : 'Bachelor',
+          department: 'Academic Division',
+          courses: [],
+        });
+      }
+    }
+
+    return list;
+  }, [customProgrammes, intakes]);
+
+  // Synchronous lookup for course details (title & credits)
+  const getCourseInfo = useCallback(
+    (courseCode: string, progCode?: string): { title: string; credits: number; source?: string } => {
+      const cleanCode = (courseCode || '').trim().toUpperCase();
+      const formatted = formatIgnouCourseCode(cleanCode);
+      const cleanProg = (progCode || '').trim().toUpperCase();
+
+      // 1. Check persistent course titles registry
+      if (courseTitlesRegistry[cleanCode]?.title) {
+        return courseTitlesRegistry[cleanCode];
+      }
+      if (courseTitlesRegistry[formatted]?.title) {
+        return courseTitlesRegistry[formatted];
+      }
+
+      // 2. Check extended IGNOU catalog
+      const catalog = lookupCatalogCourse(cleanCode, cleanProg);
+      if (catalog) {
+        return {
+          title: catalog.title,
+          credits: catalog.credits,
+          source: 'IGNOU Catalog',
+        };
+      }
+
+      // 3. Check custom courses store
+      if (cleanProg && customCourses[cleanProg]) {
+        const found = customCourses[cleanProg].find(
+          (c) => c.code.toUpperCase() === cleanCode || c.code.toUpperCase() === formatted
+        );
+        if (found && found.title) {
+          return {
+            title: found.title,
+            credits: found.credits || 6,
+            source: 'Custom Course Store',
+          };
+        }
+      }
+
+      // Fallback clean formatted placeholder
+      return {
+        title: cleanProg ? `${cleanProg} Course Module ${formatted}` : `Course Module ${formatted}`,
+        credits: 6,
+        source: 'Inferred',
+      };
+    },
+    [courseTitlesRegistry, customCourses]
+  );
+
+  const getCourseTitle = useCallback(
+    (courseCode: string, progCode?: string): string => {
+      return getCourseInfo(courseCode, progCode).title;
+    },
+    [getCourseInfo]
+  );
+
+  // Get all curriculum course suggestions for a programme
+  const getProgrammeCourses = useCallback(
+    (progCode: string): IGNOUCourse[] => {
+      const cleanProg = (progCode || '').trim().toUpperCase();
+      if (!cleanProg) return [];
+
+      const coursesMap = new Map<string, IGNOUCourse>();
+
+      // 1. From standard / extended catalog
+      const standardProg = EXTENDED_IGNOU_PROGRAMMES.find((p) => p.code.toUpperCase() === cleanProg);
+      if (standardProg) {
+        for (const c of standardProg.courses) {
+          coursesMap.set(c.code.toUpperCase(), { ...c });
+        }
+      }
+
+      // 2. From customProgrammes
+      const customProg = customProgrammes.find((p) => p.code.toUpperCase() === cleanProg);
+      if (customProg && customProg.courses) {
+        for (const c of customProg.courses) {
+          coursesMap.set(c.code.toUpperCase(), { ...c });
+        }
+      }
+
+      // 3. From customCourses record
+      if (customCourses[cleanProg]) {
+        for (const c of customCourses[cleanProg]) {
+          coursesMap.set(c.code.toUpperCase(), { ...c });
+        }
+      }
+
+      // 4. From intakes recorded for this programme
+      for (const it of intakes) {
+        if ((it.programmeCode || '').trim().toUpperCase() === cleanProg && Array.isArray(it.courseCodes)) {
+          for (const rawCode of it.courseCodes) {
+            const cCode = rawCode.trim().toUpperCase();
+            if (cCode && !coursesMap.has(cCode)) {
+              const reg = courseTitlesRegistry[cCode];
+              coursesMap.set(cCode, {
+                code: cCode,
+                title: reg?.title || getCourseTitle(cCode, cleanProg),
+                credits: reg?.credits || 6,
+                programme: cleanProg,
+              });
+            }
+          }
+        }
+      }
+
+      // 5. Apply any updated course titles from courseTitlesRegistry
+      for (const [code, c] of coursesMap.entries()) {
+        const reg = courseTitlesRegistry[code] || courseTitlesRegistry[formatIgnouCourseCode(code)];
+        if (reg?.title) {
+          c.title = reg.title;
+          if (reg.credits) c.credits = reg.credits;
+        }
+      }
+
+      return Array.from(coursesMap.values());
+    },
+    [customProgrammes, customCourses, intakes, courseTitlesRegistry, getCourseTitle]
+  );
+
+  // Save a newly added Programme so it appears in Quick Suggestions next time
+  const saveCustomProgramme = useCallback(
+    (prog: { code: string; name?: string; level?: 'Bachelor' | 'Master' | 'Diploma' | 'Certificate'; department?: string }): IGNOUProgramme => {
+      const codeUpper = prog.code.trim().toUpperCase();
+      if (!codeUpper) throw new Error('Programme code is required');
+
+      // Check if already in customProgrammes
+      const existing = customProgrammes.find((p) => p.code.toUpperCase() === codeUpper);
+      if (existing) {
+        if (prog.name && prog.name !== existing.name) {
+          setCustomProgrammes((prev) =>
+            prev.map((p) =>
+              p.code.toUpperCase() === codeUpper
+                ? { ...p, name: prog.name || p.name, level: prog.level || p.level }
+                : p
+            )
+          );
+        }
+        return existing;
+      }
+
+      // Check extended catalog for standard name
+      const catalogProg = EXTENDED_IGNOU_PROGRAMMES.find((p) => p.code.toUpperCase() === codeUpper);
+      const name = prog.name || catalogProg?.name || `${codeUpper} Programme`;
+      const level = prog.level || catalogProg?.level || (codeUpper.startsWith('M') ? 'Master' : codeUpper.startsWith('D') ? 'Diploma' : 'Bachelor');
+      const department = prog.department || catalogProg?.department || 'Academic Division';
+
+      const newProg: IGNOUProgramme = {
+        code: codeUpper,
+        name,
+        level,
+        department,
+        courses: catalogProg ? [...catalogProg.courses] : [],
+      };
+
+      setCustomProgrammes((prev) => [...prev, newProg]);
+
+      // Query server for verified programme name from IGNOU in background
+      fetch(`/api/ignou/programme-lookup?code=${encodeURIComponent(codeUpper)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.status === 'success' && data.data?.name && data.data.name !== newProg.name) {
+            setCustomProgrammes((prev) =>
+              prev.map((p) =>
+                p.code.toUpperCase() === codeUpper
+                  ? { ...p, name: data.data.name, level: data.data.level }
+                  : p
+              )
+            );
+          }
+        })
+        .catch(() => {});
+
+      return newProg;
+    },
+    [customProgrammes]
+  );
+
+  // Remove custom programme
+  const removeCustomProgramme = useCallback((progCode: string) => {
+    const clean = progCode.trim().toUpperCase();
+    setCustomProgrammes((prev) => prev.filter((p) => p.code.toUpperCase() !== clean));
+    setCustomCourses((prev) => {
+      const copy = { ...prev };
+      delete copy[clean];
+      return copy;
+    });
+  }, []);
+
+  // Save a newly added Course Code so it appears in Quick Suggestions next time
+  const saveCustomCourse = useCallback(
+    (progCode: string, course: { code: string; title?: string; credits?: number }) => {
+      const cleanProg = progCode.trim().toUpperCase();
+      const cleanCode = course.code.trim().toUpperCase();
+      const formatted = formatIgnouCourseCode(cleanCode);
+      if (!cleanProg || !cleanCode) return;
+
+      const title = course.title || getCourseTitle(cleanCode, cleanProg);
+      const credits = course.credits || 6;
+
+      // Update registry
+      setCourseTitlesRegistry((prev) => ({
+        ...prev,
+        [cleanCode]: { title, credits, source: 'User Added' },
+        [formatted]: { title, credits, source: 'User Added' },
+      }));
+
+      // Update custom courses
+      setCustomCourses((prev) => {
+        const currentList = prev[cleanProg] || [];
+        const exists = currentList.some(
+          (c) => c.code.toUpperCase() === cleanCode || c.code.toUpperCase() === formatted
+        );
+        if (exists) {
+          return {
+            ...prev,
+            [cleanProg]: currentList.map((c) =>
+              c.code.toUpperCase() === cleanCode || c.code.toUpperCase() === formatted
+                ? { ...c, title, credits }
+                : c
+            ),
+          };
+        }
+        return {
+          ...prev,
+          [cleanProg]: [
+            ...currentList,
+            { code: formatted, title, credits, programme: cleanProg },
+          ],
+        };
+      });
+    },
+    [getCourseTitle]
+  );
+
+  // Fetch / update course title directly from IGNOU (ignou.ac.in)
+  const updateCourseTitleFromIgnou = useCallback(
+    async (
+      courseCode: string,
+      progCode?: string,
+      forceLive = false
+    ): Promise<{ title: string; credits: number; source: string }> => {
+      const cleanCode = (courseCode || '').trim().toUpperCase();
+      const formatted = formatIgnouCourseCode(cleanCode);
+      const cleanProg = (progCode || '').trim().toUpperCase();
+
+      try {
+        const res = await fetch(
+          `/api/ignou/course-lookup?code=${encodeURIComponent(formatted)}&programme=${encodeURIComponent(cleanProg)}&live=${forceLive ? 'true' : 'false'}`
+        );
+        const data = await res.json();
+        if (data?.status === 'success' && data.data?.title) {
+          const resolvedTitle = data.data.title;
+          const credits = data.data.credits || 6;
+          const source = data.data.source || 'ignou.ac.in';
+
+          // Update registry
+          setCourseTitlesRegistry((prev) => ({
+            ...prev,
+            [cleanCode]: { title: resolvedTitle, credits, source },
+            [formatted]: { title: resolvedTitle, credits, source },
+          }));
+
+          // Also update customCourses if programme is known
+          if (cleanProg) {
+            setCustomCourses((prev) => {
+              const currentList = prev[cleanProg] || [];
+              const exists = currentList.some(
+                (c) => c.code.toUpperCase() === cleanCode || c.code.toUpperCase() === formatted
+              );
+              if (exists) {
+                return {
+                  ...prev,
+                  [cleanProg]: currentList.map((c) =>
+                    c.code.toUpperCase() === cleanCode || c.code.toUpperCase() === formatted
+                      ? { ...c, title: resolvedTitle, credits }
+                      : c
+                  ),
+                };
+              }
+              return {
+                ...prev,
+                [cleanProg]: [
+                  ...currentList,
+                  { code: formatted, title: resolvedTitle, credits, programme: cleanProg },
+                ],
+              };
+            });
+          }
+
+          // Also update any existing courseEvaluation records in courseLedger
+          setCourseEvaluations((prev) =>
+            prev.map((rec) =>
+              rec.courseCode.toUpperCase() === cleanCode || rec.courseCode.toUpperCase() === formatted
+                ? { ...rec, courseTitle: resolvedTitle }
+                : rec
+            )
+          );
+
+          return { title: resolvedTitle, credits, source };
+        }
+      } catch (err) {
+        console.warn(`Failed to fetch title for ${courseCode} from IGNOU API:`, err);
+      }
+
+      // Fallback
+      const fallback = getCourseInfo(cleanCode, cleanProg);
+      return { title: fallback.title, credits: fallback.credits, source: fallback.source || 'Catalog' };
+    },
+    [getCourseInfo]
+  );
 
   // Module E: Global Student Search Modal State
   const [isSearchModalOpen, setIsSearchModalOpen] = useState<boolean>(false);
@@ -1141,12 +1565,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const cleanName = data.studentName.trim();
       const cleanProgramme = data.programmeCode.trim().toUpperCase();
 
+      // Save custom programme & courses so they appear in Quick Suggestions next time
+      try {
+        saveCustomProgramme({ code: cleanProgramme });
+        data.courseCodes.forEach((cc) => {
+          saveCustomCourse(cleanProgramme, { code: cc });
+          updateCourseTitleFromIgnou(cc, cleanProgramme).catch(() => {});
+        });
+      } catch (e) {
+        console.warn('Could not auto-save custom programme or course:', e);
+      }
+
       const unpackedRows: CourseEvaluationRecord[] = data.courseCodes.map((courseCode) => {
         const cleanCourse = courseCode.trim().toUpperCase();
         const deterministicKey = generateDeterministicSubmissionKey(cleanEnrollment, cleanCourse, currentSession);
         const markVal = data.marks?.[courseCode] ?? null;
         const gradeInfo = calculateIGNOUGrade(markVal);
         const statusVal: EvaluationStatus = markVal !== null ? 'Evaluated' : 'Pending Allotment';
+        const resolvedTitle = getCourseTitle(cleanCourse, cleanProgramme);
 
         return {
           // Clean Google Sheets Course_Ledger keys
@@ -1155,8 +1591,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           Session: currentSession,
           Enrollment_No: cleanEnrollment,
           Candidate_Name: cleanName,
-          Programme: cleanProgramme,
+          Contact_No: data.studentPhone?.trim() || '',
+          Email_ID: data.studentEmail?.trim() || '',
+          Programme_Code: cleanProgramme,
           Course_Code: cleanCourse,
+          Course_Title: resolvedTitle,
+          courseTitle: resolvedTitle,
+          Programme: cleanProgramme,
           Allotted_Evaluator: '',
           Marks: markVal,
           Grade: gradeInfo.grade,
@@ -1279,6 +1720,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // 1. Optimistic state update across intakeRegister (intakes)
+      try {
+        saveCustomProgramme({ code: cleanProg });
+        cleanCourses.forEach((cc) => {
+          saveCustomCourse(cleanProg, { code: cc });
+          updateCourseTitleFromIgnou(cc, cleanProg).catch(() => {});
+        });
+      } catch (e) {
+        console.warn('Could not auto-save custom programme or course:', e);
+      }
+
       let updatedIntakeRecord: IntakeRecord | null = null;
       setIntakes((prev) => {
         const next = prev.map((item) => {
@@ -2583,6 +3034,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toastType,
         showToast,
         hideToast,
+        // Custom Programmes, Course Registry & IGNOU Resolution
+        allProgrammes,
+        customProgrammes,
+        customCourses,
+        courseTitlesRegistry,
+        saveCustomProgramme,
+        removeCustomProgramme,
+        saveCustomCourse,
+        getProgrammeCourses,
+        getCourseTitle,
+        getCourseInfo,
+        updateCourseTitleFromIgnou,
       }}
     >
       {children}

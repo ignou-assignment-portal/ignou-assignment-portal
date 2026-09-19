@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp, norm } from '../context/AppContext';
-import { IGNOU_PROGRAMMES } from '../data/ignouMasterData';
 import { SubmissionMode } from '../types';
 import { formatDate, formatDateTime } from '../utils/helpers';
 import { IntakeStatusMatrix } from './IntakeStatusMatrix';
@@ -32,6 +31,8 @@ import {
   Trash2,
   Pencil,
   Loader2,
+  Globe,
+  RefreshCw,
 } from 'lucide-react';
 import { IntakeRegister } from './IntakeRegister';
 import { EditIntakeModal } from './EditIntakeModal';
@@ -57,6 +58,14 @@ export const IntakeDesk: React.FC = () => {
     recordStudentAssignmentSubmissions,
     sessionRegistrationReceipts,
     allRegistrationReceipts,
+    allProgrammes,
+    saveCustomProgramme,
+    getProgrammeCourses,
+    saveCustomCourse,
+    getCourseTitle,
+    getCourseInfo,
+    updateCourseTitleFromIgnou,
+    courseTitlesRegistry,
   } = useApp();
 
   // Form states
@@ -76,6 +85,14 @@ export const IntakeDesk: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState('');
   const [justSubmittedToken, setJustSubmittedToken] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Live IGNOU title lookup states
+  const [fetchingIgnouCodes, setFetchingIgnouCodes] = useState<Record<string, boolean>>({});
+  const [isBulkFetchingTitles, setIsBulkFetchingTitles] = useState(false);
+  const [newCourseForProgrammeInput, setNewCourseForProgrammeInput] = useState('');
+  const [isAddingNewProgrammeInline, setIsAddingNewProgrammeInline] = useState(false);
+  const [inlineNewProgCode, setInlineNewProgCode] = useState('');
+  const [inlineNewProgName, setInlineNewProgName] = useState('');
 
   // Programme Combobox & Custom Override states
   const [progSearchQuery, setProgSearchQuery] = useState('');
@@ -191,47 +208,70 @@ export const IntakeDesk: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Standard IGNOU Programmes from Master Data (19 deduplicated standard programmes)
-  const standardProgrammes = useMemo(() => {
-    return IGNOU_PROGRAMMES;
-  }, []);
-
-  // Filtered programmes for the combobox
+  // Filtered programmes for the combobox (standard + custom added + intake history)
   const filteredProgrammes = useMemo(() => {
     const q = progSearchQuery.trim().toUpperCase();
-    if (!q) return standardProgrammes;
-    return standardProgrammes.filter(
+    if (!q) return allProgrammes;
+    return allProgrammes.filter(
       (p) => p.code.toUpperCase().includes(q) || p.name.toUpperCase().includes(q)
     );
-  }, [progSearchQuery, standardProgrammes]);
+  }, [progSearchQuery, allProgrammes]);
 
-  // Selected programme info from master data (if standard)
+  // Selected programme info from dynamic registry
   const programmeData = useMemo(() => {
-    return standardProgrammes.find((p) => p.code === selectedProgramme);
-  }, [selectedProgramme, standardProgrammes]);
+    return allProgrammes.find((p) => p.code === selectedProgramme);
+  }, [selectedProgramme, allProgrammes]);
 
-  // Autocomplete course suggestions: all courses matching courseSearchInput
+  // Available courses for currently selected programme (standard + custom + history)
+  const availableProgrammeCourses = useMemo(() => {
+    if (!selectedProgramme) return [];
+    return getProgrammeCourses(selectedProgramme);
+  }, [selectedProgramme, getProgrammeCourses]);
+
+  // Autocomplete course suggestions across all known courses
   const courseAutocompleteList = useMemo(() => {
     if (!courseSearchInput.trim()) return [];
     const query = courseSearchInput.trim().toUpperCase();
     const matches: { code: string; title: string; programme: string }[] = [];
+    const seen = new Set<string>();
 
-    // Search across all master courses
-    IGNOU_PROGRAMMES.forEach((p) => {
-      p.courses.forEach((c) => {
+    // Search courses for currently selected programme first
+    if (selectedProgramme) {
+      const progCourses = getProgrammeCourses(selectedProgramme);
+      progCourses.forEach((c) => {
+        const title = getCourseTitle(c.code, selectedProgramme);
         if (
-          (c.code.toUpperCase().includes(query) || c.title.toUpperCase().includes(query)) &&
-          !selectedCourses.includes(c.code)
+          (c.code.toUpperCase().includes(query) || title.toUpperCase().includes(query)) &&
+          !selectedCourses.includes(c.code) &&
+          !seen.has(c.code)
         ) {
-          matches.push({ code: c.code, title: c.title, programme: p.code });
+          seen.add(c.code);
+          matches.push({ code: c.code, title, programme: selectedProgramme });
+        }
+      });
+    }
+
+    // Search across all other programmes in registry
+    allProgrammes.forEach((p) => {
+      if (p.code === selectedProgramme) return;
+      const pCourses = getProgrammeCourses(p.code);
+      pCourses.forEach((c) => {
+        const title = getCourseTitle(c.code, p.code);
+        if (
+          (c.code.toUpperCase().includes(query) || title.toUpperCase().includes(query)) &&
+          !selectedCourses.includes(c.code) &&
+          !seen.has(c.code)
+        ) {
+          seen.add(c.code);
+          matches.push({ code: c.code, title, programme: p.code });
         }
       });
     });
 
     return matches.slice(0, 15);
-  }, [courseSearchInput, selectedCourses]);
+  }, [courseSearchInput, selectedCourses, selectedProgramme, allProgrammes, getProgrammeCourses, getCourseTitle]);
 
-  const handleSelectStandardProgramme = (progCode: string) => {
+  const handleSelectProgramme = (progCode: string) => {
     setSelectedProgramme(progCode);
     setIsCustomProgMode(false);
     setCustomProgInput('');
@@ -240,18 +280,45 @@ export const IntakeDesk: React.FC = () => {
     setErrorMsg('');
   };
 
-  const handleApplyCustomProgramme = (code: string) => {
-    const clean = code.trim().toUpperCase();
+  const handleApplyCustomProgramme = (code: string, customName?: string) => {
+    const clean = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!clean) return;
+    saveCustomProgramme({
+      code: clean,
+      name: customName?.trim() || `Programme ${clean}`,
+      level: 'Degree / Diploma / Certificate',
+    });
     setSelectedProgramme(clean);
-    setIsCustomProgMode(true);
-    setCustomProgInput(clean);
+    setIsCustomProgMode(false);
+    setCustomProgInput('');
     setProgSearchQuery('');
     setIsProgDropdownOpen(false);
     setErrorMsg('');
+    setSuccessMsg(`Added programme "${clean}" to quick suggestions. It will now appear in quick suggestions every time.`);
+    setTimeout(() => setSuccessMsg(''), 4500);
   };
 
-  // Course addition with dynamic multi-course support and duplicate check
+  const handleSaveInlineNewProgramme = () => {
+    const cleanCode = inlineNewProgCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!cleanCode) {
+      setErrorMsg('Programme code is required (e.g. BLIS, DTS, MAJY).');
+      return;
+    }
+    saveCustomProgramme({
+      code: cleanCode,
+      name: inlineNewProgName.trim() || `Programme ${cleanCode}`,
+      level: 'Degree / Diploma / Certificate',
+    });
+    setSelectedProgramme(cleanCode);
+    setInlineNewProgCode('');
+    setInlineNewProgName('');
+    setIsAddingNewProgrammeInline(false);
+    setErrorMsg('');
+    setSuccessMsg(`Added programme "${cleanCode}"! It is now saved in Quick Suggestions.`);
+    setTimeout(() => setSuccessMsg(''), 4500);
+  };
+
+  // Course addition with dynamic multi-course support, duplicate check, and unlimited selection (up to 50)
   const handleAddCourse = (courseCode: string) => {
     if (!courseCode.trim()) return;
     const splitCourses = courseCode
@@ -261,8 +328,8 @@ export const IntakeDesk: React.FC = () => {
 
     if (splitCourses.length === 0) return;
 
-    if (selectedCourses.length + splitCourses.length > 20) {
-      setErrorMsg('Maximum 20 course codes can be registered per submission batch.');
+    if (selectedCourses.length + splitCourses.length > 50) {
+      setErrorMsg('Maximum 50 course codes can be registered per submission batch.');
       return;
     }
 
@@ -298,6 +365,14 @@ export const IntakeDesk: React.FC = () => {
 
       if (!selectedCourses.includes(clean) && !newCoursesToAdd.includes(clean)) {
         newCoursesToAdd.push(clean);
+
+        // Save course to programme's custom courses so next time it is in quick suggestions!
+        if (selectedProgramme) {
+          saveCustomCourse(selectedProgramme, { code: clean });
+        }
+
+        // Fetch or update course title from IGNOU.ac.in in background
+        updateCourseTitleFromIgnou(clean, selectedProgramme);
       }
     }
 
@@ -308,9 +383,65 @@ export const IntakeDesk: React.FC = () => {
     setCourseSearchInput('');
   };
 
+  const handleSelectAllCourses = () => {
+    if (!availableProgrammeCourses || availableProgrammeCourses.length === 0) return;
+    const codes = availableProgrammeCourses.map((c) => c.code);
+    handleAddCourse(codes.join(','));
+  };
+
   const handleRemoveCourse = (courseCode: string) => {
     setSelectedCourses(selectedCourses.filter((c) => c !== courseCode));
     setErrorMsg('');
+  };
+
+  // Live fetch course title from IGNOU.ac.in
+  const handleFetchIgnouTitle = async (code: string) => {
+    setFetchingIgnouCodes((prev) => ({ ...prev, [code]: true }));
+    try {
+      const title = await updateCourseTitleFromIgnou(code, selectedProgramme);
+      if (title) {
+        setSuccessMsg(`Fetched course title for ${code} from IGNOU.ac.in: "${title}"`);
+        setTimeout(() => setSuccessMsg(''), 4500);
+      }
+    } catch {
+      // Handled
+    } finally {
+      setFetchingIgnouCodes((prev) => ({ ...prev, [code]: false }));
+    }
+  };
+
+  const handleFetchAllIgnouTitles = async () => {
+    if (selectedCourses.length === 0) return;
+    setIsBulkFetchingTitles(true);
+    try {
+      for (const code of selectedCourses) {
+        setFetchingIgnouCodes((prev) => ({ ...prev, [code]: true }));
+        try {
+          await updateCourseTitleFromIgnou(code, selectedProgramme);
+        } finally {
+          setFetchingIgnouCodes((prev) => ({ ...prev, [code]: false }));
+        }
+      }
+      setSuccessMsg(`Updated titles from IGNOU.ac.in for ${selectedCourses.length} course(s).`);
+      setTimeout(() => setSuccessMsg(''), 4500);
+    } finally {
+      setIsBulkFetchingTitles(false);
+    }
+  };
+
+  // Add custom course to current programme suggestions
+  const handleAddCustomCourseToProgramme = () => {
+    const code = newCourseForProgrammeInput.trim().toUpperCase();
+    if (!code) return;
+    if (!selectedProgramme) {
+      setErrorMsg('Please select a Programme before adding courses.');
+      return;
+    }
+    saveCustomCourse(selectedProgramme, { code });
+    handleAddCourse(code);
+    setNewCourseForProgrammeInput('');
+    setSuccessMsg(`Added course "${code}" to ${selectedProgramme} quick suggestions & fetched title from IGNOU.`);
+    setTimeout(() => setSuccessMsg(''), 4000);
   };
 
   // Primary action: "Submit & Generate Receipt" (Strictly Non-Financial)
@@ -374,8 +505,8 @@ export const IntakeDesk: React.FC = () => {
       setErrorMsg('Please enter or select at least one Course Code.');
       return;
     }
-    if (coursesArray.length > 20) {
-      setErrorMsg('Maximum 20 course codes can be registered in a single intake receipt.');
+    if (coursesArray.length > 50) {
+      setErrorMsg('Maximum 50 course codes can be registered in a single intake receipt.');
       return;
     }
     if (submissionMode !== 'In-Person (Desk)' && !consignmentNo.trim()) {
@@ -469,6 +600,14 @@ export const IntakeDesk: React.FC = () => {
         registeredCourses: coursesArray,
         issuedBy: registeredBy,
         remarks: remarks.trim() || undefined,
+      });
+
+      // 4. Ensure programme and all submitted courses are stored in quick suggestions
+      const progClean = selectedProgramme.trim().toUpperCase();
+      saveCustomProgramme({ code: progClean });
+      coursesArray.forEach((c) => {
+        saveCustomCourse(progClean, { code: c });
+        updateCourseTitleFromIgnou(c, progClean);
       });
 
       setJustSubmittedToken(newRecord.tokenNo);
@@ -885,11 +1024,11 @@ export const IntakeDesk: React.FC = () => {
                                 </button>
                               </div>
                             ) : (
-                              filteredProgrammes.map((prog) => (
+                                filteredProgrammes.map((prog) => (
                                 <button
                                   type="button"
                                   key={prog.code}
-                                  onClick={() => handleSelectStandardProgramme(prog.code)}
+                                  onClick={() => handleSelectProgramme(prog.code)}
                                   className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-indigo-50 transition cursor-pointer ${
                                     selectedProgramme === prog.code ? 'bg-indigo-50/80 font-bold' : ''
                                   }`}
@@ -913,7 +1052,7 @@ export const IntakeDesk: React.FC = () => {
                             )}
                           </div>
 
-                          <div className="p-2 bg-zinc-50 border-t border-zinc-100 text-center">
+                          <div className="p-2 bg-zinc-50 border-t border-zinc-100 flex items-center justify-between">
                             <button
                               type="button"
                               onClick={() => {
@@ -923,7 +1062,18 @@ export const IntakeDesk: React.FC = () => {
                               className="text-[11px] text-indigo-700 hover:text-indigo-900 font-semibold inline-flex items-center gap-1 cursor-pointer"
                             >
                               <Edit3 className="w-3 h-3" />
-                              <span>Programme not in list? Enter Custom / Other Programme</span>
+                              <span>Custom Programme Entry</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsProgDropdownOpen(false);
+                                setIsAddingNewProgrammeInline(true);
+                              }}
+                              className="text-[11px] text-emerald-700 hover:text-emerald-900 font-semibold inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>Add New to Suggestions</span>
                             </button>
                           </div>
                         </div>
@@ -931,40 +1081,108 @@ export const IntakeDesk: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Fast 1-Click Quick Select Pills for Standard Programmes */}
-                  <div>
-                    <div className="text-[10px] text-zinc-500 uppercase font-semibold mb-1 flex items-center justify-between">
-                      <span>Standard IGNOU Catalog (19 Programmes):</span>
-                      {selectedProgramme && (
-                        <span className="text-indigo-700 font-bold">
-                          Selected: {selectedProgramme} {isCustomProgMode ? '(Custom Override)' : ''}
+                  {/* Inline New Programme Adder Modal/Drawer */}
+                  {isAddingNewProgrammeInline && (
+                    <div className="p-3 bg-emerald-50/80 border border-emerald-300 rounded-xl space-y-2 animate-in fade-in">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                          <Plus className="w-3.5 h-3.5 text-emerald-700" />
+                          <span>Add New Programme to Quick Suggestions</span>
                         </span>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {standardProgrammes.map((prog) => (
                         <button
                           type="button"
-                          key={prog.code}
-                          onClick={() => handleSelectStandardProgramme(prog.code)}
-                          className={`px-2 py-0.5 text-[11px] font-mono font-bold rounded-md transition cursor-pointer ${
-                            selectedProgramme === prog.code && !isCustomProgMode
-                              ? 'bg-indigo-600 text-white shadow-2xs'
-                              : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 border border-zinc-200'
-                          }`}
+                          onClick={() => setIsAddingNewProgrammeInline(false)}
+                          className="text-emerald-700 hover:text-emerald-900 p-0.5"
                         >
-                          {prog.code}
+                          <X className="w-4 h-4" />
                         </button>
-                      ))}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <input
+                          type="text"
+                          placeholder="Programme Code (e.g. BLIS, DTS, MAJY, MBA)"
+                          value={inlineNewProgCode}
+                          onChange={(e) => setInlineNewProgCode(e.target.value.toUpperCase())}
+                          className="px-2.5 py-1.5 font-mono font-bold border border-emerald-300 rounded-lg bg-white"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Full Programme Title (Optional)"
+                          value={inlineNewProgName}
+                          onChange={(e) => setInlineNewProgName(e.target.value)}
+                          className="px-2.5 py-1.5 border border-emerald-300 rounded-lg bg-white"
+                        />
+                      </div>
+                      <div className="flex items-center justify-end gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingNewProgrammeInline(false)}
+                          className="px-2.5 py-1 text-xs text-zinc-600 hover:text-zinc-800"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveInlineNewProgramme}
+                          className="px-3 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+                        >
+                          Save & Add to Quick Suggestions
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Fast 1-Click Quick Select Pills for All Programmes (Standard + Newly Added) */}
+                  <div>
+                    <div className="text-[10px] text-zinc-500 uppercase font-semibold mb-1.5 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Layers className="w-3 h-3 text-indigo-600" />
+                        <span>Quick Suggestions ({allProgrammes.length} Programmes):</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {selectedProgramme && (
+                          <span className="text-indigo-700 font-bold normal-case text-xs">
+                            Active: {selectedProgramme}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingNewProgrammeInline(!isAddingNewProgrammeInline)}
+                          className="text-emerald-700 hover:text-emerald-900 font-bold text-[10px] flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add Programme</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto p-1.5 bg-zinc-50/70 border border-zinc-200 rounded-lg">
+                      {allProgrammes.map((prog) => {
+                        const isSelected = selectedProgramme === prog.code;
+                        return (
+                          <button
+                            type="button"
+                            key={prog.code}
+                            onClick={() => handleSelectProgramme(prog.code)}
+                            className={`px-2 py-0.5 text-[11px] font-mono font-bold rounded-md transition cursor-pointer flex items-center gap-1 ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white shadow-2xs ring-2 ring-indigo-400'
+                                : 'bg-white text-zinc-700 hover:bg-indigo-50 hover:text-indigo-900 border border-zinc-200'
+                            }`}
+                            title={`${prog.code} - ${prog.name}`}
+                          >
+                            <span>{prog.code}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
                   {/* Active Programme Confirmation Ribbon */}
                   {selectedProgramme && (
-                    <div className="text-[11px] text-indigo-950 bg-indigo-50/80 px-3 py-1.5 rounded-lg border border-indigo-200 flex items-center justify-between">
-                      <span>
-                        Active Programme: <strong className="font-mono">{selectedProgramme}</strong>
-                        {programmeData ? ` — ${programmeData.name} (${programmeData.level})` : ' — Custom Study Centre Override'}
+                    <div className="text-[11px] text-indigo-950 bg-indigo-50/90 px-3 py-1.5 rounded-lg border border-indigo-200 flex items-center justify-between">
+                      <span className="truncate">
+                        Active Programme: <strong className="font-mono text-indigo-900">{selectedProgramme}</strong>
+                        {programmeData ? ` — ${programmeData.name}` : ' — Programme registered at Study Centre'}
                       </span>
                       <button
                         type="button"
@@ -972,70 +1190,139 @@ export const IntakeDesk: React.FC = () => {
                           setSelectedProgramme('');
                           setIsCustomProgMode(false);
                         }}
-                        className="text-indigo-600 hover:text-indigo-800 text-xs font-bold cursor-pointer ml-2"
+                        className="text-indigo-600 hover:text-indigo-800 text-xs font-bold cursor-pointer ml-2 shrink-0"
                       >
-                        Clear
+                        Change
                       </button>
                     </div>
                   )}
                 </div>
 
-                {/* 4. Course Selection: Dynamic multi-course codes with chips & suggestions */}
+                {/* 4. Course Selection: Dynamic multi-course codes with chips, suggestions, and live IGNOU titles */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-semibold text-zinc-700">
                       Course Selection <span className="text-rose-500">*</span>
+                      <span className="text-[11px] font-normal text-zinc-500 ml-1.5">
+                        (Supports selecting more than 8 courses — up to 50 allowed)
+                      </span>
                     </label>
-                    <span
-                      className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                        selectedCourses.length > 0
-                          ? 'bg-indigo-100 text-indigo-800'
-                          : 'bg-zinc-100 text-zinc-500'
-                      }`}
-                    >
-                      {selectedCourses.length} {selectedCourses.length === 1 ? 'course' : 'courses'} selected
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {selectedCourses.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleFetchAllIgnouTitles}
+                          disabled={isBulkFetchingTitles}
+                          className="text-[11px] text-indigo-700 hover:text-indigo-900 font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          title="Query IGNOU.ac.in for official course titles for all selected courses"
+                        >
+                          {isBulkFetchingTitles ? (
+                            <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />
+                          ) : (
+                            <RefreshCw className="w-3 h-3 text-indigo-600" />
+                          )}
+                          <span>Update Titles from IGNOU.ac.in</span>
+                        </button>
+                      )}
+                      <span
+                        className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                          selectedCourses.length > 0
+                            ? 'bg-indigo-100 text-indigo-800'
+                            : 'bg-zinc-100 text-zinc-500'
+                        }`}
+                      >
+                        {selectedCourses.length} {selectedCourses.length === 1 ? 'course' : 'courses'} selected
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Suggestions from currently selected standard programme */}
-                  {programmeData && programmeData.courses && (
-                    <div className="mb-2 p-2 bg-zinc-50 border border-zinc-200 rounded-lg">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">
-                        Curriculum Courses for {programmeData.code} (Click to add):
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {programmeData.courses.map((c) => {
-                          const isAlreadySelected = selectedCourses.includes(c.code);
-                          return (
-                            <button
-                              type="button"
-                              key={c.code}
-                              disabled={isAlreadySelected}
-                              onClick={() => handleAddCourse(c.code)}
-                              className={`px-2 py-0.5 text-[11px] font-mono rounded font-bold transition cursor-pointer flex items-center gap-1 ${
-                                isAlreadySelected
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 opacity-60 cursor-not-allowed'
-                                  : 'bg-white hover:bg-indigo-50 text-indigo-900 border border-zinc-300 hover:border-indigo-400'
-                              }`}
-                              title={c.title}
-                            >
-                              <span>{c.code}</span>
-                              {isAlreadySelected ? <Check className="w-2.5 h-2.5" /> : <Plus className="w-2.5 h-2.5" />}
-                            </button>
-                          );
-                        })}
+                  {/* Suggestions for currently selected programme */}
+                  {selectedProgramme && (
+                    <div className="mb-2 p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 flex items-center gap-1">
+                          <BookOpen className="w-3 h-3 text-indigo-600" />
+                          <span>Quick Course Suggestions for {selectedProgramme} ({availableProgrammeCourses.length} Available):</span>
+                        </span>
+                        {availableProgrammeCourses.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleSelectAllCourses}
+                            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer"
+                          >
+                            Select All ({availableProgrammeCourses.length})
+                          </button>
+                        )}
+                      </div>
+
+                      {availableProgrammeCourses.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1 bg-white rounded border border-zinc-100 mb-2">
+                          {availableProgrammeCourses.map((c) => {
+                            const isAlreadySelected = selectedCourses.includes(c.code);
+                            const title = getCourseTitle(c.code, selectedProgramme);
+                            return (
+                              <button
+                                type="button"
+                                key={c.code}
+                                disabled={isAlreadySelected}
+                                onClick={() => handleAddCourse(c.code)}
+                                className={`px-2 py-0.5 text-[11px] font-mono rounded font-bold transition cursor-pointer flex items-center gap-1 ${
+                                  isAlreadySelected
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 opacity-60 cursor-not-allowed'
+                                    : 'bg-zinc-50 hover:bg-indigo-50 text-indigo-900 border border-zinc-200 hover:border-indigo-400'
+                                }`}
+                                title={`${c.code}: ${title}`}
+                              >
+                                <span>{c.code}</span>
+                                {isAlreadySelected ? <Check className="w-2.5 h-2.5" /> : <Plus className="w-2.5 h-2.5" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-zinc-500 italic mb-2">
+                          No pre-seeded courses for {selectedProgramme}. Type below to add course codes, and they will be saved to quick suggestions automatically!
+                        </div>
+                      )}
+
+                      {/* Quick Add New Course to this Programme */}
+                      <div className="flex items-center gap-1.5 pt-1 border-t border-zinc-200/60">
+                        <span className="text-[10px] text-zinc-500 font-semibold whitespace-nowrap">
+                          + Add Course to {selectedProgramme}:
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="e.g. BEGC-102 or MCS-021"
+                          value={newCourseForProgrammeInput}
+                          onChange={(e) => setNewCourseForProgrammeInput(e.target.value.toUpperCase())}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddCustomCourseToProgramme();
+                            }
+                          }}
+                          className="px-2 py-0.5 text-xs font-mono font-bold border border-zinc-300 rounded bg-white w-40"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddCustomCourseToProgramme}
+                          disabled={!newCourseForProgrammeInput.trim()}
+                          className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-zinc-300 text-white text-[11px] font-bold rounded cursor-pointer transition"
+                        >
+                          Add & Include Next Time
+                        </button>
                       </div>
                     </div>
                   )}
 
-                  {/* Search / Manual Add Input */}
+                  {/* Search / Manual Multi-Add Input */}
                   <div className="relative">
                     <div className="flex gap-2">
                       <div className="relative flex-1">
                         <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-2.5" />
                         <input
                           type="text"
-                          placeholder="Type course code (e.g. BEGC-101, MCS-011) or comma-separated list and press Enter or Add"
+                          placeholder="Type course code (e.g. BEGC-101, MCS-011) or comma-separated list (BEGC-101, BEGC-102, BEGC-103...) and press Enter or Add"
                           value={courseSearchInput}
                           onChange={(e) => setCourseSearchInput(e.target.value)}
                           onKeyDown={(e) => {
@@ -1069,7 +1356,7 @@ export const IntakeDesk: React.FC = () => {
                         {courseAutocompleteList.map((match) => (
                           <button
                             type="button"
-                            key={match.code}
+                            key={`${match.programme}-${match.code}`}
                             onClick={() => handleAddCourse(match.code)}
                             className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 flex items-center justify-between group transition cursor-pointer"
                           >
@@ -1088,30 +1375,65 @@ export const IntakeDesk: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Selected Courses Chips Display */}
+                  {/* Selected Courses Chips Display with dynamic titles and IGNOU lookup buttons */}
                   <div className="mt-2.5">
                     {selectedCourses.length === 0 ? (
                       <div className="text-xs text-zinc-400 italic p-2.5 border border-dashed border-zinc-200 rounded-lg text-center">
-                        No course codes added yet. Click above suggestions or search/type to add courses.
+                        No course codes added yet. Click above quick suggestions or type/paste comma-separated course codes to select (more than 8 courses fully supported).
                       </div>
                     ) : (
-                      <div className="flex flex-wrap gap-2 p-2.5 bg-indigo-50/40 border border-indigo-200 rounded-lg">
-                        {selectedCourses.map((code) => (
-                          <span
-                            key={code}
-                            className="inline-flex items-center gap-1.5 bg-indigo-900 text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md shadow-xs"
-                          >
-                            {code}
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveCourse(code)}
-                              className="hover:text-rose-300 transition cursor-pointer"
-                              title="Remove Course"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
+                      <div className="space-y-1.5 p-2.5 bg-indigo-50/40 border border-indigo-200 rounded-lg max-h-64 overflow-y-auto">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-indigo-950 pb-1 border-b border-indigo-100">
+                          <span>Selected Courses ({selectedCourses.length} courses):</span>
+                          <span className="text-zinc-500 font-normal text-[10px]">
+                            Titles auto-linked & updatable from IGNOU.ac.in
                           </span>
-                        ))}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                          {selectedCourses.map((code) => {
+                            const title = getCourseTitle(code, selectedProgramme);
+                            const isFetching = fetchingIgnouCodes[code];
+                            return (
+                              <div
+                                key={code}
+                                className="flex items-center justify-between gap-2 bg-white border border-indigo-200 p-1.5 rounded-md shadow-2xs hover:border-indigo-300 transition"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-mono font-black text-indigo-950 text-xs">
+                                      {code}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleFetchIgnouTitle(code)}
+                                      disabled={isFetching}
+                                      className="text-[9px] text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-1.5 py-0.2 rounded font-semibold flex items-center gap-0.5 cursor-pointer disabled:opacity-50"
+                                      title="Update title from IGNOU.ac.in"
+                                    >
+                                      {isFetching ? (
+                                        <Loader2 className="w-2.5 h-2.5 animate-spin text-indigo-600" />
+                                      ) : (
+                                        <RefreshCw className="w-2.5 h-2.5" />
+                                      )}
+                                      <span>IGNOU Title</span>
+                                    </button>
+                                  </div>
+                                  <div className="text-[10.5px] text-zinc-600 truncate font-medium mt-0.5" title={title}>
+                                    {title}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveCourse(code)}
+                                  className="text-zinc-400 hover:text-rose-600 p-1 transition cursor-pointer"
+                                  title={`Remove ${code}`}
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                   </div>

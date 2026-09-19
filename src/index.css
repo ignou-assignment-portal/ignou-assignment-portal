@@ -3,28 +3,48 @@
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm;
+    margin: 4mm 6mm;
   }
 
   html, body {
     background-color: #ffffff !important;
     color: #000000 !important;
-    font-size: 11pt;
+    font-size: 10pt;
     margin: 0 !important;
     padding: 0 !important;
     height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
   }
 
+  /* Completely hide all dashboard elements when printing */
   header,
   nav,
   aside,
+  footer,
+  main,
   button,
   .print\:hidden {
     display: none !important;
   }
 
-  .print\:block {
+  /* When printing, make the modal overlay natural flow and single-page */
+  .fixed.inset-0 {
+    position: static !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    overflow: visible !important;
     display: block !important;
+  }
+
+  .fixed.inset-0 > div {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   #printable-receipt,
@@ -32,10 +52,16 @@
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 2mm 0 !important;
+    padding: 1mm 0 !important;
     box-shadow: none !important;
     border: none !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  .print\:block {
+    display: block !important;
   }
 }

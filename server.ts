@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import { resolveCourse, resolveProgramme } from "./src/services/ignouLookupServer";
 
 const app = express();
 const PORT = 3000;
@@ -26,6 +27,56 @@ app.get("/api/health", (req, res) => {
     scriptUrl: SCRIPT_URL,
     timestamp: new Date().toISOString(),
   });
+});
+
+// 1b. IGNOU Course Lookup API (GET and POST)
+app.get("/api/ignou/course-lookup", async (req, res) => {
+  const code = (req.query.code as string) || "";
+  const programme = (req.query.programme as string) || "";
+  const forceLive = req.query.live === "true";
+
+  if (!code.trim()) {
+    return res.status(400).json({ status: "error", message: "Course code is required" });
+  }
+
+  try {
+    const result = await resolveCourse(code, programme, forceLive);
+    return res.json({ status: "success", data: result });
+  } catch (err: any) {
+    return res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+app.post("/api/ignou/course-lookup", async (req, res) => {
+  const { code, codes, programme, live } = req.body || {};
+  const forceLive = live === true;
+
+  try {
+    if (Array.isArray(codes) && codes.length > 0) {
+      const results = await Promise.all(
+        codes.map((c: string) => resolveCourse(String(c), programme, forceLive))
+      );
+      return res.json({ status: "success", data: results });
+    }
+
+    if (code) {
+      const result = await resolveCourse(String(code), programme, forceLive);
+      return res.json({ status: "success", data: result });
+    }
+
+    return res.status(400).json({ status: "error", message: "Code or codes array is required" });
+  } catch (err: any) {
+    return res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+app.get("/api/ignou/programme-lookup", (req, res) => {
+  const code = (req.query.code as string) || "";
+  if (!code.trim()) {
+    return res.status(400).json({ status: "error", message: "Programme code is required" });
+  }
+  const result = resolveProgramme(code);
+  return res.json({ status: "success", data: result });
 });
 
 // 2. Google Sheets doGet() Proxy
