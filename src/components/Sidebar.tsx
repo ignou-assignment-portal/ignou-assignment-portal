@@ -16,6 +16,7 @@ import {
   X,
   Sparkles,
   Search,
+  Home,
 } from 'lucide-react';
 
 export type TabType =
@@ -33,9 +34,10 @@ export type TabType =
 interface SidebarProps {
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
+  onViewHome?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onViewHome }) => {
   const {
     isAdmin,
     isUrlLockedDeskMode,
@@ -276,6 +278,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
 
         {/* Scrollable Navigation Items */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-4 divide-y divide-zinc-100">
+          {/* Public Study Centre Home Shortcut */}
+          {onViewHome && (
+            <div className="pb-1">
+              <button
+                type="button"
+                onClick={onViewHome}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-zinc-700 hover:text-indigo-950 hover:bg-zinc-100 border border-zinc-200 transition cursor-pointer shadow-2xs group"
+                title="View Study Centre Public Home Page"
+              >
+                <Home className="w-4 h-4 text-indigo-700 group-hover:scale-110 transition shrink-0" />
+                {!isSidebarCollapsed && (
+                  <div className="text-left flex-1 truncate">
+                    <span className="truncate block">Study Centre Home</span>
+                    <span className="text-[10px] text-zinc-400 font-normal block truncate">Public Information</span>
+                  </div>
+                )}
+              </button>
+            </div>
+          )}
           {/* Quick Access: Student Lookup */}
           <div className="pt-1">
             <button

@@ -455,9 +455,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.getItem("ignou_sc2033_intake") ||
         localStorage.getItem(STORAGE_KEYS.INTAKES) ||
         localStorage.getItem('ignou_intake_register');
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return INITIAL_INTAKE_RECORDS;
     } catch {
-      return [];
+      return INITIAL_INTAKE_RECORDS;
     }
   });
 
@@ -500,9 +504,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [assignmentSubmissions, setAssignmentSubmissions] = useState<AssignmentSubmission[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS);
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return INITIAL_ASSIGNMENT_SUBMISSIONS;
     } catch {
-      return [];
+      return INITIAL_ASSIGNMENT_SUBMISSIONS;
     }
   });
 
@@ -510,9 +518,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [registrationReceipts, setRegistrationReceipts] = useState<RegistrationReceipt[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.REGISTRATION_RECEIPTS);
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return INITIAL_REGISTRATION_RECEIPTS;
     } catch {
-      return [];
+      return INITIAL_REGISTRATION_RECEIPTS;
     }
   });
 
@@ -523,13 +535,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.getItem("ignou_sc2033_ledger") ||
         localStorage.getItem(STORAGE_KEYS.COURSE_EVALUATIONS) ||
         localStorage.getItem('ignou_course_ledger');
-      const data: CourseEvaluationRecord[] = saved ? JSON.parse(saved) : [];
-      return data.map((rec) => ({
-        ...rec,
-        lockedBy: rec.lockedBy?.includes('Aggarwal') ? 'Dr. Sant K. Gupta (Coordinator)' : rec.lockedBy,
-      }));
+      if (saved) {
+        const data: CourseEvaluationRecord[] = JSON.parse(saved);
+        if (Array.isArray(data) && data.length > 0) {
+          return data.map((rec) => ({
+            ...rec,
+            lockedBy: rec.lockedBy?.includes('Aggarwal') ? 'Dr. Sant K. Gupta (Coordinator)' : rec.lockedBy,
+          }));
+        }
+      }
+      return INITIAL_COURSE_EVALUATIONS;
     } catch {
-      return [];
+      return INITIAL_COURSE_EVALUATIONS;
     }
   });
 
@@ -624,13 +641,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Unified list of all standard + custom + discovered programmes
   const allProgrammes = useMemo<IGNOUProgramme[]>(() => {
-    const list: IGNOUProgramme[] = [...EXTENDED_IGNOU_PROGRAMMES];
-    const seen = new Set(list.map((p) => p.code.toUpperCase()));
+    const list: IGNOUProgramme[] = [];
+    const seen = new Set<string>();
+
+    // 0. Add extended programmes ensuring unique codes
+    for (const p of EXTENDED_IGNOU_PROGRAMMES) {
+      const codeUpper = (p.code || '').trim().toUpperCase();
+      if (codeUpper && !seen.has(codeUpper)) {
+        seen.add(codeUpper);
+        list.push({
+          ...p,
+          code: codeUpper,
+          courses: p.courses || [],
+        });
+      }
+    }
 
     // 1. Merge user-defined custom programmes
     for (const cp of customProgrammes) {
-      const codeUpper = cp.code.trim().toUpperCase();
-      if (!seen.has(codeUpper)) {
+      const codeUpper = (cp.code || '').trim().toUpperCase();
+      if (codeUpper && !seen.has(codeUpper)) {
         seen.add(codeUpper);
         list.push({
           ...cp,

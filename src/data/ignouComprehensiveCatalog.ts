@@ -5,7 +5,7 @@ import { IGNOU_PROGRAMMES } from './ignouMasterData';
  * Extended IGNOU Catalog containing popular Master, Bachelor, Diploma & Certificate programmes
  * and official course titles from IGNOU (ignou.ac.in).
  */
-export const EXTENDED_IGNOU_PROGRAMMES: IGNOUProgramme[] = [
+const RAW_EXTENDED_IGNOU_PROGRAMMES: IGNOUProgramme[] = [
   ...IGNOU_PROGRAMMES,
   {
     code: 'BCA',
@@ -115,23 +115,6 @@ export const EXTENDED_IGNOU_PROGRAMMES: IGNOUProgramme[] = [
     ],
   },
   {
-    code: 'MAH',
-    name: 'Master of Arts (History)',
-    level: 'Master',
-    department: 'School of Social Sciences (SOSS)',
-    courses: [
-      { code: 'MHI-01', title: 'Ancient and Medieval Societies', credits: 8, programme: 'MAH' },
-      { code: 'MHI-02', title: 'Modern World', credits: 8, programme: 'MAH' },
-      { code: 'MHI-03', title: 'Historians and History Writing', credits: 8, programme: 'MAH' },
-      { code: 'MHI-04', title: 'Political Structures in India', credits: 8, programme: 'MAH' },
-      { code: 'MHI-05', title: 'History of Indian Economy', credits: 8, programme: 'MAH' },
-      { code: 'MHI-06', title: 'Evolution of Social Structures in India through the Ages', credits: 8, programme: 'MAH' },
-      { code: 'MHI-08', title: 'History of Ecology and Environment: India', credits: 8, programme: 'MAH' },
-      { code: 'MHI-09', title: 'Indian National Movement', credits: 8, programme: 'MAH' },
-      { code: 'MHI-10', title: 'Urbanisation in India', credits: 8, programme: 'MAH' },
-    ],
-  },
-  {
     code: 'MBA',
     name: 'Master of Business Administration',
     level: 'Master',
@@ -226,6 +209,20 @@ export const EXTENDED_IGNOU_PROGRAMMES: IGNOUProgramme[] = [
     ],
   },
 ];
+
+// Ensure unique programme codes strictly
+export const EXTENDED_IGNOU_PROGRAMMES: IGNOUProgramme[] = (() => {
+  const seen = new Set<string>();
+  const result: IGNOUProgramme[] = [];
+  for (const prog of RAW_EXTENDED_IGNOU_PROGRAMMES) {
+    const code = prog.code.trim().toUpperCase();
+    if (!seen.has(code)) {
+      seen.add(code);
+      result.push(prog);
+    }
+  }
+  return result;
+})();
 
 // Flat dictionary of all known course codes for fast normalized lookup
 export const GLOBAL_IGNOU_COURSE_DICTIONARY: Record<string, { title: string; credits: number; programme: string }> = {};

@@ -185,8 +185,13 @@ export const IGNOU_PROGRAMMES: IGNOUProgramme[] = [
     courses: [
       { code: 'MHI-01', title: 'Ancient and Medieval Societies', credits: 8, programme: 'MAH' },
       { code: 'MHI-02', title: 'Modern World', credits: 8, programme: 'MAH' },
+      { code: 'MHI-03', title: 'Historians and History Writing', credits: 8, programme: 'MAH' },
       { code: 'MHI-04', title: 'Political Structures in India', credits: 8, programme: 'MAH' },
       { code: 'MHI-05', title: 'History of Indian Economy', credits: 8, programme: 'MAH' },
+      { code: 'MHI-06', title: 'Evolution of Social Structures in India through the Ages', credits: 8, programme: 'MAH' },
+      { code: 'MHI-08', title: 'History of Ecology and Environment: India', credits: 8, programme: 'MAH' },
+      { code: 'MHI-09', title: 'Indian National Movement', credits: 8, programme: 'MAH' },
+      { code: 'MHI-10', title: 'Urbanisation in India', credits: 8, programme: 'MAH' },
     ],
   },
   {

@@ -19,9 +19,14 @@ import {
   ChevronUp,
   Lock,
   RefreshCw,
+  Home,
 } from 'lucide-react';
 
-export const Header: React.FC = () => {
+interface HeaderProps {
+  onViewHome?: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({ onViewHome }) => {
   const {
     currentSession,
     setSession,
@@ -310,6 +315,20 @@ export const Header: React.FC = () => {
             )}
           </div>
 
+          {/* Return / View Study Centre Home Page Button */}
+          {onViewHome && (
+            <button
+              id="btn-header-view-home"
+              type="button"
+              onClick={onViewHome}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 hover:text-zinc-950 border border-zinc-200 rounded-xl text-xs font-semibold transition cursor-pointer shadow-2xs"
+              title="View Public Study Centre Home Page"
+            >
+              <Home className="w-3.5 h-3.5 text-indigo-700" />
+              <span className="hidden sm:inline">Centre Home</span>
+            </button>
+          )}
+
           {/* Lock / Sign Out Action Button */}
           <button
             id="btn-lock-signout"
@@ -318,9 +337,10 @@ export const Header: React.FC = () => {
               sessionStorage.removeItem("ignou_sc2033_auth");
               sessionStorage.removeItem("ignou_sc2033_role");
               setIsAuthenticated(false);
+              onViewHome?.();
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-950 text-white border border-zinc-700 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Lock terminal and end session (requires PIN to re-enter)"
+            title="Lock terminal and end session (returns to Study Centre Home)"
           >
             <Lock className="w-3.5 h-3.5 text-amber-400" />
             <span>Lock / Sign Out</span>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Header } from './components/Header';
 import { Sidebar, TabType } from './components/Sidebar';
@@ -17,9 +17,14 @@ import { RegistrationReceiptModal } from './components/RegistrationReceiptModal'
 import { StudentSearchModal } from './components/StudentSearchModal';
 import { AdminPinModal } from './components/AdminPinModal';
 import { GatekeeperLockScreen } from './components/GatekeeperLockScreen';
+import { StudyCentreHomePage } from './components/StudyCentreHomePage';
 import { Toast } from './components/Toast';
 
-const DashboardContent: React.FC = () => {
+interface DashboardContentProps {
+  onViewHome: () => void;
+}
+
+const DashboardContent: React.FC<DashboardContentProps> = ({ onViewHome }) => {
   const [activeTab, setActiveTab] = useState<TabType>('INTAKE_DESK');
   const {
     currentSession,
@@ -27,20 +32,17 @@ const DashboardContent: React.FC = () => {
     isUrlLockedDeskMode,
     userRole,
     settings,
-    toastMessage,
-    toastType,
-    hideToast,
     fetchAllData,
     isContentFullWidth,
   } = useApp();
 
   // Automatic Sync on Startup & Login (PC & Mobile)
-  React.useEffect(() => {
+  useEffect(() => {
     fetchAllData();
   }, []);
 
   // Ensure restricted tabs are redirected in desk mode
-  React.useEffect(() => {
+  useEffect(() => {
     if (userRole === 'desk' || isUrlLockedDeskMode) {
       if (activeTab !== 'INTAKE_DESK' && activeTab !== 'EVALUATION_MASTER') {
         setActiveTab('INTAKE_DESK');
@@ -51,12 +53,12 @@ const DashboardContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-zinc-100 text-zinc-900 flex flex-col font-sans">
       {/* Institutional Top Header */}
-      <Header />
+      <Header onViewHome={onViewHome} />
 
       {/* Main Layout: Collapsible & Hideable Left Sidebar + Responsive Workspace */}
       <div className="flex flex-1 relative">
         {/* Left Sidebar (260px expanded, 72px collapsed rail, or smooth burger hide) */}
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onViewHome={onViewHome} />
 
         {/* Workspace Content Area */}
         <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">
@@ -105,38 +107,89 @@ const DashboardContent: React.FC = () => {
           </footer>
         </div>
       </div>
-
-      {/* Global Printable Acknowledgment Modal */}
-      <ReceiptModal />
-
-      {/* Official Course Registration Receipt Modal (Statutory Non-Financial Acknowledgment Slip) */}
-      <RegistrationReceiptModal />
-
-      {/* Module E: Global Student Search & Lookup Modal */}
-      <StudentSearchModal />
-
-      {/* Administrator PIN Verification Modal */}
-      <AdminPinModal />
-
-      {/* Global Toast Notification */}
-      <Toast message={toastMessage} type={toastType} onClose={hideToast} />
     </div>
   );
 };
 
+type AppViewMode = 'home' | 'gatekeeper' | 'dashboard';
+
 const MainApp: React.FC = () => {
   const { isAuthenticated, toastMessage, toastType, hideToast } = useApp();
 
-  if (!isAuthenticated) {
-    return (
-      <>
-        <GatekeeperLockScreen />
-        <Toast message={toastMessage} type={toastType} onClose={hideToast} />
-      </>
-    );
-  }
+  // Route & view mode state
+  const [viewMode, setViewMode] = useState<AppViewMode>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const page = (params.get('page') || params.get('view') || '').toLowerCase();
+      if (page === 'gatekeeper' || page === 'login') return 'gatekeeper';
+      if (page === 'home') return 'home';
+      // If ?mode=desk or ?role=official, check auth or go to gatekeeper
+      const mode = (params.get('mode') || params.get('role') || '').toLowerCase();
+      if (mode === 'desk' || mode === 'official') {
+        const isAuth = sessionStorage.getItem('ignou_sc2033_auth') === 'true';
+        return isAuth ? 'dashboard' : 'gatekeeper';
+      }
+    }
+    const isAuth = typeof window !== 'undefined' && sessionStorage.getItem('ignou_sc2033_auth') === 'true';
+    if (isAuth) return 'dashboard';
+    return 'home';
+  });
 
-  return <DashboardContent />;
+  // Keep viewMode synced with authentication state
+  useEffect(() => {
+    if (isAuthenticated) {
+      setViewMode('dashboard');
+    } else if (viewMode === 'dashboard') {
+      setViewMode('home');
+    }
+  }, [isAuthenticated]);
+
+  return (
+    <>
+      {/* 1. Study Centre Home Page (Default Landing View) */}
+      {viewMode === 'home' && (
+        <StudyCentreHomePage
+          onOpenGatekeeper={() => {
+            if (isAuthenticated) {
+              setViewMode('dashboard');
+            } else {
+              setViewMode('gatekeeper');
+            }
+          }}
+        />
+      )}
+
+      {/* 2. Terminal Security Gatekeeper (Authentication View) */}
+      {viewMode === 'gatekeeper' && (
+        <GatekeeperLockScreen
+          onBackToHome={() => setViewMode('home')}
+        />
+      )}
+
+      {/* 3. Operations Workspace (Authenticated Staff View) */}
+      {viewMode === 'dashboard' && isAuthenticated && (
+        <DashboardContent
+          onViewHome={() => setViewMode('home')}
+        />
+      )}
+
+      {/* Fallback if unauthenticated and somehow on dashboard view */}
+      {viewMode === 'dashboard' && !isAuthenticated && (
+        <StudyCentreHomePage
+          onOpenGatekeeper={() => setViewMode('gatekeeper')}
+        />
+      )}
+
+      {/* Global Modals accessible from both Home Page (e.g. Student Search) & Workspace */}
+      <ReceiptModal />
+      <RegistrationReceiptModal />
+      <StudentSearchModal />
+      <AdminPinModal />
+
+      {/* Global Toast Notification */}
+      <Toast message={toastMessage} type={toastType} onClose={hideToast} />
+    </>
+  );
 };
 
 export default function App() {

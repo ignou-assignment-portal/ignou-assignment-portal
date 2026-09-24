@@ -10,9 +10,15 @@ import {
   Eye,
   EyeOff,
   Sparkles,
+  ArrowLeft,
+  Home,
 } from 'lucide-react';
 
-export const GatekeeperLockScreen: React.FC = () => {
+interface GatekeeperLockScreenProps {
+  onBackToHome?: () => void;
+}
+
+export const GatekeeperLockScreen: React.FC<GatekeeperLockScreenProps> = ({ onBackToHome }) => {
   const { handleLogin, settings } = useApp();
   const [selectedRole, setSelectedRole] = useState<'desk' | 'admin'>('desk');
   const [inputPin, setInputPin] = useState('');
@@ -50,6 +56,22 @@ export const GatekeeperLockScreen: React.FC = () => {
       </div>
 
       <div className="relative w-full max-w-md">
+        {/* Return to Study Centre Home Page link if requested */}
+        {onBackToHome && (
+          <div className="mb-3 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={onBackToHome}
+              className="inline-flex items-center gap-2 text-xs font-semibold text-zinc-400 hover:text-white bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700/80 px-3 py-1.5 rounded-xl transition cursor-pointer shadow-sm"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <Home className="w-3.5 h-3.5 text-amber-400" />
+              <span>Back to Study Centre Home</span>
+            </button>
+            <span className="text-[11px] text-zinc-500 font-mono">SC-2033</span>
+          </div>
+        )}
+
         {/* Institutional Crest Card */}
         <div className="bg-zinc-900/90 border border-zinc-700/80 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden">
           {/* Top Header Banner */}
@@ -216,6 +238,19 @@ export const GatekeeperLockScreen: React.FC = () => {
                 Inactivity protection auto-locks after 30 minutes. Tab closure securely terminates session.
               </p>
             </div>
+
+            {onBackToHome && (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={onBackToHome}
+                  className="w-full py-2.5 px-3 rounded-xl border border-zinc-800 hover:border-zinc-700 bg-zinc-950/50 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Home className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Return to Study Centre Home Page</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Institutional Footer Seal */}

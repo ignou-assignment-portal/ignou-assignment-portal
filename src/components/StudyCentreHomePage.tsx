@@ -1,0 +1,1351 @@
+import React, { useState, useMemo } from 'react';
+import { useApp } from '../context/AppContext';
+import {
+  ShieldAlert,
+  Lock,
+  Building2,
+  Calendar,
+  Clock,
+  MapPin,
+  Phone,
+  Mail,
+  FileCheck2,
+  CheckCircle2,
+  Search,
+  GraduationCap,
+  Sparkles,
+  ExternalLink,
+  ChevronRight,
+  ChevronDown,
+  Award,
+  AlertCircle,
+  FileText,
+  HelpCircle,
+  Users,
+  Printer,
+  Compass,
+  BarChart3,
+  Layers,
+  Inbox,
+  TrendingUp,
+  Package,
+  BookOpen,
+} from 'lucide-react';
+import { formatDate, formatDateTime } from '../utils/helpers';
+
+interface StudyCentreHomePageProps {
+  onOpenGatekeeper: () => void;
+}
+
+export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
+  onOpenGatekeeper,
+}) => {
+  const {
+    settings,
+    currentSession,
+    allIntakes,
+    allProgrammes,
+    isAuthenticated,
+    openReceiptModal,
+  } = useApp();
+
+  // Public Student Search & Verification State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [hasSearched, setHasSearched] = useState(false);
+
+  // Tracker State for Registered Programmes & Candidate / Script Submissions
+  const [trackerSession, setTrackerSession] = useState<string>('ALL');
+  const [trackerSearchQuery, setTrackerSearchQuery] = useState<string>('');
+  const [expandedProgrammes, setExpandedProgrammes] = useState<Record<string, boolean>>({});
+
+  const toggleExpandProgramme = (code: string) => {
+    setExpandedProgrammes((prev) => ({
+      ...prev,
+      [code]: !prev[code],
+    }));
+  };
+
+  // Perform search across allIntakes
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toUpperCase();
+    if (!q) return [];
+    return allIntakes.filter((item) => {
+      const enroll = (item.enrollmentNo || '').toUpperCase();
+      const name = (item.studentName || (item as any).candidateName || '').toUpperCase();
+      const token = (item.tokenNo || '').toUpperCase();
+      return enroll.includes(q) || name.includes(q) || token.includes(q);
+    });
+  }, [searchQuery, allIntakes]);
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      setHasSearched(true);
+    }
+  };
+
+  // Available sessions in submission register
+  const availableSubmissionSessions = useMemo(() => {
+    const s = new Set<string>();
+    for (const item of allIntakes) {
+      if (item.session && item.session.trim()) {
+        s.add(item.session.trim());
+      }
+    }
+    return Array.from(s);
+  }, [allIntakes]);
+
+  // Intake records filtered by tracker session
+  const activeTrackerIntakes = useMemo(() => {
+    if (trackerSession === 'ALL') return allIntakes;
+    return allIntakes.filter(
+      (item) => (item.session || '').trim().toLowerCase() === trackerSession.trim().toLowerCase()
+    );
+  }, [allIntakes, trackerSession]);
+
+  // Registered Programmes & Statistics dynamically derived exclusively from actual assignment submissions
+  interface RegisteredProgrammeStat {
+    code: string;
+    name: string;
+    level: string;
+    department?: string;
+    candidatesCount: number;
+    candidateEnrollments: Set<string>;
+    totalScripts: number;
+    courseCounts: Record<string, number>;
+    inPersonCount: number;
+    postalCount: number;
+    latestSubmissionDate: string;
+  }
+
+  const registeredProgrammeStats = useMemo(() => {
+    const map = new Map<string, RegisteredProgrammeStat>();
+
+    for (const item of activeTrackerIntakes) {
+      const rawCode = (item.programmeCode || (item as any).programme || '').trim().toUpperCase();
+      if (!rawCode) continue;
+
+      if (!map.has(rawCode)) {
+        const found = allProgrammes.find((p) => p.code.trim().toUpperCase() === rawCode);
+        map.set(rawCode, {
+          code: rawCode,
+          name: found ? found.name : `Programme ${rawCode}`,
+          level: found ? found.level : 'Degree',
+          department: found?.department,
+          candidatesCount: 0,
+          candidateEnrollments: new Set<string>(),
+          totalScripts: 0,
+          courseCounts: {},
+          inPersonCount: 0,
+          postalCount: 0,
+          latestSubmissionDate: '',
+        });
+      }
+
+      const stat = map.get(rawCode)!;
+      const enroll = (item.enrollmentNo || '').trim();
+      if (enroll) {
+        stat.candidateEnrollments.add(enroll);
+      }
+
+      const courses = item.courseCodes || (item as any).courses || [];
+      const scriptCount = Array.isArray(courses) ? courses.length : 0;
+      stat.totalScripts += scriptCount;
+
+      const modeStr = (item.submissionMode || '').toLowerCase();
+      const isPostal = modeStr.includes('post') || modeStr.includes('courier');
+      if (isPostal) {
+        stat.postalCount += scriptCount;
+      } else {
+        stat.inPersonCount += scriptCount;
+      }
+
+      if (Array.isArray(courses)) {
+        for (const c of courses) {
+          const cClean = (c || '').trim().toUpperCase();
+          if (cClean) {
+            stat.courseCounts[cClean] = (stat.courseCounts[cClean] || 0) + 1;
+          }
+        }
+      }
+
+      if (item.submissionDate) {
+        if (!stat.latestSubmissionDate || item.submissionDate > stat.latestSubmissionDate) {
+          stat.latestSubmissionDate = item.submissionDate;
+        }
+      }
+    }
+
+    const list = Array.from(map.values()).map((s) => ({
+      ...s,
+      candidatesCount: s.candidateEnrollments.size || 1,
+    }));
+
+    // Sort by totalScripts descending, then candidate count
+    list.sort((a, b) => b.totalScripts - a.totalScripts || b.candidatesCount - a.candidatesCount);
+    return list;
+  }, [activeTrackerIntakes, allProgrammes]);
+
+  // Filtered by Tracker Search Query
+  const filteredProgrammeStats = useMemo(() => {
+    const q = trackerSearchQuery.trim().toUpperCase();
+    if (!q) return registeredProgrammeStats;
+    return registeredProgrammeStats.filter((p) => {
+      const matchCode = p.code.includes(q);
+      const matchName = p.name.toUpperCase().includes(q);
+      const matchCourse = Object.keys(p.courseCounts).some((c) => c.includes(q));
+      return matchCode || matchName || matchCourse;
+    });
+  }, [registeredProgrammeStats, trackerSearchQuery]);
+
+  // Overall Totals for Tracker
+  const trackerTotals = useMemo(() => {
+    const uniqueCandidates = new Set<string>();
+    let totalScripts = 0;
+    let inPersonScripts = 0;
+    let postalScripts = 0;
+    const coursesSet = new Set<string>();
+
+    for (const item of activeTrackerIntakes) {
+      if (item.enrollmentNo && item.enrollmentNo.trim()) {
+        uniqueCandidates.add(item.enrollmentNo.trim());
+      }
+      const courses = item.courseCodes || (item as any).courses || [];
+      const count = Array.isArray(courses) ? courses.length : 0;
+      totalScripts += count;
+
+      const modeStr = (item.submissionMode || '').toLowerCase();
+      const isPostal = modeStr.includes('post') || modeStr.includes('courier');
+      if (isPostal) {
+        postalScripts += count;
+      } else {
+        inPersonScripts += count;
+      }
+
+      if (Array.isArray(courses)) {
+        for (const c of courses) {
+          if (c && c.trim()) coursesSet.add(c.trim().toUpperCase());
+        }
+      }
+    }
+
+    return {
+      candidatesCount: uniqueCandidates.size,
+      scriptsCount: totalScripts,
+      programmesCount: registeredProgrammeStats.length,
+      coursesCount: coursesSet.size,
+      inPersonScripts,
+      postalScripts,
+    };
+  }, [activeTrackerIntakes, registeredProgrammeStats]);
+
+  return (
+    <div className="min-h-screen bg-zinc-50 text-zinc-900 flex flex-col selection:bg-indigo-600 selection:text-white">
+      {/* 1. Top Institutional Banner */}
+      <div className="bg-zinc-950 text-zinc-200 text-xs border-b border-zinc-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-[11px] sm:text-xs">
+            <span className="font-extrabold tracking-widest text-amber-400">IGNOU</span>
+            <span className="text-zinc-600">•</span>
+            <span className="font-medium text-zinc-300">
+              Indira Gandhi National Open University (Central University)
+            </span>
+            <span className="hidden md:inline text-zinc-600">•</span>
+            <span className="hidden md:inline text-zinc-400">
+              Regional Centre: {settings.regionalCentreCode || 'RC-20 Kohima'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3 text-[11px]">
+            <span className="hidden sm:inline-flex items-center gap-1.5 text-zinc-400">
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              <span>Desk Hours: Friday & Saturday 2:00 PM to 4:00 PM (Except Holidays)</span>
+            </span>
+            <span className="text-zinc-700 hidden sm:inline">|</span>
+            <button
+              onClick={onOpenGatekeeper}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg font-bold transition cursor-pointer"
+            >
+              <Lock className="w-3 h-3 text-amber-400" />
+              <span>Gatekeeper Portal</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Main Institutional Navigation Bar */}
+      <header className="bg-white border-b border-zinc-200 sticky top-0 z-30 shadow-xs backdrop-blur-md bg-white/95">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+          {/* Logo & Centre Identity */}
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-linear-to-br from-indigo-900 to-indigo-950 text-white flex flex-col items-center justify-center font-black shadow-md border border-indigo-700/50 shrink-0">
+              <span className="text-xs tracking-tighter leading-none text-amber-400">SC</span>
+              <span className="text-sm tracking-tight leading-none">2033</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-base sm:text-lg font-black tracking-tight text-zinc-950 leading-tight">
+                  IGNOU STUDY CENTRE 2033
+                </span>
+                <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 uppercase">
+                  Dimapur, Nagaland
+                </span>
+              </div>
+              <p className="text-xs text-zinc-600 font-medium leading-tight mt-0.5">
+                {settings.institutionName || "S.D. Jain Girls' College, Dimapur"} • Nagaland - 797112
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Nav Links & Terminal Security Gatekeeper Button */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <nav className="hidden lg:flex items-center gap-1 text-xs font-semibold text-zinc-700 mr-2">
+              <a href="#tracker" className="px-3 py-1.5 rounded-lg hover:bg-zinc-100 hover:text-indigo-900 transition flex items-center gap-1">
+                <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Intake Tracker</span>
+              </a>
+              <a href="#student-verification" className="px-3 py-1.5 rounded-lg hover:bg-zinc-100 hover:text-indigo-900 transition">
+                Verify Intake
+              </a>
+              <a href="#assignment-intake" className="px-3 py-1.5 rounded-lg hover:bg-zinc-100 hover:text-indigo-900 transition">
+                Intake Protocol
+              </a>
+              <a href="#about-centre" className="px-3 py-1.5 rounded-lg hover:bg-zinc-100 hover:text-indigo-900 transition">
+                About Centre
+              </a>
+              <a href="#contact-location" className="px-3 py-1.5 rounded-lg hover:bg-zinc-100 hover:text-indigo-900 transition">
+                Contact & Location
+              </a>
+            </nav>
+
+            {/* The Dedicated Terminal Security Gatekeeper Button */}
+            <button
+              id="btn-home-terminal-gatekeeper"
+              onClick={onOpenGatekeeper}
+              className="group relative inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-linear-to-r from-zinc-900 via-indigo-950 to-zinc-900 hover:from-indigo-950 hover:to-indigo-900 text-white font-bold text-xs sm:text-sm shadow-md hover:shadow-indigo-900/20 border border-indigo-800/60 transition-all transform active:scale-98 cursor-pointer"
+              title="Click to visit Terminal Security Gatekeeper login page"
+            >
+              <div className="w-6 h-6 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 group-hover:scale-105 transition shrink-0">
+                <ShieldAlert className="w-3.5 h-3.5" />
+              </div>
+              <div className="text-left leading-tight">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-extrabold tracking-tight">Terminal Security Gatekeeper</span>
+                  <span className="hidden md:inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                </div>
+                <div className="text-[10px] text-zinc-300 font-normal hidden sm:block">
+                  Staff & Coordinator Authentication
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-amber-300 group-hover:translate-x-0.5 transition shrink-0" />
+            </button>
+
+            {/* If user is already authenticated, show Return to Terminal */}
+            {isAuthenticated && (
+              <button
+                onClick={onOpenGatekeeper}
+                className="hidden xl:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold text-xs hover:bg-emerald-100 transition cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Return to Active Session</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* 3. Hero Section */}
+      <section className="relative bg-linear-to-b from-indigo-950 via-zinc-900 to-zinc-950 text-white py-12 sm:py-16 overflow-hidden">
+        {/* Background ambient accents */}
+        <div className="absolute inset-0 pointer-events-none opacity-20">
+          <div className="absolute -top-24 -left-24 w-96 h-96 bg-indigo-500 rounded-full blur-3xl"></div>
+          <div className="absolute top-1/2 -right-24 w-96 h-96 bg-amber-500 rounded-full blur-3xl"></div>
+        </div>
+
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            <div className="lg:col-span-7 space-y-5">
+              {/* Institutional Badge */}
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-900/60 border border-indigo-700/60 text-indigo-200 text-xs font-semibold backdrop-blur-xs">
+                <Building2 className="w-3.5 h-3.5 text-amber-400" />
+                <span>IGNOU Study Centre Code: 2033</span>
+                <span className="text-zinc-500">•</span>
+                <span className="text-amber-300">RC-20 Kohima</span>
+              </div>
+
+              <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight text-white leading-tight">
+                Assignment Operations & Academic Intake Counter
+              </h1>
+
+              <p className="text-sm sm:text-base text-zinc-300 leading-relaxed max-w-2xl">
+                Welcome to the official portal of <strong>IGNOU Study Centre SC-2033</strong>, hosted at{' '}
+                <span className="text-white font-semibold">{settings.institutionName || "S.D. Jain Girls' College, Dimapur"}</span>. We manage assignment intakes, computerized zero-fee acknowledgments, course evaluation registers, and student support services under Regional Centre Kohima.
+              </p>
+
+              {/* Prominent CTAs */}
+              <div className="flex flex-wrap items-center gap-3 pt-2">
+                {/* Gatekeeper Button */}
+                <button
+                  id="hero-btn-gatekeeper"
+                  onClick={onOpenGatekeeper}
+                  className="inline-flex items-center gap-2.5 px-5 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-sm shadow-lg hover:shadow-amber-500/20 transition-all transform active:scale-98 cursor-pointer"
+                >
+                  <Lock className="w-4 h-4 text-zinc-950" />
+                  <span>Terminal Security Gatekeeper</span>
+                  <ChevronRight className="w-4 h-4 text-zinc-950" />
+                </button>
+
+                {/* Verify Assignment Submission Button */}
+                <a
+                  href="#student-verification"
+                  className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 text-white font-bold text-sm border border-zinc-700 transition cursor-pointer"
+                >
+                  <Search className="w-4 h-4 text-indigo-400" />
+                  <span>Verify Assignment Intake</span>
+                </a>
+
+                {/* Intake Tracker Shortcut */}
+                <a
+                  href="#tracker"
+                  className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 font-bold text-sm border border-amber-500/40 transition cursor-pointer"
+                >
+                  <BarChart3 className="w-4 h-4 text-amber-400" />
+                  <span>Submission Tracker</span>
+                </a>
+
+                <a
+                  href="#assignment-intake"
+                  className="inline-flex items-center gap-2 px-4 py-3 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-900/60 font-medium text-sm transition"
+                >
+                  <FileText className="w-4 h-4 text-zinc-400" />
+                  <span>Submission Guidelines</span>
+                </a>
+              </div>
+
+              {/* Micro stats banner */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-zinc-800/80 text-xs">
+                <div>
+                  <span className="text-zinc-400 block text-[11px] uppercase tracking-wider font-semibold">Study Centre</span>
+                  <span className="text-white font-mono font-bold text-sm">SC-2033</span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 block text-[11px] uppercase tracking-wider font-semibold">Active Session</span>
+                  <span className="text-amber-400 font-bold text-sm">{currentSession}</span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 block text-[11px] uppercase tracking-wider font-semibold">Coordinator</span>
+                  <span className="text-white font-semibold text-sm truncate block">{settings.coordinatorName || 'Dr. Sant K. Gupta'}</span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 block text-[11px] uppercase tracking-wider font-semibold">Intake Policy</span>
+                  <span className="text-emerald-400 font-bold text-sm">Zero-Fee Counter</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Hero Quick Card: Operational Summary & Security Box */}
+            <div className="lg:col-span-5">
+              <div className="bg-zinc-900/90 border border-zinc-700/80 rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur-md space-y-4">
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-zinc-200">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <span>CENTRE OPERATING STATUS</span>
+                  </div>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Desk Active
+                  </span>
+                </div>
+
+                <div className="space-y-2.5 text-xs text-zinc-300">
+                  <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-zinc-950/60 border border-zinc-800">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-white block">Official Computerized Receipts</span>
+                      <span>Every student submitting physical assignments receives an instant, 1-page non-financial acknowledgment slip with a unique serial token.</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-zinc-950/60 border border-zinc-800">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-white block">Regional Centre SED Transmissions</span>
+                      <span>Assignment evaluation records are verified, packed in course bundles, and submitted directly to SED / Regional Centre Kohima.</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-zinc-950/60 border border-zinc-800">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-white block">Role-Based Access Control</span>
+                      <span>Desk officials handle intake registrations, while master marks locking and bills remain coordinator-protected.</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Gatekeeper Direct Access Card */}
+                <div className="p-3.5 bg-linear-to-r from-indigo-950 to-zinc-950 border border-indigo-800/80 rounded-2xl text-center space-y-2">
+                  <div className="text-[11px] font-bold text-amber-300 uppercase tracking-wider flex items-center justify-center gap-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    <span>Authorized Terminal Entry</span>
+                  </div>
+                  <p className="text-[11px] text-zinc-300">
+                    Study centre officials, desk staff, and evaluators must unlock the terminal using their designated security PIN.
+                  </p>
+                  <button
+                    onClick={onOpenGatekeeper}
+                    className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Visit Terminal Security Gatekeeper</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. Interactive Student Assignment Verification Bar (Public) */}
+      <section id="student-verification" className="py-10 bg-white border-b border-zinc-200">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
+          <div className="text-center space-y-2 mb-6">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 text-xs font-bold uppercase tracking-wider">
+              <Search className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Learner Services</span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
+              Verify Assignment Intake & Acknowledgment
+            </h2>
+            <p className="text-xs sm:text-sm text-zinc-600 max-w-xl mx-auto">
+              Submitted your assignments at Study Centre 2033? Enter your 9 or 10-digit Enrolment Number or Token Number to confirm receipt in our official register.
+            </p>
+          </div>
+
+          {/* Search Input Box */}
+          <form onSubmit={handleSearchSubmit} className="max-w-2xl mx-auto mb-6">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                <input
+                  type="text"
+                  placeholder="Enter Enrolment Number (e.g. 2350198421) or Token No..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-zinc-50 border border-zinc-300 rounded-xl text-zinc-900 font-mono text-sm font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition shadow-2xs"
+                />
+              </div>
+              <button
+                type="submit"
+                className="px-5 py-3 bg-indigo-900 hover:bg-indigo-800 text-white font-bold text-xs sm:text-sm rounded-xl transition cursor-pointer shadow-xs shrink-0 flex items-center gap-1.5"
+              >
+                <Search className="w-4 h-4" />
+                <span>Verify Intake</span>
+              </button>
+            </div>
+          </form>
+
+          {/* Search Results Display */}
+          {hasSearched && (
+            <div className="max-w-3xl mx-auto animate-in fade-in duration-200">
+              {searchResults.length === 0 ? (
+                <div className="p-6 bg-zinc-50 border border-dashed border-zinc-300 rounded-2xl text-center space-y-2">
+                  <AlertCircle className="w-8 h-8 text-amber-600 mx-auto" />
+                  <h3 className="text-sm font-bold text-zinc-900">
+                    No Intake Records Found for &ldquo;{searchQuery}&rdquo;
+                  </h3>
+                  <p className="text-xs text-zinc-600 max-w-md mx-auto">
+                    Please verify that the Enrolment Number is entered correctly without spaces or dashes. If you recently submitted your physical scripts, allow up to 24 hours for data synchronization, or visit Desk Counter 1 at S.D. Jain Girls&apos; College with your physical slip.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-zinc-600 font-semibold px-1">
+                    <span>Matching Records Found: <strong>{searchResults.length}</strong></span>
+                    <span className="text-emerald-700 font-bold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Official Stamped Entry
+                    </span>
+                  </div>
+
+                  {searchResults.map((rec) => {
+                    const studentName = rec.studentName || (rec as any).candidateName || 'Candidate';
+                    const programmeCode = rec.programmeCode || (rec as any).programme || '—';
+                    const coursesList = rec.courseCodes || (rec as any).courses || [];
+
+                    return (
+                      <div
+                        key={rec.id}
+                        className="p-4 bg-zinc-50 border border-zinc-300 rounded-2xl hover:border-indigo-400 transition shadow-2xs space-y-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 pb-2.5">
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-zinc-500 block">Candidate Name</span>
+                            <span className="text-sm font-bold text-zinc-950">{studentName}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-zinc-500 block">Enrolment Number</span>
+                            <span className="text-sm font-mono font-black text-indigo-900">{rec.enrollmentNo}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-zinc-500 block">Programme</span>
+                            <span className="text-xs font-bold text-zinc-800">{programmeCode}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-zinc-500 block">Token Number</span>
+                            <span className="text-xs font-mono font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                              {rec.tokenNo}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <div>
+                            <span className="text-zinc-500 text-[11px] font-medium">Submission Date & Mode: </span>
+                            <span className="font-semibold text-zinc-900">
+                              {formatDate(rec.submissionDate)} ({rec.submissionMode || 'In-Person'})
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-500 text-[11px] font-medium">Academic Cycle: </span>
+                            <span className="font-semibold text-zinc-900">{rec.session}</span>
+                          </div>
+                        </div>
+
+                        {/* Course Badges */}
+                        <div>
+                          <span className="text-[10px] uppercase font-bold text-zinc-500 block mb-1">
+                            Verified Courses Received ({coursesList.length} courses):
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {coursesList.map((course, cIdx) => (
+                              <span
+                                key={`${course}-${cIdx}`}
+                                className="px-2.5 py-0.5 bg-indigo-100/80 text-indigo-900 border border-indigo-200 rounded-md font-mono text-xs font-bold"
+                              >
+                                {course}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1 border-t border-zinc-200 text-[11px] text-zinc-500">
+                          <span>Intake Desk: SC-{settings.centreCode} • Zero-Fee Non-Financial</span>
+                          <button
+                            type="button"
+                            onClick={() => openReceiptModal(rec)}
+                            className="inline-flex items-center gap-1 font-bold text-indigo-700 hover:text-indigo-900 cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>View Official Slip</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* 5. Registered Programmes & Candidate / Scripts Intake Tracker (Actual Submission Register) */}
+      <section id="tracker" className="py-12 sm:py-16 bg-zinc-900 text-white border-b border-zinc-800 relative overflow-hidden">
+        {/* Subtle decorative glow */}
+        <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute bottom-0 left-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6">
+          {/* Section Header */}
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between mb-8 gap-4">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold uppercase tracking-wider mb-2">
+                <BarChart3 className="w-3.5 h-3.5 text-amber-400" />
+                <span>SC-2033 Official Submission Register</span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                Learner & Assignment Scripts Tracker
+              </h2>
+              <p className="text-xs sm:text-sm text-zinc-300 mt-1 max-w-2xl">
+                Real-time tracker displaying registered programmes, candidate counts, and assignment scripts received from learners based directly on the actual SC-2033 counter submission register.
+              </p>
+            </div>
+
+            {/* Quick Session Filter Toggles */}
+            <div className="flex flex-wrap items-center gap-1.5 bg-zinc-950/80 p-1.5 rounded-2xl border border-zinc-800 shrink-0">
+              <button
+                type="button"
+                onClick={() => setTrackerSession('ALL')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  trackerSession === 'ALL'
+                    ? 'bg-amber-500 text-zinc-950 shadow-xs'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800/60'
+                }`}
+              >
+                All Cycles ({allIntakes.length})
+              </button>
+              {availableSubmissionSessions.map((sess) => (
+                <button
+                  key={sess}
+                  type="button"
+                  onClick={() => setTrackerSession(sess)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    trackerSession === sess
+                      ? 'bg-amber-500 text-zinc-950 shadow-xs'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/60'
+                  }`}
+                >
+                  {sess}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 4 Summary Metric Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-8">
+            <div className="bg-zinc-950/70 border border-zinc-800 rounded-2xl p-4 sm:p-5 relative overflow-hidden shadow-lg">
+              <div className="flex items-center justify-between text-zinc-400 text-xs mb-2 font-medium">
+                <span>Candidates Received</span>
+                <Users className="w-4 h-4 text-amber-400" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black text-white tracking-tight font-mono">
+                {trackerTotals.candidatesCount}
+              </div>
+              <p className="text-[11px] text-zinc-400 mt-1">
+                Unique learners registered in intake register
+              </p>
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-amber-500/80"></div>
+            </div>
+
+            <div className="bg-zinc-950/70 border border-zinc-800 rounded-2xl p-4 sm:p-5 relative overflow-hidden shadow-lg">
+              <div className="flex items-center justify-between text-zinc-400 text-xs mb-2 font-medium">
+                <span>Scripts Received</span>
+                <FileCheck2 className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black text-emerald-400 tracking-tight font-mono">
+                {trackerTotals.scriptsCount}
+              </div>
+              <p className="text-[11px] text-zinc-400 mt-1">
+                Physical course booklets received & logged
+              </p>
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-emerald-500/80"></div>
+            </div>
+
+            <div className="bg-zinc-950/70 border border-zinc-800 rounded-2xl p-4 sm:p-5 relative overflow-hidden shadow-lg">
+              <div className="flex items-center justify-between text-zinc-400 text-xs mb-2 font-medium">
+                <span>Registered Programmes</span>
+                <Layers className="w-4 h-4 text-indigo-400" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black text-indigo-300 tracking-tight font-mono">
+                {trackerTotals.programmesCount}
+              </div>
+              <p className="text-[11px] text-zinc-400 mt-1">
+                Derived exclusively from assignment submissions
+              </p>
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-500/80"></div>
+            </div>
+
+            <div className="bg-zinc-950/70 border border-zinc-800 rounded-2xl p-4 sm:p-5 relative overflow-hidden shadow-lg">
+              <div className="flex items-center justify-between text-zinc-400 text-xs mb-2 font-medium">
+                <span>Intake Channels</span>
+                <TrendingUp className="w-4 h-4 text-sky-400" />
+              </div>
+              <div className="text-lg sm:text-xl font-black text-white tracking-tight font-mono">
+                {trackerTotals.inPersonScripts} <span className="text-xs font-normal text-zinc-400">Desk</span> / {trackerTotals.postalScripts} <span className="text-xs font-normal text-zinc-400">Post</span>
+              </div>
+              <p className="text-[11px] text-zinc-400 mt-1">
+                Across {trackerTotals.coursesCount} distinct course modules
+              </p>
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-sky-500/80"></div>
+            </div>
+          </div>
+
+          {/* Search / Filter bar for programmes within tracker */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-6 bg-zinc-950/60 p-3 rounded-2xl border border-zinc-800/80">
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+              <input
+                type="text"
+                placeholder="Filter programme or course (e.g. MEG, BAG)..."
+                value={trackerSearchQuery}
+                onChange={(e) => setTrackerSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-zinc-900 border border-zinc-700/80 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-hidden focus:ring-1 focus:ring-amber-400 font-mono"
+              />
+            </div>
+
+            <div className="flex items-center gap-3 text-xs text-zinc-400 w-full sm:w-auto justify-between sm:justify-end">
+              <span>
+                Active Registered Programmes:{' '}
+                <strong className="text-white">{filteredProgrammeStats.length}</strong>
+              </span>
+              <a
+                href="#student-verification"
+                className="text-amber-400 hover:text-amber-300 font-semibold inline-flex items-center gap-1 transition"
+              >
+                <span>Verify Your Slip</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          </div>
+
+          {/* Registered Programmes Cards Grid */}
+          {filteredProgrammeStats.length === 0 ? (
+            <div className="p-8 bg-zinc-950/60 border border-dashed border-zinc-800 rounded-3xl text-center space-y-2">
+              <Inbox className="w-8 h-8 text-zinc-500 mx-auto" />
+              <h3 className="text-sm font-bold text-zinc-300">
+                No programmes matching &ldquo;{trackerSearchQuery}&rdquo;
+              </h3>
+              <p className="text-xs text-zinc-500 max-w-md mx-auto">
+                No assignment submissions match your search query for the selected cycle. Clear the filter or select &quot;All Cycles&quot;.
+              </p>
+              {trackerSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setTrackerSearchQuery('')}
+                  className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200 rounded-xl font-semibold transition cursor-pointer"
+                >
+                  Clear Filter
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredProgrammeStats.map((prog) => {
+                const isExpanded = !!expandedProgrammes[prog.code];
+                const scriptSharePercent = trackerTotals.scriptsCount > 0
+                  ? Math.round((prog.totalScripts / trackerTotals.scriptsCount) * 100)
+                  : 0;
+                const avgPerCandidate = (prog.totalScripts / (prog.candidatesCount || 1)).toFixed(1);
+
+                return (
+                  <div
+                    key={prog.code}
+                    className="bg-zinc-950/80 border border-zinc-800 hover:border-amber-500/50 rounded-2xl p-5 transition flex flex-col justify-between shadow-md"
+                  >
+                    <div>
+                      {/* Card Header: Code & Level */}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-black text-sm sm:text-base text-amber-300 bg-amber-500/10 px-2.5 py-0.5 rounded-lg border border-amber-500/30">
+                            {prog.code}
+                          </span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+                            {prog.level}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono text-zinc-400">
+                          {scriptSharePercent}% of total scripts
+                        </span>
+                      </div>
+
+                      {/* Programme Name */}
+                      <h3 className="text-sm font-bold text-white leading-snug line-clamp-2 mb-3">
+                        {prog.name}
+                      </h3>
+
+                      {/* Scripts & Candidate Metrics Grid */}
+                      <div className="grid grid-cols-3 gap-2 p-3 bg-zinc-900/90 rounded-xl border border-zinc-800/80 mb-3 text-center">
+                        <div>
+                          <span className="text-[10px] text-zinc-400 block uppercase font-medium">Candidates</span>
+                          <span className="text-base font-black text-white font-mono">{prog.candidatesCount}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-zinc-400 block uppercase font-medium">Scripts</span>
+                          <span className="text-base font-black text-emerald-400 font-mono">{prog.totalScripts}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-zinc-400 block uppercase font-medium">Avg/Learner</span>
+                          <span className="text-base font-black text-amber-300 font-mono">{avgPerCandidate}</span>
+                        </div>
+                      </div>
+
+                      {/* Visual Intake Share Bar */}
+                      <div className="space-y-1 mb-3">
+                        <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                          <span>Centre Intake Volume Share</span>
+                          <span className="font-mono text-zinc-300">{prog.totalScripts} / {trackerTotals.scriptsCount} scripts</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-linear-to-r from-amber-500 to-emerald-400 rounded-full"
+                            style={{ width: `${Math.max(scriptSharePercent, 6)}%` }}
+                          ></div>
+                        </div>
+                      </div>
+
+                      {/* Channel breakdown */}
+                      <div className="flex items-center justify-between text-[11px] text-zinc-400 pb-3 border-b border-zinc-800/80">
+                        <span>Desk Counter: <strong className="text-zinc-200">{prog.inPersonCount}</strong></span>
+                        <span>Postal / Speed Post: <strong className="text-zinc-200">{prog.postalCount}</strong></span>
+                      </div>
+
+                      {/* Submitted Courses Badges */}
+                      <div className="mt-3">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] uppercase font-bold text-zinc-400">
+                            Courses Received ({Object.keys(prog.courseCounts).length}):
+                          </span>
+                          {Object.keys(prog.courseCounts).length > 3 && (
+                            <button
+                              type="button"
+                              onClick={() => toggleExpandProgramme(prog.code)}
+                              className="text-[10px] text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-0.5 cursor-pointer"
+                            >
+                              <span>{isExpanded ? 'Show Less' : 'View All'}</span>
+                              <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5">
+                          {Object.entries(prog.courseCounts)
+                            .slice(0, isExpanded ? undefined : 4)
+                            .map(([cCode, count]) => (
+                              <span
+                                key={cCode}
+                                className="px-2 py-0.5 bg-zinc-900 text-zinc-200 border border-zinc-700/80 rounded-md font-mono text-[11px] flex items-center gap-1.5"
+                              >
+                                <span className="font-bold text-white">{cCode}</span>
+                                <span className="bg-amber-500/20 text-amber-300 px-1 py-0.2 rounded text-[10px] font-bold">
+                                  {count}
+                                </span>
+                              </span>
+                            ))}
+                          {!isExpanded && Object.keys(prog.courseCounts).length > 4 && (
+                            <button
+                              type="button"
+                              onClick={() => toggleExpandProgramme(prog.code)}
+                              className="px-2 py-0.5 bg-zinc-900 text-amber-400 border border-zinc-800 rounded-md font-mono text-[10px] font-bold cursor-pointer"
+                            >
+                              +{Object.keys(prog.courseCounts).length - 4} more
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Card Footer */}
+                    <div className="pt-3 mt-4 border-t border-zinc-800/80 flex items-center justify-between text-[11px] text-zinc-400">
+                      <span>
+                        Latest:{' '}
+                        <strong className="text-zinc-200">
+                          {prog.latestSubmissionDate ? formatDate(prog.latestSubmissionDate) : 'Logged'}
+                        </strong>
+                      </span>
+                      <a
+                        href="#student-verification"
+                        className="text-amber-400 hover:text-amber-300 font-semibold inline-flex items-center gap-0.5 transition"
+                      >
+                        <span>Check Receipt</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Bottom Info Note */}
+          <div className="mt-8 p-4 bg-zinc-950/70 border border-zinc-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-zinc-400">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                Counter 1 Operating Hours: <strong>Friday & Saturday 2:00 PM to 4:00 PM (Except Holidays)</strong>. Submissions are entered immediately into the electronic intake register.
+              </span>
+            </div>
+            <a
+              href="#student-verification"
+              className="px-3.5 py-1.5 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40 rounded-xl font-bold transition text-xs shrink-0 inline-flex items-center gap-1.5"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span>Verify Your Enrollment</span>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* 6. About Study Centre SC-2033 & Host College */}
+      <section id="about-centre" className="py-12 sm:py-16 bg-zinc-100/80 border-b border-zinc-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            {/* Left: Content */}
+            <div className="lg:col-span-7 space-y-4">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold uppercase tracking-wider">
+                <Building2 className="w-3.5 h-3.5 text-amber-700" />
+                <span>Institutional Profile</span>
+              </div>
+
+              <h2 className="text-2xl sm:text-3xl font-black text-zinc-950 tracking-tight">
+                About IGNOU Study Centre 2033, Dimapur
+              </h2>
+
+              <div className="space-y-3 text-sm text-zinc-700 leading-relaxed">
+                <p>
+                  <strong>IGNOU Study Centre 2033</strong> is a recognized study centre established under the jurisdiction of the <strong>Regional Centre Kohima (RC-20)</strong> of Indira Gandhi National Open University. For over two decades, the centre has been dedicated to extending quality higher education and distance learning opportunities to thousands of students across Nagaland and neighboring regions.
+                </p>
+                <p>
+                  The centre is hosted at the esteemed campus of <strong>S.D. Jain Girls&apos; College, Dimapur</strong>, situated centrally on Circular Road. The host college provides institutional infrastructure, lecture halls for academic counselling sessions, evaluation cells, and administrative support for distance learners.
+                </p>
+                <p>
+                  Under the coordination of <strong>{settings.coordinatorName || 'Dr. Sant K. Gupta'}</strong>, the centre functions as a single-window service hub for student inquiries, assignment intake desk operations, continuous evaluation, and terminal award submissions.
+                </p>
+              </div>
+
+              {/* Key Service Highlights */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <div className="p-3 bg-white border border-zinc-200 rounded-xl shadow-2xs">
+                  <div className="flex items-center gap-2 text-indigo-900 font-bold text-xs mb-1">
+                    <FileCheck2 className="w-4 h-4 text-indigo-700" />
+                    <span>Assignment Counter Desk</span>
+                  </div>
+                  <p className="text-[11px] text-zinc-600">
+                    Instant physical verification, multi-course enrollment logging, and official computer-printed non-financial receipts.
+                  </p>
+                </div>
+
+                <div className="p-3 bg-white border border-zinc-200 rounded-xl shadow-2xs">
+                  <div className="flex items-center gap-2 text-indigo-900 font-bold text-xs mb-1">
+                    <Award className="w-4 h-4 text-indigo-700" />
+                    <span>Evaluation & SED Awards</span>
+                  </div>
+                  <p className="text-[11px] text-zinc-600">
+                    Systematic packet bundling, evaluator allotment, grade award sheets, and marks transmission to Regional Centre Kohima.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Centre Highlights Card */}
+            <div className="lg:col-span-5">
+              <div className="bg-white border border-zinc-300 rounded-3xl p-6 shadow-xl space-y-5">
+                <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
+                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-indigo-950">
+                    <GraduationCap className="w-4 h-4 text-indigo-600" />
+                    <span>Study Centre Key Facts</span>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-900">
+                    Active Registry
+                  </span>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="flex justify-between py-1.5 border-b border-zinc-100">
+                    <span className="text-zinc-500 font-medium">Study Centre Code:</span>
+                    <span className="font-mono font-bold text-indigo-950">SC-2033</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-zinc-100">
+                    <span className="text-zinc-500 font-medium">Regional Centre:</span>
+                    <span className="font-semibold text-zinc-900">RC-20 Kohima</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-zinc-100">
+                    <span className="text-zinc-500 font-medium">Host Institution:</span>
+                    <span className="font-semibold text-zinc-900 text-right">{settings.institutionName || "S.D. Jain Girls' College, Dimapur"}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-zinc-100">
+                    <span className="text-zinc-500 font-medium">Coordinator:</span>
+                    <span className="font-semibold text-zinc-900">{settings.coordinatorName || 'Dr. Sant K. Gupta'}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-zinc-100">
+                    <span className="text-zinc-500 font-medium">Current Academic Cycle:</span>
+                    <span className="font-bold text-indigo-900">{currentSession}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-zinc-100">
+                    <span className="text-zinc-500 font-medium">Counter Nature:</span>
+                    <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Strictly Zero-Fee</span>
+                  </div>
+                  <div className="flex justify-between py-1.5">
+                    <span className="text-zinc-500 font-medium">Registered Programmes:</span>
+                    <span className="font-bold text-zinc-900">{registeredProgrammeStats.length} Programmes Active in Submissions</span>
+                  </div>
+                </div>
+
+                {/* Coordinator Message Box */}
+                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs space-y-1">
+                  <div className="font-bold text-amber-950 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Coordinator&apos;s Advisory to Students</span>
+                  </div>
+                  <p className="text-zinc-700 text-[11px] leading-relaxed">
+                    &ldquo;All learners are advised to submit handwritten assignments well before term-end deadlines. Always collect your computer-generated official receipt at Desk Counter 1 and keep it safe until grades reflect on your IGNOU Grade Card.&rdquo;
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 6. Assignment Intake Protocol & Student Guidelines */}
+      <section id="assignment-intake" className="py-12 sm:py-16 bg-white border-b border-zinc-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="text-center max-w-2xl mx-auto mb-10 space-y-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 text-xs font-bold uppercase tracking-wider">
+              <FileCheck2 className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Standard Operating Procedure</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-black text-zinc-950 tracking-tight">
+              Assignment Submission Protocol
+            </h2>
+            <p className="text-xs sm:text-sm text-zinc-600">
+              Follow these standard 4 steps when preparing and submitting course assignments at Study Centre 2033.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Step 1 */}
+            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 relative space-y-2.5">
+              <div className="w-8 h-8 rounded-xl bg-indigo-900 text-white font-black text-sm flex items-center justify-center shadow-xs">
+                1
+              </div>
+              <h3 className="text-sm font-bold text-zinc-950">Script Preparation</h3>
+              <p className="text-xs text-zinc-600 leading-relaxed">
+                Assignments must be original handwritten work on A4 ruled/plain sheets. Staple or tag each course assignment separately.
+              </p>
+              <div className="text-[11px] text-zinc-500 bg-white p-2 rounded-lg border border-zinc-200">
+                <strong>Mandatory Cover:</strong> Enrolment No, Candidate Name, Programme, Course Code & SC-2033.
+              </div>
+            </div>
+
+            {/* Step 2 */}
+            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 relative space-y-2.5">
+              <div className="w-8 h-8 rounded-xl bg-indigo-900 text-white font-black text-sm flex items-center justify-center shadow-xs">
+                2
+              </div>
+              <h3 className="text-sm font-bold text-zinc-950">Desk Counter 1 Intake</h3>
+              <p className="text-xs text-zinc-600 leading-relaxed">
+                Present your physical scripts at Counter 1 during operating hours (Friday & Saturday 2:00 PM to 4:00 PM except Holidays). Outstation students may send via Speed Post.
+              </p>
+              <div className="text-[11px] text-zinc-500 bg-white p-2 rounded-lg border border-zinc-200">
+                <strong>Zero-Fee:</strong> No submission charges or processing fees are ever collected at the counter.
+              </div>
+            </div>
+
+            {/* Step 3 */}
+            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 relative space-y-2.5">
+              <div className="w-8 h-8 rounded-xl bg-indigo-900 text-white font-black text-sm flex items-center justify-center shadow-xs">
+                3
+              </div>
+              <h3 className="text-sm font-bold text-zinc-950">Official Receipt</h3>
+              <p className="text-xs text-zinc-600 leading-relaxed">
+                The intake desk official inputs your courses into the central register and generates an instant stamped Computerized Acknowledgment Slip.
+              </p>
+              <div className="text-[11px] text-zinc-500 bg-white p-2 rounded-lg border border-zinc-200">
+                <strong>Proof of Submission:</strong> Retain this stamped receipt safely until term-end exam results.
+              </div>
+            </div>
+
+            {/* Step 4 */}
+            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 relative space-y-2.5">
+              <div className="w-8 h-8 rounded-xl bg-indigo-900 text-white font-black text-sm flex items-center justify-center shadow-xs">
+                4
+              </div>
+              <h3 className="text-sm font-bold text-zinc-950">Evaluation & Award</h3>
+              <p className="text-xs text-zinc-600 leading-relaxed">
+                Scripts are bundled and assigned to authorized Academic Counsellors. Evaluated marks are verified and sent to Regional Centre Kohima.
+              </p>
+              <div className="text-[11px] text-zinc-500 bg-white p-2 rounded-lg border border-zinc-200">
+                <strong>SED Transmission:</strong> Final awards are reflected on the official IGNOU grade portal.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 7. Contact Information, Location & Desk Hours */}
+      <section id="contact-location" className="py-12 sm:py-16 bg-white border-b border-zinc-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* Contact Details */}
+            <div className="lg:col-span-7 space-y-6">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold uppercase tracking-wider mb-2">
+                  <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Contact & Location</span>
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black text-zinc-950 tracking-tight">
+                  Reach Study Centre SC-2033
+                </h2>
+                <p className="text-xs sm:text-sm text-zinc-600 mt-1">
+                  Have questions regarding your assignment status, course counselling, or submission receipts? Contact our desk.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Physical Location */}
+                <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-2xl space-y-2">
+                  <div className="flex items-center gap-2 text-indigo-950 font-bold text-xs">
+                    <MapPin className="w-4 h-4 text-indigo-700" />
+                    <span>Desk Location</span>
+                  </div>
+                  <p className="text-xs text-zinc-700 font-medium leading-relaxed">
+                    IGNOU Study Centre 2033<br />
+                    {settings.institutionName || "S.D. Jain Girls' College Campus"}<br />
+                    Circular Road, Near Jain Temple,<br />
+                    Dimapur, Nagaland - 797112
+                  </p>
+                </div>
+
+                {/* Operating Timings */}
+                <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-2xl space-y-2">
+                  <div className="flex items-center gap-2 text-indigo-950 font-bold text-xs">
+                    <Clock className="w-4 h-4 text-indigo-700" />
+                    <span>Desk Operating Timings</span>
+                  </div>
+                  <p className="text-xs text-zinc-700 font-medium leading-relaxed">
+                    <strong>Friday & Saturday:</strong> 2:00 PM to 4:00 PM (Except Holidays)<br />
+                    <strong>Other Days:</strong> Closed<br />
+                    <span className="text-[11px] text-zinc-500 mt-1 block">
+                      Operating hours: Friday & Saturday 2:00 PM to 4:00 PM except Holidays.
+                    </span>
+                  </p>
+                </div>
+
+                {/* Coordinator Contact */}
+                <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-2xl space-y-2 sm:col-span-2">
+                  <div className="flex items-center gap-2 text-indigo-950 font-bold text-xs">
+                    <Phone className="w-4 h-4 text-indigo-700" />
+                    <span>Coordinator Helpline & Office</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-zinc-700 font-medium pt-1">
+                    <div>
+                      <strong className="block text-zinc-500 text-[10px] uppercase">Coordinator:</strong>
+                      <span className="font-bold text-zinc-900">{settings.coordinatorName || 'Dr. Sant K. Gupta'}</span>
+                    </div>
+                    <div>
+                      <strong className="block text-zinc-500 text-[10px] uppercase">Helpline Phone:</strong>
+                      <span className="font-bold text-zinc-900">{settings.coordinatorPhone || '+91 9436013686'}</span>
+                    </div>
+                    <div>
+                      <strong className="block text-zinc-500 text-[10px] uppercase">Official Email:</strong>
+                      <span className="font-bold text-zinc-900 truncate block">{settings.coordinatorEmail || 'sant.k.gupta@gmail.com'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Terminal Security Gatekeeper Access Box */}
+            <div className="lg:col-span-5">
+              <div className="bg-linear-to-b from-zinc-900 to-indigo-950 text-white rounded-3xl p-6 shadow-2xl border border-zinc-700/80 space-y-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                    <ShieldAlert className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black tracking-tight text-white">
+                      Terminal Security Gatekeeper
+                    </h3>
+                    <p className="text-xs text-zinc-400">
+                      Restricted Administrative & Staff Area
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  This gatekeeper secures the institutional operations workspace. Study Centre officials, desk intake operators, and academic counsellors must provide their institutional PIN to authenticate.
+                </p>
+
+                <div className="space-y-2 text-xs text-zinc-300 bg-zinc-950/60 p-3.5 rounded-2xl border border-zinc-800">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Desk Official Terminal (Intake Desk & Receipts)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Course Ledger & Evaluator Allotment Packets</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Marks Entry & SED Award Sheet Generation</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Remuneration Billing & Sanction Vouchers</span>
+                  </div>
+                </div>
+
+                <button
+                  id="btn-gatekeeper-footer"
+                  onClick={onOpenGatekeeper}
+                  className="w-full py-3.5 px-4 bg-linear-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-zinc-950 font-black text-sm rounded-xl shadow-lg hover:shadow-amber-500/25 transition cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Lock className="w-4 h-4 text-zinc-950" />
+                  <span>Click Here: Terminal Security Gatekeeper</span>
+                  <ChevronRight className="w-4 h-4 text-zinc-950" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 9. Institutional Footer */}
+      <footer className="bg-zinc-950 text-zinc-400 text-xs py-8 border-t border-zinc-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 space-y-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-zinc-800 pb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-indigo-900 flex items-center justify-center font-black text-white text-xs border border-indigo-700">
+                2033
+              </div>
+              <div>
+                <span className="font-bold text-white block">IGNOU Study Centre 2033</span>
+                <span className="text-[11px] text-zinc-400">
+                  {settings.institutionName || "S.D. Jain Girls' College, Dimapur"} • Nagaland
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <a
+                href="#tracker"
+                className="hover:text-amber-400 flex items-center gap-1 transition font-semibold"
+              >
+                <BarChart3 className="w-3.5 h-3.5 text-amber-400" />
+                <span>Intake Tracker</span>
+              </a>
+              <span>•</span>
+              <button
+                onClick={onOpenGatekeeper}
+                className="font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Terminal Security Gatekeeper</span>
+              </button>
+              <span>•</span>
+              <a
+                href="http://www.ignou.ac.in"
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-white flex items-center gap-1 transition"
+              >
+                <span>IGNOU HQ Portal</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+              <span>•</span>
+              <a
+                href="http://rckohima.ignou.ac.in"
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-white flex items-center gap-1 transition"
+              >
+                <span>RC Kohima</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-zinc-500">
+            <p>
+              © {new Date().getFullYear()} Indira Gandhi National Open University (IGNOU) SC-2033. All rights reserved.
+            </p>
+            <p>
+              Coordinator: {settings.coordinatorName || 'Dr. Sant K. Gupta'} • S.D. Jain Girls&apos; College, Dimapur
+            </p>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+};
