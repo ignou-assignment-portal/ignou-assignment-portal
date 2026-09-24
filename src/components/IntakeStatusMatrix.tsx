@@ -10,6 +10,7 @@ import {
   Layers,
   Filter,
   Download,
+  Printer,
   Search,
   BookOpen,
   PieChart,
@@ -17,6 +18,7 @@ import {
   ChevronRight,
   Sparkles,
 } from 'lucide-react';
+import { AssignmentIntakePrintModal } from './AssignmentIntakePrintModal';
 
 export type MatrixGrouping = 'PROGRAMME' | 'COURSE' | 'OVERALL';
 
@@ -43,6 +45,7 @@ export const IntakeStatusMatrix: React.FC = () => {
   const [grouping, setGrouping] = useState<MatrixGrouping>('PROGRAMME');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('ALL');
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
 
   // Summary Metrics calculations
   const totalCandidates = useMemo(() => {
@@ -558,6 +561,17 @@ export const IntakeStatusMatrix: React.FC = () => {
               <Download className="w-3.5 h-3.5 text-zinc-500" />
               <span>Export CSV</span>
             </button>
+
+            <button
+              type="button"
+              id="btn-print-intake-matrix-report"
+              onClick={() => setIsPrintModalOpen(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Print Programme-wise Assignment Intake Report for Regional Office (RC-20 Kohima)"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Print Report to Regional Office</span>
+            </button>
           </div>
         </div>
 
@@ -709,7 +723,18 @@ export const IntakeStatusMatrix: React.FC = () => {
                     {filteredRows.reduce((sum, r) => sum + r.lockedCount, 0)}
                   </td>
                   <td colSpan={2} className="py-3 px-4 text-right text-xs text-zinc-500">
-                    Overall Completion: {evaluatedPercentage}
+                    <div className="flex items-center justify-end gap-3">
+                      <span>Overall Completion: {evaluatedPercentage}</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsPrintModalOpen(true)}
+                        className="px-2.5 py-1 rounded-lg bg-zinc-200 hover:bg-zinc-300 text-zinc-900 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                        title="Print Programme-wise Report for Regional Office"
+                      >
+                        <Printer className="w-3 h-3 text-indigo-700" />
+                        <span>Print Report</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               </tfoot>
@@ -717,6 +742,12 @@ export const IntakeStatusMatrix: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Programme-wise Regional Office Print Report Modal */}
+      <AssignmentIntakePrintModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+      />
     </div>
   );
 };

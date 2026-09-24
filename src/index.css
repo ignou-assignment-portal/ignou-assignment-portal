@@ -48,17 +48,16 @@
   }
 
   #printable-receipt,
-  #printable-registration-receipt {
+  #printable-registration-receipt,
+  #printable-intake-matrix-report {
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
     padding: 1mm 0 !important;
     box-shadow: none !important;
     border: none !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-    page-break-after: avoid !important;
-    break-after: avoid !important;
+    page-break-inside: auto !important;
+    break-inside: auto !important;
   }
 
   .print\:block {

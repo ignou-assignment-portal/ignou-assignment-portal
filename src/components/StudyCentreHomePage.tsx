@@ -257,18 +257,10 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
           </div>
 
           <div className="flex items-center gap-3 text-[11px]">
-            <span className="hidden sm:inline-flex items-center gap-1.5 text-zinc-400">
+            <span className="inline-flex items-center gap-1.5 text-zinc-400">
               <Clock className="w-3.5 h-3.5 text-amber-400" />
               <span>Desk Hours: Friday & Saturday 2:00 PM to 4:00 PM (Except Holidays)</span>
             </span>
-            <span className="text-zinc-700 hidden sm:inline">|</span>
-            <button
-              onClick={onOpenGatekeeper}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg font-bold transition cursor-pointer"
-            >
-              <Lock className="w-3 h-3 text-amber-400" />
-              <span>Gatekeeper Portal</span>
-            </button>
           </div>
         </div>
       </div>
@@ -384,30 +376,19 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
 
               {/* Prominent CTAs */}
               <div className="flex flex-wrap items-center gap-3 pt-2">
-                {/* Gatekeeper Button */}
-                <button
-                  id="hero-btn-gatekeeper"
-                  onClick={onOpenGatekeeper}
-                  className="inline-flex items-center gap-2.5 px-5 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-sm shadow-lg hover:shadow-amber-500/20 transition-all transform active:scale-98 cursor-pointer"
-                >
-                  <Lock className="w-4 h-4 text-zinc-950" />
-                  <span>Terminal Security Gatekeeper</span>
-                  <ChevronRight className="w-4 h-4 text-zinc-950" />
-                </button>
-
                 {/* Verify Assignment Submission Button */}
                 <a
                   href="#student-verification"
-                  className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 text-white font-bold text-sm border border-zinc-700 transition cursor-pointer"
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-sm shadow-lg hover:shadow-amber-500/20 transition-all transform active:scale-98 cursor-pointer"
                 >
-                  <Search className="w-4 h-4 text-indigo-400" />
+                  <Search className="w-4 h-4 text-zinc-950" />
                   <span>Verify Assignment Intake</span>
                 </a>
 
                 {/* Intake Tracker Shortcut */}
                 <a
                   href="#tracker"
-                  className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 font-bold text-sm border border-amber-500/40 transition cursor-pointer"
+                  className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 text-white font-bold text-sm border border-zinc-700 transition cursor-pointer"
                 >
                   <BarChart3 className="w-4 h-4 text-amber-400" />
                   <span>Submission Tracker</span>
@@ -483,22 +464,19 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
                   </div>
                 </div>
 
-                {/* Gatekeeper Direct Access Card */}
-                <div className="p-3.5 bg-linear-to-r from-indigo-950 to-zinc-950 border border-indigo-800/80 rounded-2xl text-center space-y-2">
-                  <div className="text-[11px] font-bold text-amber-300 uppercase tracking-wider flex items-center justify-center gap-1.5">
-                    <ShieldAlert className="w-3.5 h-3.5" />
-                    <span>Authorized Terminal Entry</span>
+                {/* Learner Direct Verification Box */}
+                <div className="p-3.5 bg-linear-to-r from-indigo-950/60 to-zinc-950 border border-zinc-800 rounded-2xl flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs font-bold text-white block">Learner Intake Services</span>
+                    <span className="text-[11px] text-zinc-400 block">Check stamped intake receipts & token numbers</span>
                   </div>
-                  <p className="text-[11px] text-zinc-300">
-                    Study centre officials, desk staff, and evaluators must unlock the terminal using their designated security PIN.
-                  </p>
-                  <button
-                    onClick={onOpenGatekeeper}
-                    className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                  <a
+                    href="#student-verification"
+                    className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs rounded-xl transition shrink-0 inline-flex items-center gap-1.5 shadow-sm"
                   >
-                    <Lock className="w-3.5 h-3.5" />
-                    <span>Visit Terminal Security Gatekeeper</span>
-                  </button>
+                    <Search className="w-3.5 h-3.5 text-zinc-950" />
+                    <span>Verify Intake</span>
+                  </a>
                 </div>
               </div>
             </div>
@@ -983,13 +961,13 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
 
               <div className="space-y-3 text-sm text-zinc-700 leading-relaxed">
                 <p>
-                  <strong>IGNOU Study Centre 2033</strong> is a recognized study centre established under the jurisdiction of the <strong>Regional Centre Kohima (RC-20)</strong> of Indira Gandhi National Open University. For over two decades, the centre has been dedicated to extending quality higher education and distance learning opportunities to thousands of students across Nagaland and neighboring regions.
+                  IGNOU Study Centre 2033 is a recognized study centre established under the jurisdiction of the Regional Centre Kohima (RC-20) of Indira Gandhi National Open University. Since, December 2014, the centre has been dedicated to extending quality higher education and distance learning opportunities to thousands of girls’ students across Nagaland and neighbouring regions.
                 </p>
                 <p>
-                  The centre is hosted at the esteemed campus of <strong>S.D. Jain Girls&apos; College, Dimapur</strong>, situated centrally on Circular Road. The host college provides institutional infrastructure, lecture halls for academic counselling sessions, evaluation cells, and administrative support for distance learners.
+                  The centre is hosted at the esteemed campus of S.D. Jain Girls&apos; College, Dimapur, situated centrally at Jain Temple Road. The host college provides institutional infrastructure, lecture halls for academic counselling sessions, evaluation cells, and administrative support for distance learners.
                 </p>
                 <p>
-                  Under the coordination of <strong>{settings.coordinatorName || 'Dr. Sant K. Gupta'}</strong>, the centre functions as a single-window service hub for student inquiries, assignment intake desk operations, continuous evaluation, and terminal award submissions.
+                  Under the coordination of the coordinator, the centre functions as a single-window service hub for student inquiries, assignment intake desk operations, continuous evaluation, and terminal award submissions.
                 </p>
               </div>
 
@@ -1182,7 +1160,7 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
                   <p className="text-xs text-zinc-700 font-medium leading-relaxed">
                     IGNOU Study Centre 2033<br />
                     {settings.institutionName || "S.D. Jain Girls' College Campus"}<br />
-                    Circular Road, Near Jain Temple,<br />
+                    Jain Temple Road,<br />
                     Dimapur, Nagaland - 797112
                   </p>
                 </div>
@@ -1306,13 +1284,12 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
                 <span>Intake Tracker</span>
               </a>
               <span>•</span>
-              <button
-                onClick={onOpenGatekeeper}
-                className="font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+              <a
+                href="#student-verification"
+                className="hover:text-white flex items-center gap-1 transition"
               >
-                <Lock className="w-3.5 h-3.5" />
-                <span>Terminal Security Gatekeeper</span>
-              </button>
+                <span>Verify Intake</span>
+              </a>
               <span>•</span>
               <a
                 href="http://www.ignou.ac.in"
