@@ -1,22 +1,44 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatDate, formatDateTime } from '../utils/helpers';
-import { Printer, X, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Printer, X, CheckCircle2, AlertTriangle, Calendar } from 'lucide-react';
 
 export const ReceiptModal: React.FC = () => {
   const {
     selectedReceiptRecord,
     closeReceiptModal,
+    updateIntakeDate,
     settings,
     allProgrammes,
     getCourseInfo,
     getCourseTitle,
   } = useApp();
 
+  const receiptDateVal =
+    selectedReceiptRecord?.submissionDate ||
+    (selectedReceiptRecord as any)?.receiptDate ||
+    (selectedReceiptRecord?.Timestamp ? String(selectedReceiptRecord.Timestamp).split('T')[0] : '') ||
+    (selectedReceiptRecord?.createdAt ? String(selectedReceiptRecord.createdAt).split('T')[0] : '') ||
+    new Date().toISOString().split('T')[0];
+
+  const [currentReceiptDate, setCurrentReceiptDate] = useState(receiptDateVal);
+
+  useEffect(() => {
+    setCurrentReceiptDate(receiptDateVal);
+  }, [receiptDateVal]);
+
   if (!selectedReceiptRecord) return null;
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newDate = e.target.value;
+    setCurrentReceiptDate(newDate);
+    if (newDate) {
+      updateIntakeDate(selectedReceiptRecord.id || selectedReceiptRecord.tokenNo, newDate);
+    }
   };
 
   // Programme info from dynamic registry
@@ -31,19 +53,35 @@ export const ReceiptModal: React.FC = () => {
     <div className="fixed inset-0 bg-zinc-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 z-50 overflow-y-auto animate-in fade-in">
       <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-zinc-300 overflow-hidden my-auto print:m-0 print:border-none print:shadow-none print:w-full print:rounded-none">
         {/* Modal Action Bar (Hidden on print) */}
-        <div className="px-5 py-3 bg-zinc-900 text-white flex items-center justify-between print:hidden">
+        <div className="px-5 py-3 bg-zinc-900 text-white flex flex-wrap items-center justify-between gap-2.5 print:hidden">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             <span>Official Assignment Submission Acknowledgment</span>
           </div>
           <div className="flex items-center gap-2">
+            {/* Quick Date Selector */}
+            <div className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 px-2.5 py-1 rounded-lg text-xs">
+              <Calendar className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <label htmlFor="modal-receipt-date-picker" className="text-[11px] text-zinc-300 font-medium">
+                Date:
+              </label>
+              <input
+                id="modal-receipt-date-picker"
+                type="date"
+                value={currentReceiptDate}
+                onChange={handleDateChange}
+                max="2099-12-31"
+                className="bg-zinc-950 border border-zinc-700 text-white text-xs px-2 py-0.5 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-hidden cursor-pointer"
+                title="Select receipt intake date"
+              />
+            </div>
             <button
               onClick={handlePrint}
               id="print-receipt-btn"
               className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition shadow-xs cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Print Acknowledgment (1-Page Slip)</span>
+              <span>Print Acknowledgment</span>
             </button>
             <button
               onClick={closeReceiptModal}
@@ -87,9 +125,9 @@ export const ReceiptModal: React.FC = () => {
               <span className="font-mono font-bold text-zinc-800">COUNTER-01 (Intake Desk)</span>
             </div>
             <div>
-              <span className="text-zinc-500 font-bold block text-[9px] print:text-[7.5px] uppercase">Date & Timestamp</span>
-              <span className="font-medium text-zinc-800">
-                {formatDate(selectedReceiptRecord.submissionDate)} ({formatDateTime(selectedReceiptRecord.createdAt)})
+              <span className="text-zinc-500 font-bold block text-[9px] print:text-[7.5px] uppercase">Intake Receipt Date</span>
+              <span className="font-bold text-zinc-900 text-xs print:text-[9.5px]">
+                {formatDate(currentReceiptDate || receiptDateVal)}
               </span>
             </div>
           </div>
@@ -247,7 +285,7 @@ export const ReceiptModal: React.FC = () => {
               <div className="w-32 h-11 print:w-28 print:h-9 mx-auto border-2 border-indigo-900 text-indigo-900 rounded p-0.5 flex flex-col items-center justify-center text-[8px] print:text-[7px] font-black uppercase tracking-wider rotate-[-2deg] bg-indigo-50/40">
                 <span>IGNOU STUDY CENTRE {settings.centreCode}</span>
                 <span className="text-[7.5px] print:text-[6.5px] font-bold text-indigo-800">VERIFIED & RECEIVED</span>
-                <span className="text-[6.5px] print:text-[5.5px] text-indigo-600 font-mono">{formatDate(selectedReceiptRecord.submissionDate)}</span>
+                <span className="text-[6.5px] print:text-[5.5px] text-indigo-600 font-mono">{formatDate(currentReceiptDate || receiptDateVal)}</span>
               </div>
               <div className="text-[8px] print:text-[7.5px] font-bold text-zinc-700 mt-0.5">Study Centre Official Stamp</div>
             </div>

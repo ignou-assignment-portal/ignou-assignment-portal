@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { IntakeRecord } from '../types';
 import { useApp } from '../context/AppContext';
+import { formatDate } from '../utils/helpers';
 import { IGNOU_PROGRAMMES } from '../data/ignouMasterData';
 import {
   X,
@@ -10,6 +11,7 @@ import {
   User,
   Phone,
   Hash,
+  Calendar,
   AlertCircle,
   CheckCircle2,
   Lock,
@@ -35,6 +37,7 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
   const [contact, setContact] = useState('');
   const [programme, setProgramme] = useState('');
   const [coursesInput, setCoursesInput] = useState('');
+  const [submissionDate, setSubmissionDate] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -47,6 +50,14 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
       setContact(record.studentPhone || '');
       setProgramme(record.programmeCode || '');
       setCoursesInput(record.courseCodes ? record.courseCodes.join(', ') : '');
+      const recAny = record as any;
+      const initialDate =
+        record.submissionDate ||
+        recAny.receiptDate ||
+        (recAny.Timestamp ? String(recAny.Timestamp).split('T')[0] : '') ||
+        (recAny.createdAt ? String(recAny.createdAt).split('T')[0] : '') ||
+        new Date().toISOString().split('T')[0];
+      setSubmissionDate(initialDate);
       setFormError(null);
     }
   }, [record]);
@@ -146,6 +157,7 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
         programme: cleanProg,
         courses: parsedCourses,
         session: record.session || currentSession,
+        submissionDate: submissionDate.trim(),
       });
 
       setIsSubmitting(false);
@@ -267,8 +279,8 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
             </div>
           </div>
 
-          {/* Grid: Contact Number & Programme */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Grid: Contact Number, Programme & Intake Date */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label
                 htmlFor="edit-contact-input"
@@ -316,6 +328,40 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
                   className="w-full pl-9 pr-3 py-2 text-xs font-mono font-bold uppercase border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
                 />
               </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label
+                  htmlFor="edit-intake-date-input"
+                  className="block text-xs font-bold text-zinc-700"
+                >
+                  Intake / Receipt Date <span className="text-rose-500">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setSubmissionDate(new Date().toISOString().split('T')[0])}
+                  className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
+                  title="Set to today"
+                >
+                  Today
+                </button>
+              </div>
+              <div className="relative">
+                <Calendar className="w-4 h-4 text-zinc-400 absolute left-3 top-2.5" />
+                <input
+                  id="edit-intake-date-input"
+                  type="date"
+                  value={submissionDate}
+                  onChange={(e) => setSubmissionDate(e.target.value)}
+                  required
+                  max="2099-12-31"
+                  className="w-full pl-9 pr-3 py-2 text-xs font-bold border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden bg-white"
+                />
+              </div>
+              <span className="text-[10px] text-zinc-500 mt-0.5 block truncate">
+                {formatDate(submissionDate)}
+              </span>
             </div>
           </div>
 

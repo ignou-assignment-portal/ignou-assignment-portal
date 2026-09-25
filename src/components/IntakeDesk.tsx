@@ -600,6 +600,9 @@ export const IntakeDesk: React.FC = () => {
         registeredCourses: coursesArray,
         issuedBy: registeredBy,
         remarks: remarks.trim() || undefined,
+        submissionDate: submissionDate,
+        receiptDate: submissionDate,
+        issuedAt: `${submissionDate}T${new Date().toTimeString().split(' ')[0]}`,
       });
 
       // 4. Ensure programme and all submitted courses are stored in quick suggestions
@@ -622,6 +625,7 @@ export const IntakeDesk: React.FC = () => {
       setStudentPhone('');
       setStudentEmail('');
       setSelectedCourses([]);
+      setSubmissionDate(new Date().toISOString().split('T')[0]);
       setConsignmentNo('');
       setRemarks('');
       setCourseSearchInput('');
@@ -823,8 +827,8 @@ export const IntakeDesk: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 2. Contact Number, Session & Submission Mode */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* 2. Contact Number, Session, Submission Mode & Intake Date */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-zinc-700 mb-1">
                       Contact Number <span className="text-rose-500">*</span>
@@ -888,6 +892,37 @@ export const IntakeDesk: React.FC = () => {
                       <option value="Registered Post">Registered Post (Inward)</option>
                       <option value="Courier">Courier / Dispatch</option>
                     </select>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label htmlFor="intake-submission-date-input" className="block text-xs font-semibold text-zinc-700">
+                        Intake / Receipt Date <span className="text-rose-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setSubmissionDate(new Date().toISOString().split('T')[0])}
+                        className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
+                        title="Set to today's date"
+                      >
+                        Today
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <Calendar className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-2.5" />
+                      <input
+                        type="date"
+                        id="intake-submission-date-input"
+                        value={submissionDate}
+                        onChange={(e) => setSubmissionDate(e.target.value)}
+                        max="2099-12-31"
+                        className="w-full pl-8 pr-3 py-2 text-xs font-bold border border-zinc-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                        required
+                      />
+                    </div>
+                    <span className="text-[10px] text-zinc-500 mt-0.5 block truncate">
+                      {formatDate(submissionDate)}
+                    </span>
                   </div>
                 </div>
 
@@ -1538,7 +1573,7 @@ export const IntakeDesk: React.FC = () => {
                         : [];
                       const token = record.Token_No || record.tokenNo || record.receiptNumber || record.id || "-";
                       const subMode = record.submissionMode || record.mode || "In-Person (Desk)";
-                      const subDate = record.Timestamp ? String(record.Timestamp).split('T')[0] : (record.submissionDate || record.createdAt || "");
+                      const subDate = record.submissionDate || record.receiptDate || (record.Timestamp ? String(record.Timestamp).split('T')[0] : (record.createdAt ? String(record.createdAt).split('T')[0] : ""));
                       const status = record.Status || record.status || "Received";
 
                       return (
@@ -1681,7 +1716,7 @@ export const IntakeDesk: React.FC = () => {
                 const programme = rcpt.Programme || rcpt.programme || rcpt.programmeCode || "-";
                 const rawCourses = rcpt.Courses || rcpt.courses || rcpt.registeredCourses || [];
                 const coursesStr = Array.isArray(rawCourses) ? rawCourses.join(", ") : String(rawCourses || "-");
-                const timestamp = rcpt.Timestamp || rcpt.timestamp || rcpt.issuedAt || rcpt.createdAt || "-";
+                const timestamp = rcpt.submissionDate || rcpt.receiptDate || (rcpt.issuedAt ? String(rcpt.issuedAt).split('T')[0] : (rcpt.Timestamp ? String(rcpt.Timestamp).split('T')[0] : (rcpt.createdAt || "-")));
                 const official = rcpt.Official || rcpt.handledBy || rcpt.official || rcpt.issuedBy || "-";
                 const rcptNo = rcpt.receiptNumber || rcpt.Token_No || rcpt.tokenNo || rcpt.id || "-";
 
@@ -1707,7 +1742,7 @@ export const IntakeDesk: React.FC = () => {
                       <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Ph: {contact}</div>
                     )}
                     <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px', display: 'flex', justifyContent: 'space-between' }}>
-                      <span>{typeof timestamp === 'string' && timestamp.includes('T') ? timestamp.split('T')[0] : timestamp}</span>
+                      <span>{formatDate(timestamp)}</span>
                       <span>By: {official}</span>
                     </div>
                     {/* Action Row */}
@@ -1761,7 +1796,7 @@ export const IntakeDesk: React.FC = () => {
                       : typeof rawCourses === 'string'
                       ? rawCourses.split(',').map((c: string) => c.trim()).filter(Boolean)
                       : [];
-                    const timestamp = rcpt.Timestamp || rcpt.timestamp || rcpt.issuedAt || rcpt.createdAt || "-";
+                    const rcptDate = rcpt.submissionDate || rcpt.receiptDate || (rcpt.issuedAt ? String(rcpt.issuedAt).split('T')[0] : (rcpt.Timestamp ? String(rcpt.Timestamp).split('T')[0] : (rcpt.createdAt || "-")));
                     const official = rcpt.Official || rcpt.handledBy || rcpt.official || rcpt.issuedBy || "-";
                     const rcptNo = rcpt.receiptNumber || rcpt.Token_No || rcpt.tokenNo || rcpt.id || "-";
 
@@ -1769,8 +1804,8 @@ export const IntakeDesk: React.FC = () => {
                       <tr key={rcpt.id || rcptNo || enrollment} className="hover:bg-zinc-50/70 transition">
                         <td className="py-3 px-4 font-mono font-bold text-indigo-950">
                           {rcptNo}
-                          <div className="text-[10px] text-zinc-400 font-sans font-normal">
-                            {formatDateTime(timestamp)}
+                          <div className="text-[10px] text-zinc-500 font-sans font-medium">
+                            {formatDate(rcptDate)}
                           </div>
                         </td>
                         <td className="py-3 px-4">

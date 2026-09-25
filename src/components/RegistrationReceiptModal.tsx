@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { formatDateTime } from '../utils/helpers';
+import { formatDate, formatDateTime } from '../utils/helpers';
 import {
   Printer,
   X,
@@ -9,22 +9,44 @@ import {
   FileCheck,
   Building2,
   ClipboardCheck,
+  Calendar,
 } from 'lucide-react';
 
 export const RegistrationReceiptModal: React.FC = () => {
   const {
     selectedRegistrationReceipt,
     closeRegistrationReceiptModal,
+    updateIntakeDate,
     settings,
     allProgrammes,
     getCourseInfo,
     getCourseTitle,
   } = useApp();
 
+  const receiptDateVal =
+    selectedRegistrationReceipt?.submissionDate ||
+    selectedRegistrationReceipt?.receiptDate ||
+    (selectedRegistrationReceipt?.issuedAt ? String(selectedRegistrationReceipt.issuedAt).split('T')[0] : '') ||
+    new Date().toISOString().split('T')[0];
+
+  const [currentReceiptDate, setCurrentReceiptDate] = useState(receiptDateVal);
+
+  useEffect(() => {
+    setCurrentReceiptDate(receiptDateVal);
+  }, [receiptDateVal]);
+
   if (!selectedRegistrationReceipt) return null;
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newDate = e.target.value;
+    setCurrentReceiptDate(newDate);
+    if (newDate) {
+      updateIntakeDate(selectedRegistrationReceipt.id || selectedRegistrationReceipt.receiptNumber, newDate);
+    }
   };
 
   // Find programme details from dynamic registry
@@ -36,7 +58,7 @@ export const RegistrationReceiptModal: React.FC = () => {
     <div className="fixed inset-0 bg-zinc-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 z-50 overflow-y-auto animate-in fade-in">
       <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-zinc-300 overflow-hidden my-auto print:m-0 print:border-none print:shadow-none print:w-full">
         {/* Modal Action Bar (Hidden on print) */}
-        <div className="px-5 py-3 bg-zinc-900 text-white flex items-center justify-between print:hidden">
+        <div className="px-5 py-3 bg-zinc-900 text-white flex flex-wrap items-center justify-between gap-2.5 print:hidden">
           <div className="flex items-center gap-2.5 text-sm font-semibold">
             <span className="p-1 rounded-md bg-emerald-500/20 text-emerald-400">
               <CheckCircle2 className="w-4 h-4" />
@@ -49,6 +71,22 @@ export const RegistrationReceiptModal: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Quick Date Selector */}
+            <div className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 px-2.5 py-1 rounded-lg text-xs">
+              <Calendar className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <label htmlFor="reg-receipt-date-picker" className="text-[11px] text-zinc-300 font-medium">
+                Date:
+              </label>
+              <input
+                id="reg-receipt-date-picker"
+                type="date"
+                value={currentReceiptDate}
+                onChange={handleDateChange}
+                max="2099-12-31"
+                className="bg-zinc-950 border border-zinc-700 text-white text-xs px-2 py-0.5 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-hidden cursor-pointer"
+                title="Select receipt intake date"
+              />
+            </div>
             <button
               onClick={handlePrint}
               id="print-registration-receipt-btn"
@@ -101,9 +139,9 @@ export const RegistrationReceiptModal: React.FC = () => {
               </span>
             </div>
             <div>
-              <span className="text-zinc-500 font-semibold block text-[9px] print:text-[7.5px] uppercase">Intake Date & Time</span>
-              <span className="font-medium text-zinc-800 text-xs print:text-[9.5px]">
-                {formatDateTime(selectedRegistrationReceipt.issuedAt)}
+              <span className="text-zinc-500 font-semibold block text-[9px] print:text-[7.5px] uppercase">Intake Receipt Date</span>
+              <span className="font-bold text-zinc-900 text-xs print:text-[9.5px]">
+                {formatDate(currentReceiptDate || receiptDateVal)}
               </span>
             </div>
           </div>

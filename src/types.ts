@@ -187,6 +187,8 @@ export interface RegistrationReceipt {
   registeredCourses: string[];
   issuedBy: string;
   issuedAt: string;
+  submissionDate?: string; // YYYY-MM-DD
+  receiptDate?: string; // YYYY-MM-DD
   remarks?: string;
   feesPaid?: RegistrationReceiptFees;
 }
@@ -244,5 +246,33 @@ export interface CourseEvaluationRecord {
   status: EvaluationStatus;
   updatedAt: string;
   remarks?: string;
+}
+
+export interface SessionArchiveRecord {
+  id: string;
+  name: string;
+  session: string;
+  archivedAt: string;
+  archivedBy: string;
+  notes?: string;
+  stats: {
+    totalIntakes: number;
+    totalCandidates: number;
+    totalCourseScripts: number;
+    totalPackets: number;
+    totalBills: number;
+    totalEvaluated: number;
+    totalLocked: number;
+  };
+  snapshot: {
+    session: string;
+    intakes: IntakeRecord[];
+    courseEvaluations: CourseEvaluationRecord[];
+    packets: CoursePacket[];
+    bills: RemunerationBill[];
+    assignmentSubmissions: AssignmentSubmission[];
+    registrationReceipts: RegistrationReceipt[];
+    settings?: Partial<SystemSettings>;
+  };
 }
 

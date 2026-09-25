@@ -15,6 +15,7 @@ import {
   EvaluationStatus,
   IGNOUProgramme,
   IGNOUCourse,
+  SessionArchiveRecord,
 } from '../types';
 import {
   INITIAL_SETTINGS,
@@ -33,7 +34,7 @@ import {
   lookupCatalogCourse,
   cleanIgnouTitle,
 } from '../data/ignouComprehensiveCatalog';
-import { generateSessionCode, generateDeterministicSubmissionKey, calculateIGNOUGrade, getIgnouGrade } from '../utils/helpers';
+import { generateSessionCode, generateDeterministicSubmissionKey, calculateIGNOUGrade, getIgnouGrade, formatDate } from '../utils/helpers';
 import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, SCRIPT_URL, normalizeSessionName, norm } from '../services/sheetsService';
 
 export { normalizeSessionName, norm };
@@ -87,7 +88,9 @@ interface AppContextType {
     programme: string;
     courses: string[];
     session?: string;
+    submissionDate?: string;
   }) => void;
+  updateIntakeDate: (idOrToken: string, newDate: string) => void;
   deleteIntakeRecord: (id: string) => boolean;
   updateMarks: (intakeId: string, courseCode: string, marks: number | null) => void;
   saveOrUpdateMarksAndLock: (
@@ -116,7 +119,7 @@ interface AppContextType {
   // Registration Receipts (Receipts table storing confirmed student intake registrations)
   sessionRegistrationReceipts: RegistrationReceipt[];
   allRegistrationReceipts: RegistrationReceipt[];
-  addRegistrationReceipt: (receiptData: Omit<RegistrationReceipt, 'id' | 'receiptNumber' | 'issuedAt'>) => RegistrationReceipt;
+  addRegistrationReceipt: (receiptData: Omit<RegistrationReceipt, 'id' | 'receiptNumber' | 'issuedAt'> & { issuedAt?: string; submissionDate?: string; receiptDate?: string }) => RegistrationReceipt;
   selectedRegistrationReceipt: RegistrationReceipt | null;
   openRegistrationReceiptModal: (receipt: RegistrationReceipt) => void;
   closeRegistrationReceiptModal: () => void;
@@ -199,6 +202,21 @@ interface AppContextType {
   getCourseTitle: (courseCode: string, progCode?: string) => string;
   getCourseInfo: (courseCode: string, progCode?: string) => { title: string; credits: number; source?: string };
   updateCourseTitleFromIgnou: (courseCode: string, progCode?: string, forceLive?: boolean) => Promise<{ title: string; credits: number; source: string }>;
+
+  // Academic Session Archival & History Snapshots
+  archives: SessionArchiveRecord[];
+  createSessionArchive: (params: {
+    name: string;
+    session: string;
+    notes?: string;
+    startNewSession?: boolean;
+    newSessionName?: string;
+    downloadJSON?: boolean;
+  }) => SessionArchiveRecord;
+  deleteArchive: (archiveId: string) => void;
+  restoreArchive: (archiveId: string) => boolean;
+  downloadArchiveJSON: (archive: SessionArchiveRecord) => void;
+  importArchiveJSON: (archiveData: any) => SessionArchiveRecord;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -219,6 +237,7 @@ const STORAGE_KEYS = {
   CUSTOM_PROGRAMMES: 'ignou_sc2033_custom_programmes',
   CUSTOM_COURSES: 'ignou_sc2033_custom_courses',
   COURSE_TITLES_REGISTRY: 'ignou_sc2033_course_titles_registry',
+  ARCHIVES: 'ignou_sc2033_archives',
 };
 
 export const parseEvaluatorsMaster = (rawList: any[]): Evaluator[] => {
@@ -638,6 +657,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Failed to save course titles registry to localStorage', e);
     }
   }, [courseTitlesRegistry]);
+
+  // Module: Academic Session Archival & History Snapshots State
+  const [archives, setArchives] = useState<SessionArchiveRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('ignou_sc2033_archives') || localStorage.getItem(STORAGE_KEYS.ARCHIVES);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ignou_sc2033_archives', JSON.stringify(archives));
+      localStorage.setItem(STORAGE_KEYS.ARCHIVES, JSON.stringify(archives));
+    } catch (e) {
+      console.warn('Failed to save archives to localStorage', e);
+    }
+  }, [archives]);
 
   // Unified list of all standard + custom + discovered programmes
   const allProgrammes = useMemo<IGNOUProgramme[]>(() => {
@@ -1514,18 +1552,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Registration Receipts Operations
   const addRegistrationReceipt = useCallback(
-    (data: Omit<RegistrationReceipt, 'id' | 'receiptNumber' | 'issuedAt'>): RegistrationReceipt => {
+    (
+      data: Omit<RegistrationReceipt, 'id' | 'receiptNumber' | 'issuedAt'> & {
+        issuedAt?: string;
+        submissionDate?: string;
+        receiptDate?: string;
+      }
+    ): RegistrationReceipt => {
       const sessionCode = generateSessionCode(data.session);
       const sessionReceipts = registrationReceipts.filter((r) => r.session === data.session);
       const nextSequence = sessionReceipts.length + 1;
       const paddedSeq = String(nextSequence).padStart(4, '0');
       const receiptNumber = `REG-SC2033-${sessionCode}-${paddedSeq}`;
 
+      const intakeDate = data.submissionDate || data.receiptDate || (data.issuedAt ? String(data.issuedAt).split('T')[0] : new Date().toISOString().split('T')[0]);
+      const issuedAtTime = data.issuedAt || `${intakeDate}T${new Date().toTimeString().split(' ')[0]}`;
+
       const newReceipt: RegistrationReceipt = {
         ...data,
         id: `reg-receipt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         receiptNumber,
-        issuedAt: new Date().toISOString(),
+        submissionDate: intakeDate,
+        receiptDate: intakeDate,
+        issuedAt: issuedAtTime,
       };
 
       setRegistrationReceipts((prev) => [newReceipt, ...prev]);
@@ -1723,6 +1772,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       programme: string;
       courses: string[];
       session?: string;
+      submissionDate?: string;
     }) => {
       const targetIntake = intakes.find((i) => i.id === data.id);
       const activeSession = data.session || targetIntake?.session || currentSession;
@@ -1772,6 +1822,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const hasSomeMarks = cleanCourses.some((c) => newMarks[c] !== null && newMarks[c] !== undefined);
             const newStatus = allEntered ? 'Evaluated' : hasSomeMarks ? 'Under Evaluation' : item.status;
 
+            const newSubDate = data.submissionDate ? data.submissionDate.trim() : item.submissionDate;
             const updated: IntakeRecord = {
               ...item,
               enrollmentNo: cleanNewEnr,
@@ -1779,6 +1830,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               studentPhone: cleanContact,
               programmeCode: cleanProg,
               courseCodes: cleanCourses,
+              submissionDate: newSubDate,
+              Timestamp: newSubDate || item.Timestamp,
               marks: newMarks,
               status: newStatus,
             };
@@ -1828,6 +1881,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               studentPhone: cleanContact,
               programmeCode: cleanProg,
               submissionKey: detKey,
+              submissionDate: data.submissionDate ? data.submissionDate.trim() : e.submissionDate,
               updatedAt: new Date().toISOString(),
             };
           });
@@ -1860,7 +1914,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             programmeCode: cleanProg,
             courseCode: c,
             courseTitle: `${cleanProg} Course ${c}`,
-            submissionDate: targetIntake?.submissionDate || new Date().toISOString().split('T')[0],
+            submissionDate: data.submissionDate ? data.submissionDate.trim() : (targetIntake?.submissionDate || new Date().toISOString().split('T')[0]),
             submissionMode: targetIntake?.submissionMode || 'In-Person (Desk)',
             consignmentNo: targetIntake?.consignmentNo || null,
             evaluatorId: null,
@@ -1898,6 +1952,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               studentPhone: cleanContact,
               programmeCode: cleanProg,
               registeredCourses: cleanCourses,
+              submissionDate: data.submissionDate ? data.submissionDate.trim() : rcpt.submissionDate,
+              receiptDate: data.submissionDate ? data.submissionDate.trim() : rcpt.receiptDate,
+              issuedAt: data.submissionDate ? `${data.submissionDate.trim()}T${new Date().toTimeString().split(' ')[0]}` : rcpt.issuedAt,
             };
           }
           return rcpt;
@@ -1907,6 +1964,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch {}
         return next;
       });
+
+      // Keep open receipt modals in sync
+      if (updatedIntakeRecord) {
+        setSelectedReceiptRecord((prev) => (prev && prev.id === data.id ? { ...prev, ...updatedIntakeRecord } : prev));
+      }
 
       // 4. Dispatch POST to Google Apps Script:
       // action: "EDIT_INTAKE",
@@ -2021,6 +2083,133 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return true;
     },
     [intakes, courseEvaluations, currentSession, showToast]
+  );
+
+  const updateIntakeDate = useCallback(
+    (idOrToken: string, newDate: string) => {
+      if (!idOrToken || !newDate) return;
+      const cleanDate = newDate.trim();
+      let matchingSession = '';
+      let matchingEnr = '';
+
+      // 1. Update intakes
+      setIntakes((prev) => {
+        const next = prev.map((item) => {
+          if (item.id === idOrToken || item.tokenNo === idOrToken) {
+            matchingSession = item.session;
+            matchingEnr = item.enrollmentNo;
+            return {
+              ...item,
+              submissionDate: cleanDate,
+              Timestamp: cleanDate,
+            };
+          }
+          return item;
+        });
+        try {
+          localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // 2. Update course evaluations
+      setCourseEvaluations((prev) => {
+        const next = prev.map((ce) => {
+          if (
+            ce.intakeId === idOrToken ||
+            ce.tokenNo === idOrToken ||
+            (matchingEnr && ce.enrollmentNo === matchingEnr && ce.session === matchingSession)
+          ) {
+            return {
+              ...ce,
+              submissionDate: cleanDate,
+            };
+          }
+          return ce;
+        });
+        try {
+          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // 3. Update registration receipts
+      setRegistrationReceipts((prev) => {
+        const next = prev.map((rcpt) => {
+          if (
+            rcpt.id === idOrToken ||
+            rcpt.receiptNumber === idOrToken ||
+            (matchingEnr && rcpt.studentId === matchingEnr && rcpt.session === matchingSession)
+          ) {
+            return {
+              ...rcpt,
+              submissionDate: cleanDate,
+              receiptDate: cleanDate,
+              issuedAt: `${cleanDate}T${new Date().toTimeString().split(' ')[0]}`,
+            };
+          }
+          return rcpt;
+        });
+        try {
+          localStorage.setItem(STORAGE_KEYS.REGISTRATION_RECEIPTS, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // 4. Update assignment submissions tracker
+      setAssignmentSubmissions((prev) => {
+        const next = prev.map((sub) => {
+          if (
+            matchingEnr &&
+            sub.studentId === matchingEnr &&
+            (!matchingSession || sub.session === matchingSession)
+          ) {
+            return {
+              ...sub,
+              submissionDate: cleanDate,
+            };
+          }
+          return sub;
+        });
+        try {
+          localStorage.setItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // 5. Update active receipt modal state if open
+      setSelectedReceiptRecord((prev) => {
+        if (!prev) return null;
+        if (prev.id === idOrToken || prev.tokenNo === idOrToken) {
+          return {
+            ...prev,
+            submissionDate: cleanDate,
+            Timestamp: cleanDate,
+          };
+        }
+        return prev;
+      });
+
+      setSelectedRegistrationReceipt((prev) => {
+        if (!prev) return null;
+        if (
+          prev.id === idOrToken ||
+          prev.receiptNumber === idOrToken ||
+          (matchingEnr && prev.studentId === matchingEnr)
+        ) {
+          return {
+            ...prev,
+            submissionDate: cleanDate,
+            receiptDate: cleanDate,
+            issuedAt: `${cleanDate}T${new Date().toTimeString().split(' ')[0]}`,
+          };
+        }
+        return prev;
+      });
+
+      showToast(`Intake & receipt date updated to ${formatDate(cleanDate)}`, 'success');
+    },
+    [showToast]
   );
 
   const saveOrUpdateMarksAndLock = useCallback(
@@ -2563,8 +2752,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const candidate = (r.Candidate_Name || r.candidateName || r["Candidate Name"] || r.studentName || "").toString().trim();
           const session = normalizeSessionName(r.Session || r.session || "July 2026");
           const programme = (r.Programme || r.programme || r.programmeCode || "MEG").toString().trim();
-          const contact = (r.Contact || r.contact || r.studentPhone || "").toString().replace(/^'/, '').trim();
-          const timestamp = r.Timestamp || r.timestamp || r.createdAt || "";
+          const rawContact = r.Contact || r.contact || r.studentPhone || "";
+          const contact = (rawContact).toString().replace(/^'/, '').trim();
+          const explicitDate = r.submissionDate || r.Submission_Date || r.Date || r.date || r.receiptDate;
+          const rawTimestamp = r.Timestamp || r.timestamp || r.createdAt || "";
+          const subDate = explicitDate
+            ? String(explicitDate).split('T')[0]
+            : (rawTimestamp ? String(rawTimestamp).split('T')[0] : new Date().toISOString().split('T')[0]);
+          const timestamp = rawTimestamp || `${subDate}T10:00:00Z`;
           const official = r.Official || r.handledBy || r.official || "Desk Official";
           const id = r.id || r.tokenNo || r.Token_No || `intake-${enrollment}-${session.replace(/\s+/g, '')}`;
           const tokenNo = r.tokenNo || r.Token_No || id;
@@ -2595,7 +2790,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             studentPhone: contact,
             programmeCode: programme,
             courseCodes: courseArr,
-            submissionDate: timestamp ? String(timestamp).split('T')[0] : new Date().toISOString().split('T')[0],
+            submissionDate: subDate,
             submissionMode: r.submissionMode || 'In-Person (Desk)',
             status: r.status || r.Status || 'Received',
             marks: r.marks || {},
@@ -2672,14 +2867,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               session: item.session,
               registeredCourses: item.courses,
               issuedBy: item.handledBy,
-              issuedAt: item.timestamp || new Date().toISOString(),
+              issuedAt: item.submissionDate ? `${item.submissionDate}T10:00:00Z` : (item.timestamp || new Date().toISOString()),
+              submissionDate: item.submissionDate,
+              receiptDate: item.submissionDate,
               remarks: '',
               Enrollment_No: item.enrollmentNo,
               Candidate_Name: item.candidateName,
               Contact: item.contact,
               Programme: item.programme,
               Courses: item.courses,
-              Timestamp: item.timestamp,
+              Timestamp: item.submissionDate || item.timestamp,
               Official: item.handledBy,
               Session: item.session,
             } as any);
@@ -2944,6 +3141,211 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
+  // Academic Session Archival & History Snapshots Handlers
+  const downloadArchiveJSON = useCallback((archive: SessionArchiveRecord) => {
+    const cleanSession = (archive.session || 'Session').replace(/[^a-zA-Z0-9]/g, '_');
+    const datePart = new Date(archive.archivedAt || Date.now()).toISOString().split('T')[0];
+    const filename = `IGNOU_SC2033_HistoryArchive_${cleanSession}_${datePart}.json`;
+    const jsonStr = JSON.stringify(archive, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const createSessionArchive = useCallback((params: {
+    name: string;
+    session: string;
+    notes?: string;
+    startNewSession?: boolean;
+    newSessionName?: string;
+    downloadJSON?: boolean;
+  }): SessionArchiveRecord => {
+    const targetSession = params.session || currentSession;
+    
+    // Filter records belonging to targetSession
+    const sessionIntakesList = intakes.filter((r) => norm(r.session) === norm(targetSession));
+    const sessionEvaluationsList = courseEvaluations.filter((r) => norm(r.session) === norm(targetSession));
+    const sessionPacketsList = packets.filter((p) => norm(p.session) === norm(targetSession));
+    const sessionBillsList = bills.filter((b) => norm(b.session) === norm(targetSession));
+    const sessionSubmissionsList = assignmentSubmissions.filter((s) => norm(s.session) === norm(targetSession));
+    const sessionReceiptsList = registrationReceipts.filter((r) => norm(r.session) === norm(targetSession));
+
+    const uniqueCandidates = new Set(sessionIntakesList.map((r) => (r.enrollmentNo || '').trim())).size;
+
+    const archiveRecord: SessionArchiveRecord = {
+      id: `ARCHIVE-${targetSession.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()}-${Date.now()}`,
+      name: params.name || `${targetSession} Closeout Archive`,
+      session: targetSession,
+      archivedAt: new Date().toISOString(),
+      archivedBy: `${settings.coordinatorName || 'Administrator'} (${settings.centreCode || 'SC-2033'})`,
+      notes: params.notes || 'Academic session historical snapshot',
+      stats: {
+        totalIntakes: sessionIntakesList.length,
+        totalCandidates: uniqueCandidates,
+        totalCourseScripts: sessionEvaluationsList.length,
+        totalPackets: sessionPacketsList.length,
+        totalBills: sessionBillsList.length,
+        totalEvaluated: sessionEvaluationsList.filter((e) => e.marks !== null && e.marks !== undefined && e.marks !== '').length,
+        totalLocked: sessionEvaluationsList.filter((e) => Boolean(e.isLocked || e.status === 'Locked' || e.status === 'Marks Locked')).length,
+      },
+      snapshot: {
+        session: targetSession,
+        intakes: sessionIntakesList,
+        courseEvaluations: sessionEvaluationsList,
+        packets: sessionPacketsList,
+        bills: sessionBillsList,
+        assignmentSubmissions: sessionSubmissionsList,
+        registrationReceipts: sessionReceiptsList,
+        settings: {
+          centreCode: settings.centreCode,
+          centreName: settings.centreName,
+          regionalCentre: settings.regionalCentre,
+          coordinatorName: settings.coordinatorName,
+          remunerationRatePerScript: settings.remunerationRatePerScript,
+        },
+      },
+    };
+
+    setArchives((prev) => [archiveRecord, ...prev.filter((a) => a.id !== archiveRecord.id)]);
+
+    // Download JSON file if requested (defaults to true)
+    if (params.downloadJSON !== false) {
+      downloadArchiveJSON(archiveRecord);
+    }
+
+    // If startNewSession is selected, clear active records for this session to give a clean slate
+    if (params.startNewSession) {
+      // 1. Remove active records for targetSession from active registers
+      setIntakes((prev) => prev.filter((r) => norm(r.session) !== norm(targetSession)));
+      setCourseEvaluations((prev) => prev.filter((r) => norm(r.session) !== norm(targetSession)));
+      setPackets((prev) => prev.filter((p) => norm(p.session) !== norm(targetSession)));
+      setBills((prev) => prev.filter((b) => norm(b.session) !== norm(targetSession)));
+      setAssignmentSubmissions((prev) => prev.filter((s) => norm(s.session) !== norm(targetSession)));
+      setRegistrationReceipts((prev) => prev.filter((r) => norm(r.session) !== norm(targetSession)));
+
+      // 2. Switch to new session if provided
+      if (params.newSessionName && params.newSessionName.trim()) {
+        const nextSession = params.newSessionName.trim();
+        setSettings((prev) => {
+          if (!prev.availableSessions.includes(nextSession)) {
+            return {
+              ...prev,
+              availableSessions: [...prev.availableSessions, nextSession],
+            };
+          }
+          return prev;
+        });
+        setCurrentSessionState(nextSession);
+      }
+    }
+
+    showToast(
+      params.startNewSession
+        ? `Session ${targetSession} archived & started new session: ${params.newSessionName || 'Fresh State'}`
+        : `Snapshot for ${targetSession} saved to History (${archiveRecord.stats.totalCourseScripts} scripts)`,
+      'success'
+    );
+
+    return archiveRecord;
+  }, [currentSession, intakes, courseEvaluations, packets, bills, assignmentSubmissions, registrationReceipts, settings, downloadArchiveJSON, showToast]);
+
+  const deleteArchive = useCallback((archiveId: string) => {
+    setArchives((prev) => prev.filter((a) => a.id !== archiveId));
+    showToast('Historical archive deleted', 'info');
+  }, [showToast]);
+
+  const restoreArchive = useCallback((archiveId: string): boolean => {
+    const target = archives.find((a) => a.id === archiveId);
+    if (!target) return false;
+
+    const snap = target.snapshot;
+    // Add/merge restored records
+    setIntakes((prev) => {
+      const existingIds = new Set((snap.intakes || []).map((r) => r.id));
+      const filtered = prev.filter((r) => !existingIds.has(r.id));
+      return [...(snap.intakes || []), ...filtered];
+    });
+
+    setCourseEvaluations((prev) => {
+      const existingIds = new Set((snap.courseEvaluations || []).map((e) => e.id));
+      const filtered = prev.filter((e) => !existingIds.has(e.id));
+      return [...(snap.courseEvaluations || []), ...filtered];
+    });
+
+    setPackets((prev) => {
+      const existingIds = new Set((snap.packets || []).map((p) => p.id));
+      const filtered = prev.filter((p) => !existingIds.has(p.id));
+      return [...(snap.packets || []), ...filtered];
+    });
+
+    setBills((prev) => {
+      const existingIds = new Set((snap.bills || []).map((b) => b.id));
+      const filtered = prev.filter((b) => !existingIds.has(b.id));
+      return [...(snap.bills || []), ...filtered];
+    });
+
+    setAssignmentSubmissions((prev) => {
+      const existingIds = new Set((snap.assignmentSubmissions || []).map((s) => s.id));
+      const filtered = prev.filter((s) => !existingIds.has(s.id));
+      return [...(snap.assignmentSubmissions || []), ...filtered];
+    });
+
+    setRegistrationReceipts((prev) => {
+      const existingIds = new Set((snap.registrationReceipts || []).map((r) => r.id));
+      const filtered = prev.filter((r) => !existingIds.has(r.id));
+      return [...(snap.registrationReceipts || []), ...filtered];
+    });
+
+    // Ensure session is in availableSessions and switch to it
+    setSettings((prev) => {
+      if (!prev.availableSessions.includes(target.session)) {
+        return {
+          ...prev,
+          availableSessions: [...prev.availableSessions, target.session],
+        };
+      }
+      return prev;
+    });
+    setCurrentSessionState(target.session);
+
+    showToast(`Restored snapshot '${target.name}' (${target.session}) into active state`, 'success');
+    return true;
+  }, [archives, showToast]);
+
+  const importArchiveJSON = useCallback((archiveData: any): SessionArchiveRecord => {
+    if (!archiveData || typeof archiveData !== 'object' || !archiveData.snapshot) {
+      throw new Error('Invalid archive JSON format: Missing snapshot object.');
+    }
+    const newArchive: SessionArchiveRecord = {
+      id: archiveData.id || `ARCHIVE-IMPORT-${Date.now()}`,
+      name: archiveData.name || `Imported Archive (${archiveData.session || 'Session'})`,
+      session: archiveData.session || currentSession,
+      archivedAt: archiveData.archivedAt || new Date().toISOString(),
+      archivedBy: archiveData.archivedBy || 'Imported File',
+      notes: archiveData.notes || 'Imported from offline JSON backup',
+      stats: archiveData.stats || {
+        totalIntakes: archiveData.snapshot.intakes?.length || 0,
+        totalCandidates: new Set((archiveData.snapshot.intakes || []).map((r: any) => r.enrollmentNo)).size,
+        totalCourseScripts: archiveData.snapshot.courseEvaluations?.length || 0,
+        totalPackets: archiveData.snapshot.packets?.length || 0,
+        totalBills: archiveData.snapshot.bills?.length || 0,
+        totalEvaluated: (archiveData.snapshot.courseEvaluations || []).filter((e: any) => e.marks !== null).length,
+        totalLocked: (archiveData.snapshot.courseEvaluations || []).filter((e: any) => e.isLocked).length,
+      },
+      snapshot: archiveData.snapshot,
+    };
+
+    setArchives((prev) => [newArchive, ...prev.filter((a) => a.id !== newArchive.id)]);
+    showToast(`Imported archive '${newArchive.name}' to History`, 'success');
+    return newArchive;
+  }, [currentSession, showToast]);
+
   // Modal helpers
   const openReceiptModal = useCallback((record: IntakeRecord) => {
     setSelectedReceiptRecord(record);
@@ -2988,6 +3390,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addIntakeRecord,
         updateIntakeRecord,
         editIntakeEntry,
+        updateIntakeDate,
         deleteIntakeRecord,
         updateMarks,
         saveOrUpdateMarksAndLock,
@@ -3076,6 +3479,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         getCourseTitle,
         getCourseInfo,
         updateCourseTitleFromIgnou,
+        // Academic Session Archival & History Snapshots
+        archives,
+        createSessionArchive,
+        deleteArchive,
+        restoreArchive,
+        downloadArchiveJSON,
+        importArchiveJSON,
       }}
     >
       {children}

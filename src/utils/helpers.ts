@@ -10,7 +10,36 @@ export function formatCurrency(amount: number): string {
 export function formatDate(dateString: string | null | undefined): string {
   if (!dateString) return '—';
   try {
-    const d = new Date(dateString);
+    const trimmed = String(dateString).trim();
+    // Parse YYYY-MM-DD directly into local year, month, day to avoid UTC timezone shifts
+    const ymdMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (ymdMatch) {
+      const year = parseInt(ymdMatch[1], 10);
+      const month = parseInt(ymdMatch[2], 10) - 1;
+      const day = parseInt(ymdMatch[3], 10);
+      const localDate = new Date(year, month, day);
+      return localDate.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+    }
+
+    // Parse DD/MM/YYYY or DD-MM-YYYY
+    const dmyMatch = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (dmyMatch) {
+      const day = parseInt(dmyMatch[1], 10);
+      const month = parseInt(dmyMatch[2], 10) - 1;
+      const year = parseInt(dmyMatch[3], 10);
+      const localDate = new Date(year, month, day);
+      return localDate.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+    }
+
+    const d = new Date(trimmed);
     if (isNaN(d.getTime())) return dateString;
     return d.toLocaleDateString('en-IN', {
       day: '2-digit',
@@ -18,14 +47,19 @@ export function formatDate(dateString: string | null | undefined): string {
       year: 'numeric',
     });
   } catch {
-    return dateString;
+    return String(dateString);
   }
 }
 
 export function formatDateTime(dateString: string | null | undefined): string {
   if (!dateString) return '—';
   try {
-    const d = new Date(dateString);
+    const trimmed = String(dateString).trim();
+    // If it's only a date string without time (YYYY-MM-DD), format as date to prevent arbitrary midnight conversions
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return formatDate(trimmed);
+    }
+    const d = new Date(trimmed);
     if (isNaN(d.getTime())) return dateString;
     return d.toLocaleDateString('en-IN', {
       day: '2-digit',
@@ -35,7 +69,7 @@ export function formatDateTime(dateString: string | null | undefined): string {
       minute: '2-digit',
     });
   } catch {
-    return dateString;
+    return String(dateString);
   }
 }
 

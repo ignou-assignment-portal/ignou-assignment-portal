@@ -337,7 +337,7 @@ export const IntakeRegister: React.FC = () => {
             const programme = row.Programme || row.programme || row.programmeCode || "-";
             const rawCourses = row.Courses || row.courses || row.courseCodes || [];
             const coursesStr = Array.isArray(rawCourses) ? rawCourses.join(", ") : String(rawCourses || "-");
-            const timestamp = row.Timestamp ? String(row.Timestamp).split('T')[0] : (row.submissionDate || row.createdAt || "-");
+            const timestamp = row.submissionDate || row.receiptDate || (row.Timestamp ? String(row.Timestamp).split('T')[0] : (row.createdAt || "-"));
             const official = row.Official || row.handledBy || row.official || row.issuedBy || "-";
             const token = row.Token_No || row.tokenNo || row.id || "";
             const status = row.status || row.Status || 'Received';
@@ -445,7 +445,7 @@ export const IntakeRegister: React.FC = () => {
                     ? rawCourses
                     : String(rawCourses || "").split(',').map((c: string) => c.trim()).filter(Boolean);
                   const tokenNo = record.Token_No || record.tokenNo || record.id || "-";
-                  const subDate = record.Timestamp ? String(record.Timestamp).split('T')[0] : (record.submissionDate || "-");
+                  const subDate = record.submissionDate || record.receiptDate || (record.Timestamp ? String(record.Timestamp).split('T')[0] : (record.createdAt ? String(record.createdAt).split('T')[0] : "-"));
                   const mode = record.submissionMode || record.mode || 'In-Person (Desk)';
                   const status = record.status || record.Status || 'Received';
                   const marks = record.marks || {};
