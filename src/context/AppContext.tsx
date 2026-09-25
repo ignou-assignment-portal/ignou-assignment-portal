@@ -436,11 +436,115 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
+  // Audit Trail & Accountability Logs Database State
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem('ignou_sc2033_audit_trail') || localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return INITIAL_AUDIT_LOGS;
+    } catch {
+      return INITIAL_AUDIT_LOGS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ignou_sc2033_audit_trail', JSON.stringify(auditLogs));
+      localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(auditLogs));
+    } catch (e) {
+      console.warn('Failed to save audit logs to localStorage:', e);
+    }
+  }, [auditLogs]);
+
+  // Audit Trail Management Helpers
+  const logAuditEvent = useCallback(
+    (entry: Omit<AuditLogEntry, 'id' | 'timestamp'> & { timestamp?: string }) => {
+      const newEntry: AuditLogEntry = {
+        id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        timestamp: entry.timestamp || new Date().toISOString(),
+        action: entry.action,
+        category: entry.category,
+        actor: entry.actor,
+        role: entry.role,
+        session: entry.session || currentSession,
+        targetIdentifier: entry.targetIdentifier,
+        summary: entry.summary,
+        details: entry.details,
+        ipOrDevice: entry.ipOrDevice || 'Station SC-2033',
+        status: entry.status || 'SUCCESS',
+      };
+      setAuditLogs((prev) => [newEntry, ...prev.slice(0, 999)]);
+    },
+    [currentSession]
+  );
+
+  const clearAuditLogs = useCallback(() => {
+    setAuditLogs([]);
+    try {
+      localStorage.removeItem('ignou_sc2033_audit_trail');
+      localStorage.removeItem(STORAGE_KEYS.AUDIT_LOGS);
+    } catch {}
+  }, []);
+
+  const exportAuditLogsCSV = useCallback(() => {
+    const headers = ['ID', 'Timestamp', 'Date', 'Time', 'Category', 'Action', 'Actor', 'Role', 'Cycle', 'TargetIdentifier', 'Summary', 'Status'];
+    const rows = auditLogs.map((log) => [
+      `"${log.id}"`,
+      `"${log.timestamp}"`,
+      `"${new Date(log.timestamp).toLocaleDateString('en-IN')}"`,
+      `"${new Date(log.timestamp).toLocaleTimeString('en-IN')}"`,
+      `"${log.category}"`,
+      `"${log.action}"`,
+      `"${(log.actor || '').replace(/"/g, '""')}"`,
+      `"${log.role}"`,
+      `"${log.session || ''}"`,
+      `"${(log.targetIdentifier || '').replace(/"/g, '""')}"`,
+      `"${(log.summary || '').replace(/"/g, '""')}"`,
+      `"${log.status}"`,
+    ]);
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `IGNOU_SC2033_AuditTrail_${currentSession.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [auditLogs, currentSession]);
+
+  const exportAuditLogsJSON = useCallback(() => {
+    const jsonStr = JSON.stringify(auditLogs, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `IGNOU_SC2033_AuditLogs_${currentSession.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [auditLogs, currentSession]);
+
   const updateSecurityPins = useCallback((newPins: { deskPin: string; adminPin: string }) => {
     setSecurityPins(newPins);
     localStorage.setItem("ignou_sc2033_pins", JSON.stringify(newPins));
     setSettings((prev) => ({ ...prev, adminPin: newPins.adminPin }));
-  }, []);
+    logAuditEvent({
+      action: 'PIN_CHANGED',
+      category: 'SYSTEM_SETTINGS',
+      actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+      role: currentRole,
+      session: currentSession,
+      summary: 'Terminal Security Access PINs updated',
+      status: 'SUCCESS',
+      details: { updatedBy: currentRole },
+    });
+  }, [currentRole, settings.coordinatorName, currentSession, logAuditEvent]);
 
   const logout = useCallback(() => {
     sessionStorage.removeItem("ignou_sc2033_auth");
@@ -573,29 +677,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return INITIAL_REGISTRATION_RECEIPTS;
     }
   });
-
-  // Audit Trail & Accountability Logs Database State
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => {
-    try {
-      const saved = localStorage.getItem('ignou_sc2033_audit_trail') || localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-      return INITIAL_AUDIT_LOGS;
-    } catch {
-      return INITIAL_AUDIT_LOGS;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('ignou_sc2033_audit_trail', JSON.stringify(auditLogs));
-      localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(auditLogs));
-    } catch (e) {
-      console.warn('Failed to save audit logs to localStorage:', e);
-    }
-  }, [auditLogs]);
 
   // Module B Table: Course Evaluations (Course Ledger)
   const [courseEvaluations, setCourseEvaluations] = useState<CourseEvaluationRecord[]>(() => {
@@ -1340,77 +1421,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error('Failed to persist course evaluations', e);
     }
   }, [courseEvaluations]);
-
-  // Audit Trail Management Helpers
-  const logAuditEvent = useCallback(
-    (entry: Omit<AuditLogEntry, 'id' | 'timestamp'> & { timestamp?: string }) => {
-      const newEntry: AuditLogEntry = {
-        id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        timestamp: entry.timestamp || new Date().toISOString(),
-        action: entry.action,
-        category: entry.category,
-        actor: entry.actor,
-        role: entry.role,
-        session: entry.session || currentSession,
-        targetIdentifier: entry.targetIdentifier,
-        summary: entry.summary,
-        details: entry.details,
-        ipOrDevice: entry.ipOrDevice || 'Station SC-2033',
-        status: entry.status || 'SUCCESS',
-      };
-      setAuditLogs((prev) => [newEntry, ...prev.slice(0, 999)]);
-    },
-    [currentSession]
-  );
-
-  const clearAuditLogs = useCallback(() => {
-    setAuditLogs([]);
-    try {
-      localStorage.removeItem('ignou_sc2033_audit_trail');
-      localStorage.removeItem(STORAGE_KEYS.AUDIT_LOGS);
-    } catch {}
-  }, []);
-
-  const exportAuditLogsCSV = useCallback(() => {
-    const headers = ['ID', 'Timestamp', 'Date', 'Time', 'Category', 'Action', 'Actor', 'Role', 'Cycle', 'TargetIdentifier', 'Summary', 'Status'];
-    const rows = auditLogs.map((log) => [
-      `"${log.id}"`,
-      `"${log.timestamp}"`,
-      `"${new Date(log.timestamp).toLocaleDateString('en-IN')}"`,
-      `"${new Date(log.timestamp).toLocaleTimeString('en-IN')}"`,
-      `"${log.category}"`,
-      `"${log.action}"`,
-      `"${(log.actor || '').replace(/"/g, '""')}"`,
-      `"${log.role}"`,
-      `"${log.session || ''}"`,
-      `"${(log.targetIdentifier || '').replace(/"/g, '""')}"`,
-      `"${(log.summary || '').replace(/"/g, '""')}"`,
-      `"${log.status}"`,
-    ]);
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `IGNOU_SC2033_AuditTrail_${currentSession.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, [auditLogs, currentSession]);
-
-  const exportAuditLogsJSON = useCallback(() => {
-    const jsonStr = JSON.stringify(auditLogs, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `IGNOU_SC2033_AuditLogs_${currentSession.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, [auditLogs, currentSession]);
 
   // Session Switching
   const setSession = useCallback((newSession: string) => {
@@ -2704,11 +2714,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             Allotted_Evaluator: evalDisplayName,
           }).catch((err) => console.warn(err));
         });
+
+        logAuditEvent({
+          action: 'EVALUATOR_ALLOTTED',
+          category: 'MARKS_EVALUATION',
+          actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+          role: currentRole,
+          session: currentSession,
+          targetIdentifier: `${ev.evaluatorCode} (${ev.evaluatorName || ev.name})`,
+          summary: `Allotted Academic Counsellor ${ev.evaluatorName || ev.name} (${ev.evaluatorCode}) to ${evaluationIds.length} script${evaluationIds.length === 1 ? '' : 's'}`,
+          status: 'SUCCESS',
+          details: { evaluatorCode: ev.evaluatorCode, count: evaluationIds.length, ids: evaluationIds },
+        });
       }
 
       showToast('Saved & Synced with Google Sheet', 'success');
     },
-    [evaluators, currentRole, showToast]
+    [evaluators, currentRole, showToast, logAuditEvent, settings.coordinatorName, currentSession]
   );
 
   const updateEvaluationMarks = useCallback(
@@ -2778,9 +2800,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }).catch((err) => {
           console.warn('Google Sheets UPDATE_MARKS writeback warning:', err);
         });
+
+        logAuditEvent({
+          action: 'MARKS_UPDATED',
+          category: 'MARKS_EVALUATION',
+          actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+          role: currentRole,
+          session: targetSession || currentSession,
+          targetIdentifier: `${updatedEnr} (${updatedCourse})`,
+          summary: `Updated marks to ${marksValue !== null ? `${marksValue}/100 (Grade ${gradeInfo.grade})` : 'unassigned'} for candidate ${updatedEnr} in course ${updatedCourse}`,
+          status: 'SUCCESS',
+          details: { enrollmentNo: updatedEnr, courseCode: updatedCourse, marks: marksValue, grade: gradeInfo.grade },
+        });
       }
     },
-    []
+    [currentRole, settings.coordinatorName, currentSession, logAuditEvent]
   );
 
   const toggleLockMarks = useCallback(
@@ -2868,11 +2902,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return next;
       });
 
+      logAuditEvent({
+        action: shouldLock ? 'MARKS_LOCKED' : 'MARKS_UNLOCKED',
+        category: 'MARKS_EVALUATION',
+        actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+        role: currentRole,
+        session: currentSession,
+        targetIdentifier: `${evaluationIds.length} Scripts`,
+        summary: shouldLock
+          ? `Statutory verification: Locked marks for ${evaluationIds.length} candidate script${evaluationIds.length === 1 ? '' : 's'}`
+          : `Administrator unlocked marks for ${evaluationIds.length} candidate script${evaluationIds.length === 1 ? '' : 's'}`,
+        status: 'SUCCESS',
+        details: { count: evaluationIds.length, shouldLock, ids: evaluationIds },
+      });
+
       if (shouldLock) {
         showToast('Saved & Synced with Google Sheet', 'success');
       }
     },
-    [currentRole, isUrlLockedDeskMode, settings.coordinatorName, showToast]
+    [currentRole, isUrlLockedDeskMode, settings.coordinatorName, currentSession, showToast, logAuditEvent]
   );
 
   // Course Packets
@@ -3309,8 +3357,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             : b
         )
       );
+
+      const bill = bills.find((b) => b.id === billId);
+      logAuditEvent({
+        action: 'BILL_SANCTIONED',
+        category: 'FINANCE_BILLS',
+        actor: `${settings.coordinatorName || 'Coordinator'} (Admin)`,
+        role: 'ADMIN',
+        session: bill?.session || currentSession,
+        targetIdentifier: bill?.billNumber || billId,
+        summary: `Statutory financial sanction granted for bill ${bill?.billNumber || billId} (₹${bill?.totalAmount.toFixed(2) || '0.00'})`,
+        status: 'SUCCESS',
+        details: { billId, amount: bill?.totalAmount, evaluator: bill?.evaluatorName },
+      });
     },
-    [currentRole, settings]
+    [currentRole, settings, bills, currentSession, logAuditEvent]
   );
 
   const disburseBill = useCallback((billId: string, ref: string) => {
@@ -3340,7 +3401,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return updated;
     });
-  }, []);
+
+    logAuditEvent({
+      action: 'SETTINGS_UPDATED',
+      category: 'SYSTEM_SETTINGS',
+      actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+      role: currentRole,
+      session: currentSession,
+      targetIdentifier: 'System Settings',
+      summary: 'Updated institution operational configuration parameters',
+      status: 'SUCCESS',
+      details: { updatedKeys: Object.keys(newValues) },
+    });
+  }, [currentRole, settings.coordinatorName, currentSession, logAuditEvent]);
 
   const resetAllData = useCallback(() => {
     if (window.confirm('Are you sure you want to reset all data to initial institutional seed state? This cannot be undone.')) {

@@ -17,6 +17,7 @@ import {
   Sparkles,
   Search,
   Home,
+  History as HistoryIcon,
 } from 'lucide-react';
 
 export type TabType =
@@ -192,7 +193,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onVie
           stageTag: null,
           label: 'Audit Trail & Logs',
           fullTitle: 'Audit Trail & Accountability Logs',
-          icon: History,
+          icon: HistoryIcon,
           roles: ['ADMIN', 'OFFICIAL'],
           badge: 'Live',
           badgeColor: 'bg-emerald-100 text-emerald-900 border-emerald-200',
@@ -342,8 +343,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onVie
               ...section,
               items: section.items.filter((item) => {
                 if (userRole === 'desk' || isUrlLockedDeskMode) {
-                  // If userRole === 'desk', show ONLY Stage 1 and Stage 2
-                  return item.id === 'INTAKE_DESK' || item.id === 'EVALUATION_MASTER';
+                  // If userRole === 'desk', show Stage 1, Stage 2 and Audit Trail
+                  return item.id === 'INTAKE_DESK' || item.id === 'EVALUATION_MASTER' || item.id === 'AUDIT_TRAIL';
                 }
                 return true;
               }),

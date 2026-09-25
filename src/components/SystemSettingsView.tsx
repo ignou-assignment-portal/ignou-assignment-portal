@@ -16,7 +16,7 @@ import {
   Save,
   CheckCircle2,
   Archive,
-  History,
+  History as HistoryIcon,
   Sparkles,
   CalendarPlus,
   Trash2,
@@ -593,7 +593,7 @@ export const SystemSettingsView: React.FC = () => {
         <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
             <div className="flex items-center gap-2 font-bold text-sm text-zinc-900">
-              <History className="w-4 h-4 text-indigo-600" />
+              <HistoryIcon className="w-4 h-4 text-indigo-600" />
               <span>Audit Trail & Accountability Oversight</span>
             </div>
             <span className="text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
@@ -758,7 +758,7 @@ export const SystemSettingsView: React.FC = () => {
         <div className="space-y-3">
           <div className="flex items-center justify-between text-xs font-bold text-zinc-800">
             <div className="flex items-center gap-1.5">
-              <History className="w-4 h-4 text-indigo-600" />
+              <HistoryIcon className="w-4 h-4 text-indigo-600" />
               <span>Historical Archives Ledger ({archives.length} Snapshots)</span>
             </div>
             <span className="text-[10px] text-zinc-500 font-normal">
@@ -769,7 +769,7 @@ export const SystemSettingsView: React.FC = () => {
           {archives.length === 0 ? (
             <div className="p-8 border-2 border-dashed border-zinc-200 rounded-2xl text-center space-y-2 bg-zinc-50/50">
               <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
-                <History className="w-5 h-5" />
+                <HistoryIcon className="w-5 h-5" />
               </div>
               <div className="text-xs font-bold text-zinc-800">No Session Archives Saved Yet</div>
               <p className="text-[11px] text-zinc-500 max-w-md mx-auto">

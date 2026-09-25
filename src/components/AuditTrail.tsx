@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { AuditLogEntry, AuditActionType, AuditTargetCategory } from '../types';
 import { formatDate, formatDateTime } from '../utils/helpers';
 import {
-  History,
+  History as HistoryIcon,
   ShieldCheck,
   ShieldAlert,
   Search,
@@ -61,7 +61,7 @@ const ACTION_ICONS: Partial<Record<AuditActionType, React.ElementType>> = {
   BILL_GENERATED: FileSpreadsheet,
   BILL_SANCTIONED: ShieldCheck,
   SETTINGS_UPDATED: ShieldCheck,
-  SESSION_ARCHIVED: History,
+  SESSION_ARCHIVED: HistoryIcon,
   SESSION_RESTORED: RefreshCw,
   SHEETS_SYNCED: RefreshCw,
 };
@@ -183,7 +183,7 @@ export const AuditTrail: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-xl bg-indigo-950 text-white flex items-center justify-center font-bold shadow-xs">
-                <History className="w-4 h-4 text-amber-400" />
+                <HistoryIcon className="w-4 h-4 text-amber-400" />
               </div>
               <div>
                 <h1 className="text-lg font-bold text-zinc-900 leading-tight flex items-center gap-2">
@@ -243,7 +243,7 @@ export const AuditTrail: React.FC = () => {
             </div>
             <div className="text-xl font-bold text-zinc-900 mt-1 flex items-center justify-between">
               <span>{stats.total}</span>
-              <History className="w-4 h-4 text-zinc-400" />
+              <HistoryIcon className="w-4 h-4 text-zinc-400" />
             </div>
             <div className="text-[11px] text-zinc-500 mt-0.5">
               Across system lifecycle
@@ -425,7 +425,7 @@ export const AuditTrail: React.FC = () => {
 
         {filteredLogs.length === 0 ? (
           <div className="p-12 text-center text-zinc-500 space-y-2">
-            <History className="w-8 h-8 text-zinc-300 mx-auto" />
+            <HistoryIcon className="w-8 h-8 text-zinc-300 mx-auto" />
             <div className="font-bold text-sm text-zinc-800">No matching audit logs found</div>
             <p className="text-xs text-zinc-500 max-w-sm mx-auto">
               Try adjusting your search query, switching from Current Cycle to All Cycles, or selecting another category.
@@ -446,7 +446,7 @@ export const AuditTrail: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {filteredLogs.map((entry) => {
-                  const Icon = ACTION_ICONS[entry.action] || History;
+                  const Icon = ACTION_ICONS[entry.action] || HistoryIcon;
                   const catConfig = CATEGORY_LABELS[entry.category] || {
                     label: entry.category,
                     color: 'bg-zinc-100 text-zinc-700 border-zinc-200',
