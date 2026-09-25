@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { ThemeSelector } from './ThemeSelector';
 import {
   Lock,
   ShieldAlert,
@@ -56,9 +57,9 @@ export const GatekeeperLockScreen: React.FC<GatekeeperLockScreenProps> = ({ onBa
       </div>
 
       <div className="relative w-full max-w-md">
-        {/* Return to Study Centre Home Page link if requested */}
-        {onBackToHome && (
-          <div className="mb-3 flex items-center justify-between">
+        {/* Top Navigation & Theme Selector */}
+        <div className="mb-3 flex items-center justify-between gap-2">
+          {onBackToHome ? (
             <button
               type="button"
               onClick={onBackToHome}
@@ -68,9 +69,12 @@ export const GatekeeperLockScreen: React.FC<GatekeeperLockScreenProps> = ({ onBa
               <Home className="w-3.5 h-3.5 text-amber-400" />
               <span>Back to Study Centre Home</span>
             </button>
-            <span className="text-[11px] text-zinc-500 font-mono">SC-2033</span>
-          </div>
-        )}
+          ) : (
+            <span className="text-[11px] text-zinc-500 font-mono">SC-2033 Terminal</span>
+          )}
+
+          <ThemeSelector variant="dropdown" />
+        </div>
 
         {/* Institutional Crest Card */}
         <div className="bg-zinc-900/90 border border-zinc-700/80 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden">

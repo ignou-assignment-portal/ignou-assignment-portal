@@ -29,6 +29,7 @@ export type TabType =
   | 'COURSE_LEDGER'
   | 'EVALUATORS'
   | 'REMUNERATION'
+  | 'AUDIT_TRAIL'
   | 'SETTINGS';
 
 interface SidebarProps {
@@ -65,7 +66,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onVie
     if (
       (userRole === 'desk' || isUrlLockedDeskMode) &&
       activeTab !== 'INTAKE_DESK' &&
-      activeTab !== 'EVALUATION_MASTER'
+      activeTab !== 'EVALUATION_MASTER' &&
+      activeTab !== 'AUDIT_TRAIL'
     ) {
       setActiveTab('INTAKE_DESK');
     }
@@ -184,6 +186,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onVie
           roles: ['ADMIN', 'OFFICIAL'],
           badge: evalDirectoryCount > 0 ? `${evalDirectoryCount}` : null,
           badgeColor: 'bg-zinc-200 text-zinc-800 border-zinc-300',
+        },
+        {
+          id: 'AUDIT_TRAIL' as TabType,
+          stageTag: null,
+          label: 'Audit Trail & Logs',
+          fullTitle: 'Audit Trail & Accountability Logs',
+          icon: History,
+          roles: ['ADMIN', 'OFFICIAL'],
+          badge: 'Live',
+          badgeColor: 'bg-emerald-100 text-emerald-900 border-emerald-200',
         },
         {
           id: 'SETTINGS' as TabType,

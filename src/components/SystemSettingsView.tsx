@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { ThemeSelector } from './ThemeSelector';
 import { formatCurrency, formatDate, formatDateTime } from '../utils/helpers';
 import { SessionArchiveRecord } from '../types';
 import {
@@ -54,6 +55,9 @@ export const SystemSettingsView: React.FC = () => {
     restoreArchive,
     downloadArchiveJSON,
     importArchiveJSON,
+    auditLogs,
+    exportAuditLogsCSV,
+    exportAuditLogsJSON,
   } = useApp();
 
   // Helper to suggest next academic cycle
@@ -319,6 +323,11 @@ export const SystemSettingsView: React.FC = () => {
 
       {/* Settings Form */}
       <form onSubmit={handleSave} className="space-y-6">
+        {/* Theme & Visual Appearance Section */}
+        <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs">
+          <ThemeSelector variant="cards" />
+        </div>
+
         {/* Centre Details */}
         <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
           <div className="flex items-center gap-2 pb-3 border-b border-zinc-100 font-bold text-sm text-zinc-900">
@@ -579,6 +588,40 @@ export const SystemSettingsView: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Accountability & Audit Trail Section */}
+        <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+            <div className="flex items-center gap-2 font-bold text-sm text-zinc-900">
+              <History className="w-4 h-4 text-indigo-600" />
+              <span>Audit Trail & Accountability Oversight</span>
+            </div>
+            <span className="text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
+              {auditLogs.length} Events Logged
+            </span>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Real-time forensic logs tracking user logins, student assignment modifications, marks locking, and administrative overrides stored persistently in AppContext state.
+          </p>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={exportAuditLogsCSV}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-800 text-xs font-semibold transition cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Export Audit CSV</span>
+            </button>
+            <button
+              type="button"
+              onClick={exportAuditLogsJSON}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-800 text-xs font-semibold transition cursor-pointer"
+            >
+              <FileText className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Export Audit JSON</span>
+            </button>
+          </div>
+        </div>
 
         {isAdmin && (
           <div className="flex justify-end">

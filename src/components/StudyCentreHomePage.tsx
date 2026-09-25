@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
+import { ThemeSelector } from './ThemeSelector';
 import {
   ShieldAlert,
   Lock,
@@ -309,6 +310,9 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
                 Contact & Location
               </a>
             </nav>
+
+            {/* Theme Selector */}
+            <ThemeSelector variant="dropdown" />
 
             {/* The Dedicated Terminal Security Gatekeeper Button */}
             <button

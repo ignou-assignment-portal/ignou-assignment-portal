@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { ThemeSelector } from './ThemeSelector';
 import {
   ShieldAlert,
   UserCheck,
@@ -170,6 +171,10 @@ export const Header: React.FC<HeaderProps> = ({ onViewHome }) => {
               <span className="hidden lg:inline text-[11px]">{isContentFullWidth ? 'Full Width' : 'Standard'}</span>
             </button>
           </div>
+
+          {/* Theme & Style Selector */}
+          <ThemeSelector variant="dropdown" />
+
           {/* Module E: Global Student Search & Status Lookup Trigger */}
           <button
             id="global-student-search-btn"

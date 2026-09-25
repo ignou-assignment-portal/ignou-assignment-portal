@@ -16,7 +16,10 @@ import {
   IGNOUProgramme,
   IGNOUCourse,
   SessionArchiveRecord,
+  AppTheme,
+  AuditLogEntry,
 } from '../types';
+import { THEMES, THEME_STORAGE_KEY, getInitialTheme, applyThemeToDOM } from '../utils/theme';
 import {
   INITIAL_SETTINGS,
   INITIAL_EVALUATORS,
@@ -27,6 +30,7 @@ import {
   INITIAL_REGISTRATION_RECEIPTS,
   INITIAL_COURSE_EVALUATIONS,
   IGNOU_PROGRAMMES,
+  INITIAL_AUDIT_LOGS,
 } from '../data/ignouMasterData';
 import {
   EXTENDED_IGNOU_PROGRAMMES,
@@ -184,6 +188,12 @@ interface AppContextType {
   setIsContentFullWidth: (val: boolean) => void;
   toggleContentFullWidth: () => void;
 
+  // Theme & Visual Preferences
+  currentTheme: AppTheme;
+  setTheme: (theme: AppTheme) => void;
+  isDark: boolean;
+  toggleDark: () => void;
+
   // Toast Notification System
   toastMessage: string | null;
   toastType: 'success' | 'info' | 'warning' | 'error';
@@ -217,6 +227,13 @@ interface AppContextType {
   restoreArchive: (archiveId: string) => boolean;
   downloadArchiveJSON: (archive: SessionArchiveRecord) => void;
   importArchiveJSON: (archiveData: any) => SessionArchiveRecord;
+
+  // Audit Trail & Accountability Logs
+  auditLogs: AuditLogEntry[];
+  logAuditEvent: (entry: Omit<AuditLogEntry, 'id' | 'timestamp'> & { timestamp?: string }) => void;
+  clearAuditLogs: () => void;
+  exportAuditLogsCSV: () => void;
+  exportAuditLogsJSON: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -238,6 +255,7 @@ const STORAGE_KEYS = {
   CUSTOM_COURSES: 'ignou_sc2033_custom_courses',
   COURSE_TITLES_REGISTRY: 'ignou_sc2033_course_titles_registry',
   ARCHIVES: 'ignou_sc2033_archives',
+  AUDIT_LOGS: 'ignou_sc2033_audit_trail',
 };
 
 export const parseEvaluatorsMaster = (rawList: any[]): Evaluator[] => {
@@ -428,7 +446,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     sessionStorage.removeItem("ignou_sc2033_auth");
     sessionStorage.removeItem("ignou_sc2033_role");
     setIsAuthenticated(false);
-  }, []);
+    logAuditEvent({
+      action: 'USER_LOGOUT',
+      category: 'AUTHENTICATION',
+      actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+      role: currentRole,
+      session: currentSession,
+      summary: 'Staff member signed out and terminal locked',
+      status: 'SUCCESS',
+    });
+  }, [currentRole, settings.coordinatorName, currentSession]);
 
   // Inactivity Auto-Lock Protection (Mobile & Desktop): 30 minutes
   useEffect(() => {
@@ -546,6 +573,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return INITIAL_REGISTRATION_RECEIPTS;
     }
   });
+
+  // Audit Trail & Accountability Logs Database State
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem('ignou_sc2033_audit_trail') || localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return INITIAL_AUDIT_LOGS;
+    } catch {
+      return INITIAL_AUDIT_LOGS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ignou_sc2033_audit_trail', JSON.stringify(auditLogs));
+      localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(auditLogs));
+    } catch (e) {
+      console.warn('Failed to save audit logs to localStorage:', e);
+    }
+  }, [auditLogs]);
 
   // Module B Table: Course Evaluations (Course Ledger)
   const [courseEvaluations, setCourseEvaluations] = useState<CourseEvaluationRecord[]>(() => {
@@ -1150,6 +1200,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
+  // Application Theme & Visual Preferences State
+  const [currentTheme, setCurrentThemeState] = useState<AppTheme>(() => getInitialTheme());
+
+  useEffect(() => {
+    applyThemeToDOM(currentTheme);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, currentTheme);
+    } catch (e) {
+      console.warn('Failed to save theme to localStorage:', e);
+    }
+  }, [currentTheme]);
+
+  const setTheme = useCallback((theme: AppTheme) => {
+    setCurrentThemeState(theme);
+    applyThemeToDOM(theme);
+    const meta = THEMES.find((t) => t.id === theme);
+    showToast(`Theme changed to ${meta?.name || theme}`, 'info');
+  }, [showToast]);
+
+  const isDark = useMemo(() => {
+    const meta = THEMES.find((t) => t.id === currentTheme);
+    return !!meta?.isDark;
+  }, [currentTheme]);
+
+  const toggleDark = useCallback(() => {
+    setCurrentThemeState((prev) => {
+      const next: AppTheme = prev === 'dark' ? 'classic' : 'dark';
+      applyThemeToDOM(next);
+      const meta = THEMES.find((t) => t.id === next);
+      showToast(`Theme changed to ${meta?.name || next}`, 'info');
+      return next;
+    });
+  }, [showToast]);
+
   const openSearchModal = useCallback((initialQuery: string = '') => {
     setSearchInitialQuery(initialQuery);
     setIsSearchModalOpen(true);
@@ -1257,6 +1341,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [courseEvaluations]);
 
+  // Audit Trail Management Helpers
+  const logAuditEvent = useCallback(
+    (entry: Omit<AuditLogEntry, 'id' | 'timestamp'> & { timestamp?: string }) => {
+      const newEntry: AuditLogEntry = {
+        id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        timestamp: entry.timestamp || new Date().toISOString(),
+        action: entry.action,
+        category: entry.category,
+        actor: entry.actor,
+        role: entry.role,
+        session: entry.session || currentSession,
+        targetIdentifier: entry.targetIdentifier,
+        summary: entry.summary,
+        details: entry.details,
+        ipOrDevice: entry.ipOrDevice || 'Station SC-2033',
+        status: entry.status || 'SUCCESS',
+      };
+      setAuditLogs((prev) => [newEntry, ...prev.slice(0, 999)]);
+    },
+    [currentSession]
+  );
+
+  const clearAuditLogs = useCallback(() => {
+    setAuditLogs([]);
+    try {
+      localStorage.removeItem('ignou_sc2033_audit_trail');
+      localStorage.removeItem(STORAGE_KEYS.AUDIT_LOGS);
+    } catch {}
+  }, []);
+
+  const exportAuditLogsCSV = useCallback(() => {
+    const headers = ['ID', 'Timestamp', 'Date', 'Time', 'Category', 'Action', 'Actor', 'Role', 'Cycle', 'TargetIdentifier', 'Summary', 'Status'];
+    const rows = auditLogs.map((log) => [
+      `"${log.id}"`,
+      `"${log.timestamp}"`,
+      `"${new Date(log.timestamp).toLocaleDateString('en-IN')}"`,
+      `"${new Date(log.timestamp).toLocaleTimeString('en-IN')}"`,
+      `"${log.category}"`,
+      `"${log.action}"`,
+      `"${(log.actor || '').replace(/"/g, '""')}"`,
+      `"${log.role}"`,
+      `"${log.session || ''}"`,
+      `"${(log.targetIdentifier || '').replace(/"/g, '""')}"`,
+      `"${(log.summary || '').replace(/"/g, '""')}"`,
+      `"${log.status}"`,
+    ]);
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `IGNOU_SC2033_AuditTrail_${currentSession.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [auditLogs, currentSession]);
+
+  const exportAuditLogsJSON = useCallback(() => {
+    const jsonStr = JSON.stringify(auditLogs, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `IGNOU_SC2033_AuditLogs_${currentSession.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [auditLogs, currentSession]);
+
   // Session Switching
   const setSession = useCallback((newSession: string) => {
     setCurrentSessionState(newSession);
@@ -1332,6 +1487,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setUserRoleState("desk");
       setCurrentRole("OFFICIAL");
       fetchAllDataRef.current(true);
+      logAuditEvent({
+        action: 'USER_LOGIN',
+        category: 'AUTHENTICATION',
+        actor: 'Desk Official',
+        role: 'OFFICIAL',
+        session: currentSession,
+        summary: 'Desk Official successfully authenticated via Terminal PIN',
+        status: 'SUCCESS',
+        details: { authRole: 'desk' },
+      });
       return true;
     }
     if (role === "admin" && entered === currentAdminPin) {
@@ -1341,10 +1506,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setUserRoleState("admin");
       setCurrentRole("ADMIN");
       fetchAllDataRef.current(true);
+      logAuditEvent({
+        action: 'USER_LOGIN',
+        category: 'AUTHENTICATION',
+        actor: `${settings.coordinatorName || 'Coordinator'} (Admin)`,
+        role: 'ADMIN',
+        session: currentSession,
+        summary: `Coordinator (${settings.coordinatorName || 'Administrator'}) authenticated into master terminal`,
+        status: 'SUCCESS',
+        details: { authRole: 'admin' },
+      });
       return true;
     }
+
+    logAuditEvent({
+      action: 'USER_LOGIN',
+      category: 'AUTHENTICATION',
+      actor: role === 'admin' ? 'Unverified Coordinator Attempt' : 'Unverified Desk Attempt',
+      role: role === 'admin' ? 'ADMIN' : 'OFFICIAL',
+      session: currentSession,
+      summary: `Failed security PIN entry for role: ${role}`,
+      status: 'FAILED',
+      details: { attemptedRole: role },
+    });
     return false;
-  }, [securityPins]);
+  }, [securityPins, logAuditEvent, currentSession, settings.coordinatorName]);
 
   // Role switching
   const setRole = useCallback(
@@ -1753,9 +1939,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.warn('Google Sheets ADD_INTAKE notification:', err);
       });
 
+      logAuditEvent({
+        action: 'INTAKE_CREATED',
+        category: 'ASSIGNMENT_INTAKE',
+        actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+        role: currentRole,
+        session: (data as any).session || currentSession,
+        targetIdentifier: `${newRecord.tokenNo} (Enr: ${newRecord.enrollmentNo})`,
+        summary: `Registered assignment intake for candidate ${newRecord.studentName} (Enrollment: ${newRecord.enrollmentNo}, Courses: ${coursesArray.join(', ')})`,
+        details: { tokenNo: newRecord.tokenNo, courses: coursesArray, mode: newRecord.submissionMode },
+        status: 'SUCCESS',
+      });
+
       return newRecord;
     },
-    [currentSession, intakes, courseEvaluations, currentRole, showToast]
+    [currentSession, intakes, courseEvaluations, currentRole, showToast, logAuditEvent, settings.coordinatorName]
   );
 
   const updateIntakeRecord = useCallback((id: string, updates: Partial<IntakeRecord>) => {
@@ -1987,9 +2185,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       // 5. Close modal & Toast: "Intake entry updated & synced"
+      logAuditEvent({
+        action: 'INTAKE_UPDATED',
+        category: 'ASSIGNMENT_INTAKE',
+        actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+        role: currentRole,
+        session: activeSession,
+        targetIdentifier: cleanNewEnr,
+        summary: `Modified intake record for ${cleanName} (Enrollment: ${cleanNewEnr}, Programme: ${cleanProg}, Courses: ${cleanCourses.join(', ')})`,
+        details: { enrollmentNo: cleanNewEnr, courses: cleanCourses, session: activeSession },
+        status: 'SUCCESS',
+      });
+
       showToast('Intake entry updated & synced', 'success');
     },
-    [intakes, courseEvaluations, currentSession, showToast]
+    [intakes, courseEvaluations, currentSession, showToast, logAuditEvent, currentRole, settings.coordinatorName]
   );
 
   const deleteIntakeRecord = useCallback(
@@ -2079,10 +2289,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       // Toast: "Intake receipt and ledger rows deleted"
+      logAuditEvent({
+        action: 'INTAKE_DELETED',
+        category: 'ASSIGNMENT_INTAKE',
+        actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+        role: currentRole,
+        session: targetSession,
+        targetIdentifier: cleanEnr,
+        summary: `Purged intake submission & course ledger entries for student enrollment: ${cleanEnr}`,
+        status: 'WARNING',
+        details: { enrollmentNo: cleanEnr, session: targetSession },
+      });
+
       showToast('Intake receipt and ledger rows deleted', 'success');
       return true;
     },
-    [intakes, courseEvaluations, currentSession, showToast]
+    [intakes, courseEvaluations, currentSession, showToast, logAuditEvent, currentRole, settings.coordinatorName]
   );
 
   const updateIntakeDate = useCallback(
@@ -2207,9 +2429,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return prev;
       });
 
+      logAuditEvent({
+        action: 'INTAKE_DATE_CHANGED',
+        category: 'ASSIGNMENT_INTAKE',
+        actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+        role: currentRole,
+        session: matchingSession || currentSession,
+        targetIdentifier: matchingEnr || idOrToken,
+        summary: `Calibrated submission intake date for record ${matchingEnr || idOrToken} to ${cleanDate}`,
+        details: { target: idOrToken, enrollmentNo: matchingEnr, newDate: cleanDate },
+        status: 'SUCCESS',
+      });
+
       showToast(`Intake & receipt date updated to ${formatDate(cleanDate)}`, 'success');
     },
-    [showToast]
+    [showToast, logAuditEvent, currentRole, settings.coordinatorName, currentSession]
   );
 
   const saveOrUpdateMarksAndLock = useCallback(
@@ -2364,13 +2598,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Also call postUpdateMarks for server proxy fallback
       postUpdateMarks(payload).catch(() => {});
 
+      logAuditEvent({
+        action: isLockAction ? 'MARKS_LOCKED' : 'MARKS_UPDATED',
+        category: 'MARKS_EVALUATION',
+        actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+        role: currentRole,
+        session: row.session || currentSession,
+        targetIdentifier: `${cleanEnrollment} (${cleanCourse})`,
+        summary: isLockAction
+          ? `Verified and locked marks for candidate ${cleanEnrollment} in course ${cleanCourse} at ${payload.marks} (Grade ${payload.grade})`
+          : `Updated marks draft for candidate ${cleanEnrollment} in course ${cleanCourse} to ${payload.marks} (Grade ${payload.grade})`,
+        details: { enrollmentNo: cleanEnrollment, courseCode: cleanCourse, marks: payload.marks, grade: payload.grade, isLocked: isLockAction },
+        status: 'SUCCESS',
+      });
+
       // 3. Show toast notification as requested
       showToast(
         `Marks for ${payload.courseCode} (${payload.marks}/100 - Grade ${payload.grade}) updated & synced to Google Sheets`,
         'success'
       );
     },
-    [currentRole, isUrlLockedDeskMode, settings.coordinatorName, currentSession, showToast]
+    [currentRole, isUrlLockedDeskMode, settings.coordinatorName, currentSession, showToast, logAuditEvent]
   );
 
   const updateMarks = useCallback((intakeId: string, courseCode: string, marksValue: number | null) => {
@@ -3462,6 +3710,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isContentFullWidth,
         setIsContentFullWidth,
         toggleContentFullWidth,
+        // Theme & Visual Preferences
+        currentTheme,
+        setTheme,
+        isDark,
+        toggleDark,
         // Toast Notification System
         toastMessage,
         toastType,
@@ -3486,6 +3739,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         restoreArchive,
         downloadArchiveJSON,
         importArchiveJSON,
+        // Audit Trail & Accountability Logs
+        auditLogs,
+        logAuditEvent,
+        clearAuditLogs,
+        exportAuditLogsCSV,
+        exportAuditLogsJSON,
       }}
     >
       {children}

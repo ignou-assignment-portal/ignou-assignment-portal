@@ -276,3 +276,67 @@ export interface SessionArchiveRecord {
   };
 }
 
+export type AppTheme = 'classic' | 'dark' | 'emerald' | 'indigo' | 'sandstone' | 'monochrome';
+
+export interface ThemeOption {
+  id: AppTheme;
+  name: string;
+  subtitle: string;
+  description: string;
+  isDark?: boolean;
+  colors: {
+    primary: string;
+    accent: string;
+    bg: string;
+    surface: string;
+    border: string;
+    text: string;
+  };
+}
+
+export type AuditActionType =
+  | 'USER_LOGIN'
+  | 'USER_LOGOUT'
+  | 'ROLE_SWITCH'
+  | 'PIN_CHANGED'
+  | 'INTAKE_CREATED'
+  | 'INTAKE_UPDATED'
+  | 'INTAKE_DELETED'
+  | 'INTAKE_DATE_CHANGED'
+  | 'MARKS_UPDATED'
+  | 'MARKS_LOCKED'
+  | 'MARKS_UNLOCKED'
+  | 'EVALUATOR_ALLOTTED'
+  | 'PACKET_CREATED'
+  | 'PACKET_UPDATED'
+  | 'BILL_GENERATED'
+  | 'BILL_SANCTIONED'
+  | 'SETTINGS_UPDATED'
+  | 'SESSION_ARCHIVED'
+  | 'SESSION_RESTORED'
+  | 'SHEETS_SYNCED';
+
+export type AuditTargetCategory =
+  | 'AUTHENTICATION'
+  | 'ASSIGNMENT_INTAKE'
+  | 'MARKS_EVALUATION'
+  | 'PACKETS_DISPATCH'
+  | 'FINANCE_BILLS'
+  | 'SYSTEM_SETTINGS'
+  | 'SESSION_MANAGEMENT';
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string; // ISO string
+  action: AuditActionType;
+  category: AuditTargetCategory;
+  actor: string; // e.g. "Dr. Sant K. Gupta (Coordinator)", "Desk Official (Terminal)"
+  role: 'ADMIN' | 'OFFICIAL' | 'SYSTEM';
+  session: string; // e.g. "July 2026"
+  targetIdentifier?: string; // Enrollment No, Course Code, Packet ID, Token
+  summary: string;
+  details?: Record<string, any>;
+  ipOrDevice?: string;
+  status: 'SUCCESS' | 'WARNING' | 'FAILED';
+}
+

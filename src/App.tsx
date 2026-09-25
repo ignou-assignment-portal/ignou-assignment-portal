@@ -12,6 +12,7 @@ import { RegionalCentreSEDAwardSheet } from './components/RegionalCentreSEDAward
 import { EvaluatorDirectory } from './components/EvaluatorDirectory';
 import { RemunerationBilling } from './components/RemunerationBilling';
 import { SystemSettingsView } from './components/SystemSettingsView';
+import { AuditTrail } from './components/AuditTrail';
 import { ReceiptModal } from './components/ReceiptModal';
 import { RegistrationReceiptModal } from './components/RegistrationReceiptModal';
 import { StudentSearchModal } from './components/StudentSearchModal';
@@ -44,7 +45,7 @@ const DashboardContent: React.FC<DashboardContentProps> = ({ onViewHome }) => {
   // Ensure restricted tabs are redirected in desk mode
   useEffect(() => {
     if (userRole === 'desk' || isUrlLockedDeskMode) {
-      if (activeTab !== 'INTAKE_DESK' && activeTab !== 'EVALUATION_MASTER') {
+      if (activeTab !== 'INTAKE_DESK' && activeTab !== 'EVALUATION_MASTER' && activeTab !== 'AUDIT_TRAIL') {
         setActiveTab('INTAKE_DESK');
       }
     }
@@ -74,6 +75,7 @@ const DashboardContent: React.FC<DashboardContentProps> = ({ onViewHome }) => {
             {activeTab === 'COURSE_LEDGER' && <CourseLedgerView />}
             {activeTab === 'EVALUATORS' && <EvaluatorDirectory />}
             {activeTab === 'REMUNERATION' && (!isUrlLockedDeskMode && isAdmin ? <RemunerationBilling /> : <IntakeDesk />)}
+            {activeTab === 'AUDIT_TRAIL' && <AuditTrail />}
             {activeTab === 'SETTINGS' && (!isUrlLockedDeskMode && isAdmin ? <SystemSettingsView /> : <IntakeDesk />)}
           </main>
 
