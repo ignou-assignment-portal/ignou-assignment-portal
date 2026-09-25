@@ -1753,10 +1753,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         issuedAt?: string;
         submissionDate?: string;
         receiptDate?: string;
+        intakeId?: string;
+        tokenNo?: string;
       }
     ): RegistrationReceipt => {
       const sessionCode = generateSessionCode(data.session);
-      const sessionReceipts = registrationReceipts.filter((r) => r.session === data.session);
+      const sessionReceipts = registrationReceipts.filter((r) => norm(r.session) === norm(data.session));
       const nextSequence = sessionReceipts.length + 1;
       const paddedSeq = String(nextSequence).padStart(4, '0');
       const receiptNumber = `REG-SC2033-${sessionCode}-${paddedSeq}`;
@@ -1768,12 +1770,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ...data,
         id: `reg-receipt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         receiptNumber,
+        intakeId: data.intakeId,
+        tokenNo: data.tokenNo,
         submissionDate: intakeDate,
         receiptDate: intakeDate,
         issuedAt: issuedAtTime,
       };
 
-      setRegistrationReceipts((prev) => [newReceipt, ...prev]);
+      setRegistrationReceipts((prev) => {
+        const next = [newReceipt, ...prev];
+        try {
+          localStorage.setItem(STORAGE_KEYS.REGISTRATION_RECEIPTS, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
       return newReceipt;
     },
     [registrationReceipts]
@@ -1822,13 +1832,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const paddedSeq = String(nextSequence).padStart(4, '0');
       const tokenNo = `SC2033-${sessionCode}-${paddedSeq}`;
 
+      const intakeDate = data.submissionDate ? data.submissionDate.trim() : new Date().toISOString().split('T')[0];
+
       const newRecord: IntakeRecord = {
         ...data,
         id: `intake-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         session: currentSession,
         tokenNo,
+        submissionDate: intakeDate,
+        receiptDate: intakeDate,
+        Submission_Date: intakeDate,
+        Timestamp: `${intakeDate}T10:00:00.000Z`,
+        timestamp: `${intakeDate}T10:00:00.000Z`,
+        createdAt: `${intakeDate}T10:00:00.000Z`,
         marks: data.marks || data.courseCodes.reduce((acc, code) => ({ ...acc, [code]: null }), {}),
-        createdAt: new Date().toISOString(),
       };
 
       setIntakes((prev) => [newRecord, ...prev]);
@@ -1890,7 +1907,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           programmeCode: cleanProgramme,
           courseCode: cleanCourse,
           session: currentSession,
-          submissionDate: data.submissionDate,
+          submissionDate: intakeDate,
+          receiptDate: intakeDate,
+          Submission_Date: intakeDate,
+          receivedDate: intakeDate,
+          intakeDate: intakeDate,
+          Timestamp: `${intakeDate}T10:00:00.000Z`,
           submissionMode: data.submissionMode,
           consignmentNo: data.consignmentNo,
           evaluatorId: null,
@@ -1942,7 +1964,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           courses: coursesArray,
           handledBy: currentRole === 'ADMIN' ? 'Coordinator' : 'Desk Official',
           session: (data as any).session || currentSession,
-          timestamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+          timestamp: `${intakeDate} 10:00:00 AM`,
+          submissionDate: intakeDate,
+          receiptDate: intakeDate,
         },
         unpackedRows
       ).catch((err) => {
@@ -2039,7 +2063,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               programmeCode: cleanProg,
               courseCodes: cleanCourses,
               submissionDate: newSubDate,
-              Timestamp: newSubDate || item.Timestamp,
+              receiptDate: newSubDate,
+              Submission_Date: newSubDate,
+              Timestamp: `${newSubDate}T10:00:00.000Z`,
+              timestamp: `${newSubDate}T10:00:00.000Z`,
+              createdAt: `${newSubDate}T10:00:00.000Z`,
               marks: newMarks,
               status: newStatus,
             };
@@ -2050,6 +2078,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
         try {
           localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(next));
+          localStorage.setItem('ignou_sc2033_intake', JSON.stringify(next));
         } catch {}
         return next;
       });
@@ -2075,6 +2104,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           .filter((e) => cleanCourses.includes(e.courseCode.toUpperCase()))
           .map((e) => {
             const detKey = generateDeterministicSubmissionKey(cleanNewEnr, e.courseCode, activeSession);
+            const resolvedDate = data.submissionDate ? data.submissionDate.trim() : e.submissionDate;
             return {
               ...e,
               Sub_ID: detKey,
@@ -2089,13 +2119,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               studentPhone: cleanContact,
               programmeCode: cleanProg,
               submissionKey: detKey,
-              submissionDate: data.submissionDate ? data.submissionDate.trim() : e.submissionDate,
+              submissionDate: resolvedDate,
+              receiptDate: resolvedDate,
+              Submission_Date: resolvedDate,
+              receivedDate: resolvedDate,
+              intakeDate: resolvedDate,
               updatedAt: new Date().toISOString(),
             };
           });
 
         // Create new unpacked rows for newly added courses
         const addedCodes = cleanCourses.filter((c) => !existingCodes.includes(c));
+        const resolvedDate = data.submissionDate ? data.submissionDate.trim() : (targetIntake?.submissionDate || new Date().toISOString().split('T')[0]);
         const newUnpackedRows: CourseEvaluationRecord[] = addedCodes.map((c) => {
           const detKey = generateDeterministicSubmissionKey(cleanNewEnr, c, activeSession);
           return {
@@ -2122,7 +2157,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             programmeCode: cleanProg,
             courseCode: c,
             courseTitle: `${cleanProg} Course ${c}`,
-            submissionDate: data.submissionDate ? data.submissionDate.trim() : (targetIntake?.submissionDate || new Date().toISOString().split('T')[0]),
+            submissionDate: resolvedDate,
+            receiptDate: resolvedDate,
+            Submission_Date: resolvedDate,
+            receivedDate: resolvedDate,
+            intakeDate: resolvedDate,
             submissionMode: targetIntake?.submissionMode || 'In-Person (Desk)',
             consignmentNo: targetIntake?.consignmentNo || null,
             evaluatorId: null,
@@ -2145,6 +2184,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const combined = [...otherEvals, ...updatedExisting, ...newUnpackedRows];
         try {
           localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(combined));
+          localStorage.setItem('ignou_sc2033_ledger', JSON.stringify(combined));
         } catch {}
         return combined;
       });
@@ -2152,7 +2192,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // 3. Keep registration receipts in sync
       setRegistrationReceipts((prev) => {
         const next = prev.map((rcpt) => {
-          if (rcpt.studentId.trim() === cleanOrigEnr && rcpt.session.trim().toLowerCase() === activeSession.trim().toLowerCase()) {
+          const isMatch =
+            rcpt.id === data.id ||
+            (rcpt as any).intakeId === data.id ||
+            (rcpt.studentId.trim() === cleanOrigEnr && norm(rcpt.session) === norm(activeSession)) ||
+            (rcpt.studentId.trim() === cleanNewEnr && norm(rcpt.session) === norm(activeSession)) ||
+            (targetIntake?.tokenNo && (rcpt as any).tokenNo === targetIntake.tokenNo) ||
+            (targetIntake?.tokenNo && rcpt.receiptNumber === targetIntake.tokenNo);
+
+          if (isMatch) {
+            const resolvedDate = data.submissionDate ? data.submissionDate.trim() : rcpt.submissionDate;
             return {
               ...rcpt,
               studentId: cleanNewEnr,
@@ -2160,9 +2209,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               studentPhone: cleanContact,
               programmeCode: cleanProg,
               registeredCourses: cleanCourses,
-              submissionDate: data.submissionDate ? data.submissionDate.trim() : rcpt.submissionDate,
-              receiptDate: data.submissionDate ? data.submissionDate.trim() : rcpt.receiptDate,
-              issuedAt: data.submissionDate ? `${data.submissionDate.trim()}T${new Date().toTimeString().split(' ')[0]}` : rcpt.issuedAt,
+              submissionDate: resolvedDate,
+              receiptDate: resolvedDate,
+              Submission_Date: resolvedDate,
+              issuedAt: resolvedDate ? `${resolvedDate}T${new Date().toTimeString().split(' ')[0]}` : rcpt.issuedAt,
             };
           }
           return rcpt;
@@ -2173,15 +2223,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return next;
       });
 
+      // 4. Keep assignment submissions in sync
+      setAssignmentSubmissions((prev) => {
+        const next = prev.map((sub) => {
+          if (
+            sub.studentId.trim() === cleanOrigEnr &&
+            (!activeSession || norm(sub.session) === norm(activeSession))
+          ) {
+            return {
+              ...sub,
+              studentId: cleanNewEnr,
+              studentName: cleanName,
+              programmeCode: cleanProg,
+              submissionDate: data.submissionDate ? data.submissionDate.trim() : sub.submissionDate,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return sub;
+        });
+        try {
+          localStorage.setItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
       // Keep open receipt modals in sync
       if (updatedIntakeRecord) {
-        setSelectedReceiptRecord((prev) => (prev && prev.id === data.id ? { ...prev, ...updatedIntakeRecord } : prev));
+        setSelectedReceiptRecord((prev) => (prev && (prev.id === data.id || prev.enrollmentNo === cleanOrigEnr) ? { ...prev, ...updatedIntakeRecord } : prev));
       }
+      setSelectedRegistrationReceipt((prev) => {
+        if (!prev) return null;
+        if (
+          prev.id === data.id ||
+          (prev as any).intakeId === data.id ||
+          prev.studentId.trim() === cleanOrigEnr ||
+          prev.studentId.trim() === cleanNewEnr
+        ) {
+          const resolvedDate = data.submissionDate ? data.submissionDate.trim() : prev.submissionDate;
+          return {
+            ...prev,
+            studentId: cleanNewEnr,
+            studentName: cleanName,
+            studentPhone: cleanContact,
+            programmeCode: cleanProg,
+            registeredCourses: cleanCourses,
+            submissionDate: resolvedDate,
+            receiptDate: resolvedDate,
+            Submission_Date: resolvedDate,
+            issuedAt: resolvedDate ? `${resolvedDate}T${new Date().toTimeString().split(' ')[0]}` : prev.issuedAt,
+          };
+        }
+        return prev;
+      });
 
-      // 4. Dispatch POST to Google Apps Script:
+      // 5. Dispatch POST to Google Apps Script:
       // action: "EDIT_INTAKE",
-      // payload: { originalEnrollmentNo, enrollmentNo, candidateName, contact, programme, courses, session: activeSession }
-      // using mode: 'no-cors'.
       postEditIntake({
         originalEnrollmentNo: cleanOrigEnr,
         enrollmentNo: cleanNewEnr,
@@ -2190,6 +2286,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         programme: cleanProg,
         courses: cleanCourses,
         session: activeSession,
+        submissionDate: data.submissionDate ? data.submissionDate.trim() : (targetIntake?.submissionDate || ''),
       }).catch((err) => {
         console.warn('Google Sheets EDIT_INTAKE notification warning:', err);
       });
@@ -2321,62 +2418,174 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     (idOrToken: string, newDate: string) => {
       if (!idOrToken || !newDate) return;
       const cleanDate = newDate.trim();
-      let matchingSession = '';
-      let matchingEnr = '';
+      const cleanTarget = idOrToken.trim();
 
-      // 1. Update intakes
+      // Collect all matching identifiers across all sources
+      const matchingEnrs = new Set<string>();
+      const matchingIds = new Set<string>([cleanTarget]);
+      const matchingTokens = new Set<string>([cleanTarget]);
+      let targetSession = currentSession;
+
+      if (/^\d{7,12}$/.test(cleanTarget)) {
+        matchingEnrs.add(cleanTarget);
+      }
+
+      // Check current state in intakes
+      const targetIntake = intakes.find(
+        (i) => i.id === cleanTarget || i.tokenNo === cleanTarget || (i as any).receiptNumber === cleanTarget || i.enrollmentNo === cleanTarget
+      );
+      if (targetIntake) {
+        matchingIds.add(targetIntake.id);
+        matchingTokens.add(targetIntake.tokenNo);
+        if ((targetIntake as any).receiptNumber) matchingTokens.add((targetIntake as any).receiptNumber);
+        if (targetIntake.enrollmentNo) matchingEnrs.add(targetIntake.enrollmentNo.trim());
+        if (targetIntake.session) targetSession = targetIntake.session;
+      }
+
+      // Check registration receipts
+      const targetReceipt = registrationReceipts.find(
+        (r) => r.id === cleanTarget || r.receiptNumber === cleanTarget || (r as any).tokenNo === cleanTarget || r.studentId === cleanTarget || (r as any).intakeId === cleanTarget
+      );
+      if (targetReceipt) {
+        matchingIds.add(targetReceipt.id);
+        if ((targetReceipt as any).intakeId) matchingIds.add((targetReceipt as any).intakeId);
+        matchingTokens.add(targetReceipt.receiptNumber);
+        if ((targetReceipt as any).tokenNo) matchingTokens.add((targetReceipt as any).tokenNo);
+        if (targetReceipt.studentId) matchingEnrs.add(targetReceipt.studentId.trim());
+        if (targetReceipt.session) targetSession = targetReceipt.session;
+      }
+
+      // Check course evaluations
+      const targetEval = courseEvaluations.find(
+        (ce) => ce.id === cleanTarget || ce.submissionKey === cleanTarget || ce.tokenNo === cleanTarget || ce.intakeId === cleanTarget || ce.enrollmentNo === cleanTarget
+      );
+      if (targetEval) {
+        if (targetEval.intakeId) matchingIds.add(targetEval.intakeId);
+        matchingTokens.add(targetEval.tokenNo);
+        if (targetEval.enrollmentNo) matchingEnrs.add(targetEval.enrollmentNo.trim());
+        if (targetEval.session) targetSession = targetEval.session;
+      }
+
+      // Also check active receipt modal states
+      if (selectedReceiptRecord) {
+        if (
+          matchingIds.has(selectedReceiptRecord.id) ||
+          matchingTokens.has(selectedReceiptRecord.tokenNo) ||
+          matchingEnrs.has(selectedReceiptRecord.enrollmentNo.trim())
+        ) {
+          matchingIds.add(selectedReceiptRecord.id);
+          matchingTokens.add(selectedReceiptRecord.tokenNo);
+          matchingEnrs.add(selectedReceiptRecord.enrollmentNo.trim());
+          if (selectedReceiptRecord.session) targetSession = selectedReceiptRecord.session;
+        }
+      }
+
+      if (selectedRegistrationReceipt) {
+        if (
+          matchingIds.has(selectedRegistrationReceipt.id) ||
+          matchingTokens.has(selectedRegistrationReceipt.receiptNumber) ||
+          matchingEnrs.has(selectedRegistrationReceipt.studentId.trim())
+        ) {
+          matchingIds.add(selectedRegistrationReceipt.id);
+          matchingTokens.add(selectedRegistrationReceipt.receiptNumber);
+          matchingEnrs.add(selectedRegistrationReceipt.studentId.trim());
+          if (selectedRegistrationReceipt.session) targetSession = selectedRegistrationReceipt.session;
+        }
+      }
+
+      const isSessionMatch = (itemSession: string | undefined) => {
+        if (!itemSession || !targetSession) return true;
+        return norm(itemSession) === norm(targetSession);
+      };
+
+      // 1. Update intakes state & localStorage
       setIntakes((prev) => {
+        // Enrich matching identifiers from prev
+        prev.forEach((i) => {
+          if (
+            matchingIds.has(i.id) ||
+            matchingTokens.has(i.tokenNo) ||
+            (matchingEnrs.size > 0 && matchingEnrs.has(i.enrollmentNo.trim()))
+          ) {
+            matchingIds.add(i.id);
+            matchingTokens.add(i.tokenNo);
+            if (i.enrollmentNo) matchingEnrs.add(i.enrollmentNo.trim());
+          }
+        });
+
         const next = prev.map((item) => {
-          if (item.id === idOrToken || item.tokenNo === idOrToken) {
-            matchingSession = item.session;
-            matchingEnr = item.enrollmentNo;
+          const isMatch =
+            matchingIds.has(item.id) ||
+            matchingTokens.has(item.tokenNo) ||
+            ((item as any).receiptNumber && matchingTokens.has((item as any).receiptNumber)) ||
+            (matchingEnrs.size > 0 && matchingEnrs.has(item.enrollmentNo.trim()) && isSessionMatch(item.session));
+
+          if (isMatch) {
             return {
               ...item,
               submissionDate: cleanDate,
-              Timestamp: cleanDate,
+              receiptDate: cleanDate,
+              Submission_Date: cleanDate,
+              Timestamp: `${cleanDate}T10:00:00.000Z`,
+              timestamp: `${cleanDate}T10:00:00.000Z`,
+              createdAt: `${cleanDate}T10:00:00.000Z`,
             };
           }
           return item;
         });
         try {
           localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(next));
+          localStorage.setItem('ignou_sc2033_intake', JSON.stringify(next));
         } catch {}
         return next;
       });
 
-      // 2. Update course evaluations
+      // 2. Update course evaluations state & localStorage
       setCourseEvaluations((prev) => {
         const next = prev.map((ce) => {
-          if (
-            ce.intakeId === idOrToken ||
-            ce.tokenNo === idOrToken ||
-            (matchingEnr && ce.enrollmentNo === matchingEnr && ce.session === matchingSession)
-          ) {
+          const isMatch =
+            (ce.intakeId && matchingIds.has(ce.intakeId)) ||
+            matchingTokens.has(ce.tokenNo) ||
+            matchingIds.has(ce.id) ||
+            matchingIds.has(ce.submissionKey) ||
+            (matchingEnrs.size > 0 && matchingEnrs.has(ce.enrollmentNo.trim()) && isSessionMatch(ce.session));
+
+          if (isMatch) {
             return {
               ...ce,
               submissionDate: cleanDate,
+              receiptDate: cleanDate,
+              Submission_Date: cleanDate,
+              receivedDate: cleanDate,
+              intakeDate: cleanDate,
+              updatedAt: new Date().toISOString(),
             };
           }
           return ce;
         });
         try {
           localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(next));
+          localStorage.setItem('ignou_sc2033_ledger', JSON.stringify(next));
         } catch {}
         return next;
       });
 
-      // 3. Update registration receipts
+      // 3. Update registration receipts state & localStorage
       setRegistrationReceipts((prev) => {
         const next = prev.map((rcpt) => {
-          if (
-            rcpt.id === idOrToken ||
-            rcpt.receiptNumber === idOrToken ||
-            (matchingEnr && rcpt.studentId === matchingEnr && rcpt.session === matchingSession)
-          ) {
+          const isMatch =
+            matchingIds.has(rcpt.id) ||
+            ((rcpt as any).intakeId && matchingIds.has((rcpt as any).intakeId)) ||
+            matchingTokens.has(rcpt.receiptNumber) ||
+            ((rcpt as any).tokenNo && matchingTokens.has((rcpt as any).tokenNo)) ||
+            (matchingEnrs.size > 0 && matchingEnrs.has(rcpt.studentId.trim()) && isSessionMatch(rcpt.session));
+
+          if (isMatch) {
             return {
               ...rcpt,
               submissionDate: cleanDate,
               receiptDate: cleanDate,
+              Submission_Date: cleanDate,
               issuedAt: `${cleanDate}T${new Date().toTimeString().split(' ')[0]}`,
             };
           }
@@ -2388,17 +2597,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return next;
       });
 
-      // 4. Update assignment submissions tracker
+      // 4. Update assignment submissions tracker state & localStorage
       setAssignmentSubmissions((prev) => {
         const next = prev.map((sub) => {
           if (
-            matchingEnr &&
-            sub.studentId === matchingEnr &&
-            (!matchingSession || sub.session === matchingSession)
+            matchingEnrs.size > 0 &&
+            matchingEnrs.has(sub.studentId.trim()) &&
+            isSessionMatch(sub.session)
           ) {
             return {
               ...sub,
               submissionDate: cleanDate,
+              updatedAt: new Date().toISOString(),
             };
           }
           return sub;
@@ -2412,11 +2622,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // 5. Update active receipt modal state if open
       setSelectedReceiptRecord((prev) => {
         if (!prev) return null;
-        if (prev.id === idOrToken || prev.tokenNo === idOrToken) {
+        const isMatch =
+          matchingIds.has(prev.id) ||
+          matchingTokens.has(prev.tokenNo) ||
+          (matchingEnrs.size > 0 && matchingEnrs.has(prev.enrollmentNo.trim()));
+        if (isMatch) {
           return {
             ...prev,
             submissionDate: cleanDate,
-            Timestamp: cleanDate,
+            receiptDate: cleanDate,
+            Submission_Date: cleanDate,
+            Timestamp: `${cleanDate}T10:00:00.000Z`,
+            createdAt: `${cleanDate}T10:00:00.000Z`,
           };
         }
         return prev;
@@ -2424,36 +2641,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setSelectedRegistrationReceipt((prev) => {
         if (!prev) return null;
-        if (
-          prev.id === idOrToken ||
-          prev.receiptNumber === idOrToken ||
-          (matchingEnr && prev.studentId === matchingEnr)
-        ) {
+        const isMatch =
+          matchingIds.has(prev.id) ||
+          ((prev as any).intakeId && matchingIds.has((prev as any).intakeId)) ||
+          matchingTokens.has(prev.receiptNumber) ||
+          ((prev as any).tokenNo && matchingTokens.has((prev as any).tokenNo)) ||
+          (matchingEnrs.size > 0 && matchingEnrs.has(prev.studentId.trim()));
+        if (isMatch) {
           return {
             ...prev,
             submissionDate: cleanDate,
             receiptDate: cleanDate,
+            Submission_Date: cleanDate,
             issuedAt: `${cleanDate}T${new Date().toTimeString().split(' ')[0]}`,
           };
         }
         return prev;
       });
 
+      // 6. Writeback to Google Sheets
+      const primaryEnr = Array.from(matchingEnrs)[0];
+      if (primaryEnr) {
+        const curIntake = targetIntake || intakes.find((i) => i.enrollmentNo.trim() === primaryEnr);
+        if (curIntake) {
+          postEditIntake({
+            originalEnrollmentNo: primaryEnr,
+            enrollmentNo: primaryEnr,
+            candidateName: curIntake.studentName,
+            contact: curIntake.studentPhone || '',
+            programme: curIntake.programmeCode,
+            courses: curIntake.courseCodes,
+            session: curIntake.session || targetSession,
+            submissionDate: cleanDate,
+          }).catch((err) => console.warn('Google Sheets update date sync warning:', err));
+        }
+      }
+
       logAuditEvent({
         action: 'INTAKE_DATE_CHANGED',
         category: 'ASSIGNMENT_INTAKE',
         actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
         role: currentRole,
-        session: matchingSession || currentSession,
-        targetIdentifier: matchingEnr || idOrToken,
-        summary: `Calibrated submission intake date for record ${matchingEnr || idOrToken} to ${cleanDate}`,
-        details: { target: idOrToken, enrollmentNo: matchingEnr, newDate: cleanDate },
+        session: targetSession || currentSession,
+        targetIdentifier: Array.from(matchingTokens)[0] || primaryEnr || cleanTarget,
+        summary: `Updated intake receipt date to ${formatDate(cleanDate)} for candidate ${primaryEnr || cleanTarget}`,
+        details: { target: cleanTarget, enrollmentNo: primaryEnr, newDate: cleanDate },
         status: 'SUCCESS',
       });
 
-      showToast(`Intake & receipt date updated to ${formatDate(cleanDate)}`, 'success');
+      showToast(`Receipt date updated to ${formatDate(cleanDate)} across all registers and evaluation trackers`, 'success');
     },
-    [showToast, logAuditEvent, currentRole, settings.coordinatorName, currentSession]
+    [intakes, registrationReceipts, courseEvaluations, selectedReceiptRecord, selectedRegistrationReceipt, showToast, logAuditEvent, currentRole, settings.coordinatorName, currentSession]
   );
 
   const saveOrUpdateMarksAndLock = useCallback(

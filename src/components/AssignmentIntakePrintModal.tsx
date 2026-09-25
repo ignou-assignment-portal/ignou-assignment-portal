@@ -564,9 +564,9 @@ export const AssignmentIntakePrintModal: React.FC<AssignmentIntakePrintModalProp
           {/* Statutory Formal Sign-Off Footer */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 text-xs border-t border-zinc-300">
             {/* Column 1: Intake Desk Official */}
-            <div className="border border-zinc-300 rounded-xl p-3.5 flex flex-col justify-between space-y-6 bg-zinc-50/50">
+            <div className="p-3.5 flex flex-col justify-between space-y-6 bg-white border-0 border-none shadow-none print:border-none print:shadow-none">
               <div>
-                <div className="text-[10px] font-bold uppercase text-zinc-500">
+                <div className="text-[10px] font-bold uppercase text-zinc-700 tracking-wider">
                   1. Assignment Intake Desk In-Charge
                 </div>
                 <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed">
@@ -580,10 +580,10 @@ export const AssignmentIntakePrintModal: React.FC<AssignmentIntakePrintModalProp
               </div>
             </div>
 
-            {/* Column 2: Study Centre Coordinator Attestation & Seal */}
-            <div className="border border-zinc-800 rounded-xl p-3.5 flex flex-col justify-between space-y-6 bg-white shadow-xs">
+            {/* Column 2: Study Centre Coordinator Attestation & Seal (Clean open block, no enclosing border box) */}
+            <div className="p-3.5 flex flex-col justify-between space-y-6 bg-white border-0 border-none shadow-none print:border-none print:shadow-none">
               <div>
-                <div className="text-[10px] font-bold uppercase text-indigo-950">
+                <div className="text-[10px] font-bold uppercase text-zinc-900 tracking-wider">
                   2. Coordinator Attestation & Seal
                 </div>
                 <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed">
@@ -603,10 +603,10 @@ export const AssignmentIntakePrintModal: React.FC<AssignmentIntakePrintModalProp
               </div>
             </div>
 
-            {/* Column 3: Regional Centre Kohima Receipt Acknowledgment */}
-            <div className="border border-zinc-300 rounded-xl p-3.5 flex flex-col justify-between space-y-6 bg-zinc-50/50">
+            {/* Column 3: Regional Centre Kohima Receipt Acknowledgment Slip */}
+            <div className="border border-zinc-400 rounded-xl p-3.5 flex flex-col justify-between space-y-6 bg-zinc-50/50">
               <div>
-                <div className="text-[10px] font-bold uppercase text-zinc-500">
+                <div className="text-[10px] font-bold uppercase text-zinc-700 tracking-wider">
                   3. Regional Centre Kohima Acknowledgment
                 </div>
                 <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed">

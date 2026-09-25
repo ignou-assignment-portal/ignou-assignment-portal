@@ -268,6 +268,8 @@ export async function postEditIntake(payloadData: {
   programme: string;
   courses: string[];
   session: string;
+  submissionDate?: string;
+  receiptDate?: string;
 }): Promise<ApiResponse> {
   const payload = {
     action: "EDIT_INTAKE",
@@ -279,6 +281,8 @@ export async function postEditIntake(payloadData: {
       programme: String(payloadData.programme || '').trim().toUpperCase(),
       courses: payloadData.courses || [],
       session: payloadData.session || 'July 2026',
+      submissionDate: payloadData.submissionDate || '',
+      receiptDate: payloadData.receiptDate || payloadData.submissionDate || '',
     },
     // Top-level aliases for flexible Apps Script handlers
     originalEnrollmentNo: String(payloadData.originalEnrollmentNo || '').trim(),
@@ -288,6 +292,8 @@ export async function postEditIntake(payloadData: {
     programme: String(payloadData.programme || '').trim().toUpperCase(),
     courses: payloadData.courses || [],
     session: payloadData.session || 'July 2026',
+    submissionDate: payloadData.submissionDate || '',
+    receiptDate: payloadData.receiptDate || payloadData.submissionDate || '',
   };
 
   sendScriptPost(payload).catch((err) => console.warn('[postEditIntake error]:', err));

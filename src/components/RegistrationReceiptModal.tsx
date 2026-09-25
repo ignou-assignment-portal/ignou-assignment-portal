@@ -237,13 +237,20 @@ export const RegistrationReceiptModal: React.FC = () => {
               <span>Counter Desk Verification Record</span>
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 print:gap-1 text-xs print:text-[8.5px] bg-white p-2 print:p-1 rounded border border-zinc-200">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 print:gap-1 text-xs print:text-[8.5px] bg-white p-2 print:p-1 rounded border border-zinc-200">
               <div>
                 <span className="text-zinc-500 text-[9px] print:text-[7px] uppercase font-bold block">Intake Desk Official</span>
                 <span className="font-semibold text-zinc-900">
                   {selectedRegistrationReceipt.issuedBy}
                 </span>
                 <span className="text-[9px] print:text-[7px] text-zinc-500 block">SC-{settings.centreCode} Desk</span>
+              </div>
+              <div>
+                <span className="text-zinc-500 text-[9px] print:text-[7px] uppercase font-bold block">Receipt / Intake Date</span>
+                <span className="font-bold text-zinc-900 font-mono">
+                  {formatDate(currentReceiptDate || receiptDateVal)}
+                </span>
+                <span className="text-[9px] print:text-[7px] text-emerald-700 font-bold block">Verified in Primary Register</span>
               </div>
               <div>
                 <span className="text-zinc-500 text-[9px] print:text-[7px] uppercase font-bold block">Financial Nature</span>
@@ -254,7 +261,7 @@ export const RegistrationReceiptModal: React.FC = () => {
               </div>
               <div>
                 <span className="text-zinc-500 text-[9px] print:text-[7px] uppercase font-bold block">Desk Remarks / Notes</span>
-                <span className="text-zinc-700 italic">
+                <span className="text-zinc-700 italic truncate block">
                   {selectedRegistrationReceipt.remarks || 'Physical handwritten assignment scripts verified and stamped.'}
                 </span>
               </div>
@@ -290,11 +297,13 @@ export const RegistrationReceiptModal: React.FC = () => {
             </div>
 
             <div className="text-center relative">
-              {/* Study Centre Official Stamp without Dr. Sant Kumar Gupta */}
+              {/* Study Centre Official Stamp without personal name */}
               <div className="inline-block border-2 border-indigo-900 text-indigo-900 rounded px-2.5 py-0.5 text-[8px] print:text-[7px] font-black uppercase tracking-wider rotate-[-2deg] bg-indigo-50/60 leading-tight mb-1">
-                VERIFIED & RECEIVED
-                <br />
                 IGNOU STUDY CENTRE {settings.centreCode}
+                <br />
+                <span className="text-[7.5px] print:text-[6.5px] font-bold text-indigo-800">VERIFIED & RECEIVED</span>
+                <br />
+                <span className="text-[6.5px] print:text-[5.5px] text-indigo-700 font-mono">Date: {formatDate(currentReceiptDate || receiptDateVal)}</span>
               </div>
               <div className="w-3/4 mx-auto border-t border-zinc-900 pt-0.5 text-zinc-900 font-bold text-[10px] print:text-[8.5px]">
                 Coordinator / Authorised Official

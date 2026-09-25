@@ -33,6 +33,11 @@ export interface IntakeRecord {
   programmeCode: string;
   courseCodes: string[];
   submissionDate: string; // YYYY-MM-DD
+  receiptDate?: string;
+  Submission_Date?: string;
+  receiptNumber?: string;
+  Timestamp?: string;
+  timestamp?: string;
   submissionMode: SubmissionMode;
   consignmentNo?: string; // For postal/speedpost
   remarks?: string;
@@ -178,6 +183,8 @@ export interface RegistrationReceiptFees {
 export interface RegistrationReceipt {
   id: string;
   receiptNumber: string; // e.g. 'REG-SC2033-JUL26-0001'
+  intakeId?: string; // Linked Intake Token / Id
+  tokenNo?: string; // Intake Token e.g., SC2033-JUL26-0001
   studentId: string; // Enrollment No / Student ID
   studentName: string;
   studentPhone?: string;

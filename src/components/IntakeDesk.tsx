@@ -590,7 +590,9 @@ export const IntakeDesk: React.FC = () => {
       });
 
       // 3. Store official receipt record in mock table RegistrationReceipts (Non-Financial)
-      addRegistrationReceipt({
+      const newReceipt = addRegistrationReceipt({
+        intakeId: newRecord.id,
+        tokenNo: newRecord.tokenNo,
         studentId: cleanEnrollment,
         studentName: studentName.trim(),
         studentPhone: cleanPhone,
@@ -604,6 +606,8 @@ export const IntakeDesk: React.FC = () => {
         receiptDate: submissionDate,
         issuedAt: `${submissionDate}T${new Date().toTimeString().split(' ')[0]}`,
       });
+
+      (newRecord as any).receiptNumber = newReceipt.receiptNumber;
 
       // 4. Ensure programme and all submitted courses are stored in quick suggestions
       const progClean = selectedProgramme.trim().toUpperCase();
