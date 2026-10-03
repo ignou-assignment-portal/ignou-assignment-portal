@@ -246,6 +246,26 @@ export async function postAddIntake(
   // Dispatch once to SCRIPT_URL with no-cors to prevent duplicate recordings in Intake_Register
   await sendScriptPost(payload);
 
+  // Sync with Express backend data store
+  try {
+    fetch('/api/intake/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enrollmentNo: cleanEnrollment,
+        studentName: candidateName,
+        studentPhone: contact,
+        programmeCode: programme,
+        courseCodes: coursesArray,
+        session: activeSession,
+        submissionDate: intakeRecord.submissionDate || intakeRecord.Submission_Date,
+        submissionMode: intakeRecord.submissionMode,
+        consignmentNo: intakeRecord.consignmentNo,
+        remarks: intakeRecord.remarks,
+      }),
+    }).catch(() => {});
+  } catch {}
+
   return {
     status: 'success',
     action: 'ADD_INTAKE',
@@ -255,12 +275,12 @@ export async function postAddIntake(
 
 /**
  * Edit Intake Receipt (Stage 1: Intake & Desk Submissions):
- * Dispatch POST to Google Apps Script:
+ * Dispatch POST to Google Apps Script and backend /api/intake/update:
  * action: "EDIT_INTAKE",
- * payload: { originalEnrollmentNo, enrollmentNo, candidateName, contact, programme, courses, session: activeSession }
- * using mode: 'no-cors'.
+ * payload: { id, originalEnrollmentNo, enrollmentNo, candidateName, contact, programme, courses, session: activeSession }
  */
 export async function postEditIntake(payloadData: {
+  id?: string;
   originalEnrollmentNo: string;
   enrollmentNo: string;
   candidateName: string;
@@ -274,6 +294,7 @@ export async function postEditIntake(payloadData: {
   const payload = {
     action: "EDIT_INTAKE",
     payload: {
+      id: payloadData.id,
       originalEnrollmentNo: String(payloadData.originalEnrollmentNo || '').trim(),
       enrollmentNo: String(payloadData.enrollmentNo || '').trim(),
       candidateName: String(payloadData.candidateName || '').trim(),
@@ -285,6 +306,7 @@ export async function postEditIntake(payloadData: {
       receiptDate: payloadData.receiptDate || payloadData.submissionDate || '',
     },
     // Top-level aliases for flexible Apps Script handlers
+    id: payloadData.id,
     originalEnrollmentNo: String(payloadData.originalEnrollmentNo || '').trim(),
     enrollmentNo: String(payloadData.enrollmentNo || '').trim(),
     candidateName: String(payloadData.candidateName || '').trim(),
@@ -298,6 +320,25 @@ export async function postEditIntake(payloadData: {
 
   sendScriptPost(payload).catch((err) => console.warn('[postEditIntake error]:', err));
 
+  // Sync with Express backend data store
+  try {
+    fetch('/api/intake/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: payloadData.id,
+        originalEnrollmentNo: payloadData.originalEnrollmentNo,
+        enrollmentNo: payloadData.enrollmentNo,
+        studentName: payloadData.candidateName,
+        studentPhone: payloadData.contact,
+        programmeCode: payloadData.programme,
+        courseCodes: payloadData.courses,
+        session: payloadData.session,
+        submissionDate: payloadData.submissionDate,
+      }),
+    }).catch(() => {});
+  } catch {}
+
   return {
     status: 'success',
     action: 'EDIT_INTAKE',
@@ -307,26 +348,39 @@ export async function postEditIntake(payloadData: {
 
 /**
  * Delete Intake Receipt (Stage 1: Intake & Desk Submissions):
- * Dispatch POST to Google Apps Script:
+ * Dispatch POST to Google Apps Script and backend /api/intake/delete:
  * action: "DELETE_INTAKE",
- * payload: { enrollmentNo, session: activeSession }
- * using mode: 'no-cors'.
+ * payload: { id, enrollmentNo, session: activeSession }
  */
 export async function postDeleteIntake(payloadData: {
+  id?: string;
   enrollmentNo: string;
   session: string;
 }): Promise<ApiResponse> {
   const payload = {
     action: "DELETE_INTAKE",
     payload: {
+      id: payloadData.id,
       enrollmentNo: String(payloadData.enrollmentNo || '').trim(),
       session: payloadData.session || 'July 2026',
     },
+    id: payloadData.id,
     enrollmentNo: String(payloadData.enrollmentNo || '').trim(),
     session: payloadData.session || 'July 2026',
   };
 
   sendScriptPost(payload).catch((err) => console.warn('[postDeleteIntake error]:', err));
+
+  // Sync with Express backend data store
+  if (payloadData.id) {
+    try {
+      fetch('/api/intake/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: payloadData.id }),
+      }).catch(() => {});
+    } catch {}
+  }
 
   return {
     status: 'success',

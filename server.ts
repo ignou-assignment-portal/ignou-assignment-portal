@@ -1,10 +1,37 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { resolveCourse, resolveProgramme } from "./src/services/ignouLookupServer";
+import {
+  validateIntakeRecord,
+  applyCascadingUpdate,
+  applyCascadingDeletion,
+} from "./src/services/intakeValidationEngine";
 
 const app = express();
 const PORT = 3000;
+
+const STORE_PATH = path.join(process.cwd(), "data", "sheets_store.json");
+
+function loadStore() {
+  try {
+    if (fs.existsSync(STORE_PATH)) {
+      return JSON.parse(fs.readFileSync(STORE_PATH, "utf-8"));
+    }
+  } catch (e) {
+    console.error("Error reading sheets_store.json:", e);
+  }
+  return { intakes: [], courseLedger: [], registrationReceipts: [], assignmentSubmissions: [] };
+}
+
+function saveStore(data: any) {
+  try {
+    fs.writeFileSync(STORE_PATH, JSON.stringify(data, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Error writing sheets_store.json:", e);
+  }
+}
 
 // Configured Google Apps Script Backend URL / ID
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzAPe0qevCc1wb7WhywMlSJQGJwAz4ykg76xc_E08l1DRjTFjd-V9MEytql11O_-cMEbg/exec";
@@ -26,6 +53,290 @@ app.get("/api/health", (req, res) => {
     backend: "Express+GoogleSheets",
     scriptUrl: SCRIPT_URL,
     timestamp: new Date().toISOString(),
+  });
+});
+
+// 1a. Backend Validation & Data Management Engine Endpoints
+app.post("/api/intake/validate", (req, res) => {
+  const { enrollmentNo, programmeCode, courseCodes, session, currentIntakeId } = req.body || {};
+  const store = loadStore();
+  const cleanCourses = (Array.isArray(courseCodes) ? courseCodes : String(courseCodes || "").split(","))
+    .map((c) => String(c).trim().toUpperCase())
+    .filter(Boolean);
+
+  const validation = validateIntakeRecord({
+    enrollmentNo: String(enrollmentNo || ""),
+    programmeCode: String(programmeCode || ""),
+    courseCodes: cleanCourses,
+    session: session || "July 2026",
+    currentIntakeId: currentIntakeId ? String(currentIntakeId) : undefined,
+    existingIntakes: store.intakes || [],
+    existingEvaluations: store.courseLedger || [],
+  });
+
+  if (!validation.valid) {
+    return res.status(400).json({
+      Status: "Rejected",
+      Reason: validation.reason,
+      Rule: validation.rule,
+    });
+  }
+
+  return res.json({
+    Status: "Success",
+    Action: "Validate",
+    Data: { valid: true },
+  });
+});
+
+app.post("/api/intake/create", (req, res) => {
+  const {
+    enrollmentNo,
+    studentName,
+    studentPhone,
+    studentEmail,
+    programmeCode,
+    courseCodes,
+    session,
+    submissionDate,
+    submissionMode,
+    consignmentNo,
+    remarks,
+  } = req.body || {};
+  const store = loadStore();
+  const cleanCourses = (Array.isArray(courseCodes) ? courseCodes : String(courseCodes || "").split(","))
+    .map((c) => String(c).trim().toUpperCase())
+    .filter(Boolean);
+
+  const validation = validateIntakeRecord({
+    enrollmentNo: String(enrollmentNo || ""),
+    programmeCode: String(programmeCode || ""),
+    courseCodes: cleanCourses,
+    session: session || "July 2026",
+    existingIntakes: store.intakes || [],
+    existingEvaluations: store.courseLedger || [],
+  });
+
+  if (!validation.valid) {
+    return res.status(400).json({
+      Status: "Rejected",
+      Reason: validation.reason,
+      Rule: validation.rule,
+    });
+  }
+
+  const targetSession = session || "July 2026";
+  const cleanEnrollment = String(enrollmentNo || "").trim();
+  const cleanProgramme = String(programmeCode || "").trim().toUpperCase();
+  const cleanName = String(studentName || "").trim();
+  const resolvedDate = submissionDate ? String(submissionDate).trim() : new Date().toISOString().split("T")[0];
+
+  const sessionDigits = targetSession.replace(/\D/g, "").slice(-2);
+  const sessionCode = sessionDigits ? `JUL${sessionDigits}` : "JUL26";
+  const seq = (store.intakes || []).filter((i: any) => i.session === targetSession).length + 1;
+  const tokenNo = `SC2033-${sessionCode}-${String(seq).padStart(4, "0")}`;
+
+  const newRecord = {
+    id: `intake-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    session: targetSession,
+    tokenNo,
+    enrollmentNo: cleanEnrollment,
+    studentName: cleanName,
+    studentPhone: studentPhone ? String(studentPhone).trim() : "",
+    studentEmail: studentEmail ? String(studentEmail).trim() : "",
+    programmeCode: cleanProgramme,
+    courseCodes: cleanCourses,
+    submissionDate: resolvedDate,
+    receiptDate: resolvedDate,
+    Submission_Date: resolvedDate,
+    submissionMode: submissionMode || "In-Person (Desk)",
+    consignmentNo: consignmentNo || null,
+    remarks: remarks || null,
+    status: "Received",
+    marks: cleanCourses.reduce((acc: any, c: string) => ({ ...acc, [c]: null }), {}),
+    createdAt: `${resolvedDate}T10:00:00.000Z`,
+    timestamp: `${resolvedDate}T10:00:00.000Z`,
+  };
+
+  const newEvals = cleanCourses.map((c: string) => {
+    const subId = `SUB_${cleanEnrollment}_${c}_${targetSession.replace(/\s+/g, "").toUpperCase()}`;
+    return {
+      Sub_ID: subId,
+      subId,
+      submissionKey: subId,
+      Session: targetSession,
+      session: targetSession,
+      Enrollment_No: cleanEnrollment,
+      enrollmentNo: cleanEnrollment,
+      Candidate_Name: cleanName,
+      studentName: cleanName,
+      Contact_No: studentPhone || "",
+      studentPhone: studentPhone || "",
+      Email_ID: studentEmail || "",
+      studentEmail: studentEmail || "",
+      Programme_Code: cleanProgramme,
+      programmeCode: cleanProgramme,
+      Programme: cleanProgramme,
+      Course_Code: c,
+      courseCode: c,
+      Course_Title: `${cleanProgramme} Course ${c}`,
+      courseTitle: `${cleanProgramme} Course ${c}`,
+      Allotted_Evaluator: "",
+      Marks: null,
+      Grade: "—",
+      Status: "Pending Allotment",
+      id: subId,
+      intakeId: newRecord.id,
+      tokenNo,
+      submissionDate: resolvedDate,
+      receiptDate: resolvedDate,
+      Submission_Date: resolvedDate,
+      submissionMode: submissionMode || "In-Person (Desk)",
+      isLocked: false,
+      status: "Pending Allotment",
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  store.intakes = [newRecord, ...(store.intakes || [])];
+  store.courseLedger = [...(store.courseLedger || []), ...newEvals];
+  saveStore(store);
+
+  return res.json({
+    Status: "Success",
+    Action: "Create",
+    Data: newRecord,
+  });
+});
+
+app.post("/api/intake/update", (req, res) => {
+  const {
+    id,
+    originalEnrollmentNo,
+    enrollmentNo,
+    studentName,
+    studentPhone,
+    studentEmail,
+    programmeCode,
+    courseCodes,
+    session,
+    submissionDate,
+    submissionMode,
+    consignmentNo,
+    remarks,
+  } = req.body || {};
+  const store = loadStore();
+
+  if (!id) {
+    return res.status(400).json({ Status: "Rejected", Reason: "Intake record ID is required for update." });
+  }
+
+  const cleanCourses = (Array.isArray(courseCodes) ? courseCodes : String(courseCodes || "").split(","))
+    .map((c) => String(c).trim().toUpperCase())
+    .filter(Boolean);
+
+  const validation = validateIntakeRecord({
+    enrollmentNo: String(enrollmentNo || ""),
+    programmeCode: String(programmeCode || ""),
+    courseCodes: cleanCourses,
+    session: session || "July 2026",
+    currentIntakeId: String(id),
+    existingIntakes: store.intakes || [],
+    existingEvaluations: store.courseLedger || [],
+  });
+
+  if (!validation.valid) {
+    return res.status(400).json({
+      Status: "Rejected",
+      Reason: validation.reason,
+      Rule: validation.rule,
+    });
+  }
+
+  const cascade = applyCascadingUpdate(
+    {
+      targetId: String(id),
+      originalEnrollmentNo: originalEnrollmentNo || enrollmentNo,
+      enrollmentNo: String(enrollmentNo),
+      studentName: String(studentName),
+      studentPhone,
+      studentEmail,
+      programmeCode: String(programmeCode),
+      courseCodes: cleanCourses,
+      session: session || "July 2026",
+      submissionDate,
+      submissionMode,
+      consignmentNo,
+      remarks,
+    },
+    {
+      intakes: store.intakes || [],
+      courseEvaluations: store.courseLedger || [],
+      registrationReceipts: store.registrationReceipts || [],
+      assignmentSubmissions: store.assignmentSubmissions || [],
+    }
+  );
+
+  store.intakes = (store.intakes || []).map((it: any) => (it.id === id ? cascade.updatedIntake : it));
+  store.courseLedger = cascade.updatedEvaluations;
+  store.registrationReceipts = cascade.updatedReceipts;
+  store.assignmentSubmissions = cascade.updatedSubmissions;
+  saveStore(store);
+
+  return res.json({
+    Status: "Success",
+    Action: "Update",
+    Data: cascade.updatedIntake,
+  });
+});
+
+app.post("/api/intake/delete", (req, res) => {
+  const { id } = req.body || {};
+  if (!id) {
+    return res.status(400).json({ Status: "Rejected", Reason: "Intake record ID is required for deletion." });
+  }
+  const store = loadStore();
+  const target = (store.intakes || []).find((i: any) => i.id === id);
+  if (!target) {
+    return res.status(404).json({ Status: "Rejected", Reason: "Intake record not found in system." });
+  }
+
+  // Check locked courses
+  const isLocked = (store.courseLedger || []).some((ce: any) => {
+    const isTied = ce.intakeId === id || ce.tokenNo === target.tokenNo;
+    return isTied && (ce.isLocked || ce.status === "Locked" || ce.status === "Marks Locked");
+  });
+
+  if (isLocked) {
+    return res.status(400).json({
+      Status: "Rejected",
+      Reason: "Cannot delete intake. Marks have already been locked for one or more courses.",
+    });
+  }
+
+  const cascade = applyCascadingDeletion(id, {
+    intakes: store.intakes || [],
+    courseEvaluations: store.courseLedger || [],
+    registrationReceipts: store.registrationReceipts || [],
+    assignmentSubmissions: store.assignmentSubmissions || [],
+  });
+
+  store.intakes = cascade.updatedIntakes;
+  store.courseLedger = cascade.updatedEvaluations;
+  store.registrationReceipts = cascade.updatedReceipts;
+  store.assignmentSubmissions = cascade.updatedSubmissions;
+  saveStore(store);
+
+  return res.json({
+    Status: "Success",
+    Action: "Delete",
+    Data: {
+      id: target.id,
+      tokenNo: target.tokenNo,
+      enrollmentNo: target.enrollmentNo,
+      programmeCode: target.programmeCode,
+      deleted: true,
+    },
   });
 });
 

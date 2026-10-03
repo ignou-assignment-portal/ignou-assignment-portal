@@ -5,6 +5,7 @@ import { formatDate, formatDateTime } from '../utils/helpers';
 import { IntakeStatusMatrix } from './IntakeStatusMatrix';
 import {
   UserPlus,
+  User,
   BookOpen,
   CheckCircle,
   Hash,
@@ -33,9 +34,50 @@ import {
   Loader2,
   Globe,
   RefreshCw,
+  XCircle,
+  ShieldAlert,
+  AlertTriangle,
+  FileCode,
+  Copy,
+  ArrowRight,
 } from 'lucide-react';
 import { IntakeRegister } from './IntakeRegister';
 import { EditIntakeModal } from './EditIntakeModal';
+import { ValidationSummary, ValidationSummaryProps } from './ValidationSummary';
+import { ProgrammeIntakeBarChart } from './ProgrammeIntakeBarChart';
+
+export { ValidationSummary, ProgrammeIntakeBarChart };
+export type { ValidationSummaryProps };
+
+export interface ValidationSummaryItem {
+  status: 'Success' | 'Rejected' | 'Error';
+  reason?: string;
+  rule?: string;
+  action?: 'Create' | 'Update' | 'Delete' | 'Validate' | string;
+  timestamp?: string;
+  cleanData?: {
+    id?: string;
+    tokenNo?: string;
+    enrollmentNo?: string;
+    studentName?: string;
+    programmeCode?: string;
+    courseCodes?: string[];
+    session?: string;
+    submissionDate?: string;
+    submissionMode?: string;
+    marks?: Record<string, number | null>;
+    receiptNumber?: string;
+    [key: string]: any;
+  };
+  attemptedData?: {
+    enrollmentNo?: string;
+    studentName?: string;
+    programmeCode?: string;
+    courseCodes?: string[];
+    session?: string;
+    [key: string]: any;
+  };
+}
 
 export const IntakeDesk: React.FC = () => {
   const {
@@ -66,6 +108,9 @@ export const IntakeDesk: React.FC = () => {
     getCourseInfo,
     updateCourseTitleFromIgnou,
     courseTitlesRegistry,
+    getRegisteredProgrammeForEnrollment,
+    getEnrolledCoursesForStudent,
+    validateIntake,
   } = useApp();
 
   // Form states
@@ -85,6 +130,43 @@ export const IntakeDesk: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState('');
   const [justSubmittedToken, setJustSubmittedToken] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [validationResult, setValidationResult] = useState<ValidationSummaryItem | null>(null);
+  const [selectedChartProgramme, setSelectedChartProgramme] = useState<string | null>(null);
+
+  // Scope and course validation states for Rule 1, 2, and 3
+  const registeredProgForEnrollment = useMemo(() => {
+    if (!enrollmentNo.trim() || enrollmentNo.trim().length < 5) return null;
+    return getRegisteredProgrammeForEnrollment(enrollmentNo);
+  }, [enrollmentNo, getRegisteredProgrammeForEnrollment]);
+
+  const alreadyEnrolledCourses = useMemo(() => {
+    if (!enrollmentNo.trim()) return new Set<string>();
+    return getEnrolledCoursesForStudent(enrollmentNo);
+  }, [enrollmentNo, getEnrolledCoursesForStudent]);
+
+  const isRule1Violated = Boolean(
+    registeredProgForEnrollment &&
+    selectedProgramme &&
+    registeredProgForEnrollment.toUpperCase() !== selectedProgramme.trim().toUpperCase()
+  );
+
+  // Auto-fill student profile when existing enrollment is typed
+  useEffect(() => {
+    const clean = enrollmentNo.trim();
+    if (clean.length >= 9) {
+      const existingProg = getRegisteredProgrammeForEnrollment(clean);
+      if (existingProg && !selectedProgramme) {
+        setSelectedProgramme(existingProg);
+      }
+      const match = allIntakes.find((i) => i.enrollmentNo.trim() === clean) ||
+                    allCourseEvaluations.find((e) => e.enrollmentNo.trim() === clean);
+      if (match) {
+        if (!studentName && match.studentName) setStudentName(match.studentName);
+        if (!studentPhone && match.studentPhone) setStudentPhone(match.studentPhone.replace(/\D/g, '').slice(0, 10));
+        if (!studentEmail && (match as any).studentEmail) setStudentEmail((match as any).studentEmail);
+      }
+    }
+  }, [enrollmentNo, allIntakes, allCourseEvaluations, getRegisteredProgrammeForEnrollment, selectedProgramme, studentName, studentPhone, studentEmail]);
 
   // Live IGNOU title lookup states
   const [fetchingIgnouCodes, setFetchingIgnouCodes] = useState<Record<string, boolean>>({});
@@ -136,6 +218,14 @@ export const IntakeDesk: React.FC = () => {
       return norm(row.Session || row.session) === norm(currentSession);
     });
   }, [intakeRegister, allIntakes, sessionIntakes, currentSession]);
+
+  const displayedRecentIntakes = useMemo(() => {
+    if (!selectedChartProgramme) return filteredIntake;
+    return filteredIntake.filter((record: any) => {
+      const prog = (record.Programme || record.programme || record.programmeCode || '').trim().toUpperCase();
+      return prog === selectedChartProgramme.toUpperCase();
+    });
+  }, [filteredIntake, selectedChartProgramme]);
 
   const filteredReceipts = useMemo(() => {
     const list = (allRegistrationReceipts && allRegistrationReceipts.length > 0)
@@ -334,46 +424,34 @@ export const IntakeDesk: React.FC = () => {
     }
 
     const cleanEnrollment = enrollmentNo.trim();
-    const targetSession = selectedSession || currentSession;
-
     const newCoursesToAdd: string[] = [];
 
     for (const clean of splitCourses) {
-      // Check if this student has already submitted this course code in this session
+      // Rule 3: No duplicate course selection across entries or unique student profile
       if (cleanEnrollment) {
-        const isDuplicate =
-          allCourseEvaluations.some(
-            (ce) =>
-              ce.enrollmentNo.trim() === cleanEnrollment &&
-              ce.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
-              ce.courseCode.trim().toUpperCase() === clean
-          ) ||
-          allIntakes.some(
-            (it) =>
-              it.enrollmentNo.trim() === cleanEnrollment &&
-              it.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
-              it.courseCodes.some((c) => c.trim().toUpperCase() === clean)
-          );
-
-        if (isDuplicate) {
-          const msg = `Duplicate Submission Blocked: Student ${cleanEnrollment} has already submitted course ${clean} for session "${targetSession}". Each course may only be submitted once per academic cycle.`;
+        if (alreadyEnrolledCourses.has(clean)) {
+          const msg = `Duplicate course selection detected: Student ${cleanEnrollment} is already enrolled in course "${clean}". A student cannot be enrolled in the exact same course more than once.`;
           alert(msg);
           setErrorMsg(msg);
           return;
         }
       }
 
-      if (!selectedCourses.includes(clean) && !newCoursesToAdd.includes(clean)) {
-        newCoursesToAdd.push(clean);
-
-        // Save course to programme's custom courses so next time it is in quick suggestions!
-        if (selectedProgramme) {
-          saveCustomCourse(selectedProgramme, { code: clean });
-        }
-
-        // Fetch or update course title from IGNOU.ac.in in background
-        updateCourseTitleFromIgnou(clean, selectedProgramme);
+      // Rule 3: No duplicate within same intake entry
+      if (selectedCourses.includes(clean) || newCoursesToAdd.includes(clean)) {
+        setErrorMsg(`Duplicate course selection detected: Course "${clean}" is already added to this intake entry.`);
+        return;
       }
+
+      newCoursesToAdd.push(clean);
+
+      // Save course to programme's custom courses so next time it is in quick suggestions!
+      if (selectedProgramme) {
+        saveCustomCourse(selectedProgramme, { code: clean });
+      }
+
+      // Fetch or update course title from IGNOU.ac.in in background
+      updateCourseTitleFromIgnou(clean, selectedProgramme);
     }
 
     if (newCoursesToAdd.length > 0) {
@@ -455,33 +533,67 @@ export const IntakeDesk: React.FC = () => {
     // Validation
     const cleanEnrollment = enrollmentNo.trim();
     if (!cleanEnrollment) {
-      setErrorMsg('Student Enrollment Number is required.');
+      const msg = 'Student Enrollment Number is required.';
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Create',
+        rule: 'Required Field',
+        reason: msg,
+        timestamp: new Date().toISOString(),
+      });
+      setErrorMsg(msg);
       return;
     }
     if (!/^\d{9,10}$/.test(cleanEnrollment)) {
-      setErrorMsg('IGNOU Enrollment Number must be 9 or 10 numeric digits.');
+      const msg = 'IGNOU Enrollment Number must be 9 or 10 numeric digits.';
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Create',
+        rule: 'Rule 1: Enrollment Number Format',
+        reason: msg,
+        timestamp: new Date().toISOString(),
+      });
+      setErrorMsg(msg);
       return;
     }
     if (!studentName.trim()) {
-      setErrorMsg('Candidate Name is required.');
+      const msg = 'Candidate Name is required.';
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Create',
+        rule: 'Required Field',
+        reason: msg,
+        timestamp: new Date().toISOString(),
+      });
+      setErrorMsg(msg);
       return;
     }
 
     // 1. Strict 10-Digit Mobile Number Validation:
     const cleanPhone = studentPhone.replace(/\D/g, '').slice(0, 10);
-    if (studentPhone && studentPhone.length !== 10) {
-      alert("Contact number must be exactly 10 digits.");
-      setErrorMsg("Contact number must be exactly 10 digits.");
-      return;
-    }
-    if (!cleanPhone || cleanPhone.length !== 10) {
-      alert("Contact number must be exactly 10 digits.");
-      setErrorMsg("Contact number must be exactly 10 digits.");
+    if ((studentPhone && studentPhone.length !== 10) || (!cleanPhone || cleanPhone.length !== 10)) {
+      const msg = 'Contact number must be exactly 10 digits.';
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Create',
+        rule: 'Contact Verification',
+        reason: msg,
+        timestamp: new Date().toISOString(),
+      });
+      setErrorMsg(msg);
       return;
     }
 
     if (!selectedProgramme.trim()) {
-      setErrorMsg('Please select or specify a Programme Code (e.g. BAG, MEG, BCA, MPS).');
+      const msg = 'Please select or specify a Programme Code (e.g. BAG, MEG, BCA, MPS).';
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Create',
+        rule: 'Programme Scope',
+        reason: msg,
+        timestamp: new Date().toISOString(),
+      });
+      setErrorMsg(msg);
       return;
     }
     // Merge any un-added input in courseSearchInput
@@ -502,51 +614,89 @@ export const IntakeDesk: React.FC = () => {
       .filter(Boolean);
 
     if (coursesArray.length === 0) {
-      setErrorMsg('Please enter or select at least one Course Code.');
+      const msg = 'Please enter or select at least one Course Code.';
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Create',
+        rule: 'Rule 3: Course Codes',
+        reason: msg,
+        timestamp: new Date().toISOString(),
+      });
+      setErrorMsg(msg);
       return;
     }
     if (coursesArray.length > 50) {
-      setErrorMsg('Maximum 50 course codes can be registered in a single intake receipt.');
+      const msg = 'Maximum 50 course codes can be registered in a single intake receipt.';
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Create',
+        rule: 'Rule 2: Maximum Intake Limit',
+        reason: msg,
+        timestamp: new Date().toISOString(),
+      });
+      setErrorMsg(msg);
       return;
     }
     if (submissionMode !== 'In-Person (Desk)' && !consignmentNo.trim()) {
-      setErrorMsg('Tracking / Consignment number is required for postal or courier submission.');
+      const msg = 'Tracking / Consignment number is required for postal or courier submission.';
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Create',
+        rule: 'Postal Tracking',
+        reason: msg,
+        timestamp: new Date().toISOString(),
+      });
+      setErrorMsg(msg);
       return;
     }
 
     const targetSession = selectedSession || currentSession;
 
-    // Composite Duplicate Check:
-    // If the SAME student submits the EXACT SAME course code already recorded for this session:
-    // BLOCK submission and trigger an alert.
-    // Allow different course codes for the same student in the same session.
-    const cleanCourses = coursesArray;
-    const existingDuplicates: string[] = [];
+    // 1. Rule 1 Check: Enrollment Number vs. Programme Scope
+    if (registeredProgForEnrollment && selectedProgramme.trim().toUpperCase() !== registeredProgForEnrollment.toUpperCase()) {
+      const msg = `Enrollment number already exists in another programme: Enrollment ${cleanEnrollment} is registered under Programme "${registeredProgForEnrollment}". In IGNOU, an enrollment number cannot belong to a different programme ("${selectedProgramme.trim().toUpperCase()}").`;
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Create',
+        rule: 'Rule 1: Enrollment Number vs. Programme Scope',
+        reason: msg,
+        timestamp: new Date().toISOString(),
+        attemptedData: {
+          enrollmentNo: cleanEnrollment,
+          studentName: studentName.trim(),
+          programmeCode: selectedProgramme.trim().toUpperCase(),
+          courseCodes: coursesArray,
+          session: targetSession,
+        },
+      });
+      setErrorMsg(msg);
+      return;
+    }
 
-    cleanCourses.forEach((course) => {
-      const alreadySubmitted =
-        allCourseEvaluations.some(
-          (ce) =>
-            ce.enrollmentNo.trim() === cleanEnrollment &&
-            ce.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
-            ce.courseCode.trim().toUpperCase() === course
-        ) ||
-        allIntakes.some(
-          (it) =>
-            it.enrollmentNo.trim() === cleanEnrollment &&
-            it.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
-            it.courseCodes.some((cc) => cc.trim().toUpperCase() === course)
-        );
-
-      if (alreadySubmitted && !existingDuplicates.includes(course)) {
-        existingDuplicates.push(course);
-      }
+    // 2. Strict Validation Engine Check (Rule 1, Rule 2, Rule 3)
+    const validation = validateIntake({
+      enrollmentNo: cleanEnrollment,
+      programmeCode: selectedProgramme.trim().toUpperCase(),
+      courseCodes: coursesArray,
+      session: targetSession,
     });
 
-    if (existingDuplicates.length > 0) {
-      const alertMessage = `Duplicate Submission Blocked: Student ${cleanEnrollment} (${studentName.trim()}) has already submitted assignment script(s) for course ${existingDuplicates.join(', ')} in session "${targetSession}". Each course assignment may only be submitted once per academic session.`;
-      alert(alertMessage);
-      setErrorMsg(alertMessage);
+    if (!validation.valid) {
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Create',
+        rule: (validation as any).rule || 'Data Integrity Rule',
+        reason: validation.reason,
+        timestamp: new Date().toISOString(),
+        attemptedData: {
+          enrollmentNo: cleanEnrollment,
+          studentName: studentName.trim(),
+          programmeCode: selectedProgramme.trim().toUpperCase(),
+          courseCodes: coursesArray,
+          session: targetSession,
+        },
+      });
+      setErrorMsg(validation.reason);
       return;
     }
 
@@ -620,6 +770,17 @@ export const IntakeDesk: React.FC = () => {
       setJustSubmittedToken(newRecord.tokenNo);
       setSuccessMsg(`Successfully registered candidate ${studentName.trim()} (${cleanEnrollment}) with Token: ${newRecord.tokenNo}.`);
 
+      // Update Validation Summary with success confirmation & clean finalized object
+      setValidationResult({
+        status: 'Success',
+        action: 'Create',
+        timestamp: new Date().toISOString(),
+        cleanData: {
+          ...newRecord,
+          receiptNumber: newReceipt.receiptNumber,
+        },
+      });
+
       // 4. Instantly launch the printable official acknowledgment receipt modal!
       openReceiptModal(newRecord);
 
@@ -633,11 +794,135 @@ export const IntakeDesk: React.FC = () => {
       setConsignmentNo('');
       setRemarks('');
       setCourseSearchInput('');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setErrorMsg('Failed to complete registration and store receipt. Please try again.');
+      const msg = err?.message || 'Failed to complete registration and store receipt. Please try again.';
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Create',
+        rule: 'System Processing Error',
+        reason: msg,
+        timestamp: new Date().toISOString(),
+      });
+      setErrorMsg(msg);
     } finally {
       setTimeout(() => setIsSubmitting(false), 1500); // Debounce protection
+    }
+  };
+
+  // Pre-Check Integrity Action: lets operators run integrity check without committing
+  const handleRunPreCheck = () => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    const cleanEnrollment = enrollmentNo.trim();
+    if (!cleanEnrollment) {
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Validate',
+        rule: 'Rule 1: Enrollment Number vs. Programme Scope',
+        reason: 'Student Enrollment Number is required to run the integrity check.',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    if (!selectedProgramme) {
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Validate',
+        rule: 'Rule 1: Enrollment Number vs. Programme Scope',
+        reason: 'Programme code is required to run the integrity check.',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    const combinedCourses = [...selectedCourses];
+    if (courseSearchInput.trim()) {
+      const extra = courseSearchInput
+        .split(',')
+        .map((c) => c.trim().toUpperCase())
+        .filter(Boolean);
+      extra.forEach((c) => {
+        if (!combinedCourses.includes(c)) combinedCourses.push(c);
+      });
+    }
+
+    const coursesArray = combinedCourses
+      .flatMap((c) => c.split(','))
+      .map((c) => c.trim().toUpperCase())
+      .filter(Boolean);
+
+    if (coursesArray.length === 0) {
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Validate',
+        rule: 'Rule 3: No Duplicate Course Selections',
+        reason: 'Please enter or select at least one Course Code to run the integrity check.',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    const targetSession = selectedSession || currentSession;
+
+    // Rule 1 check
+    if (registeredProgForEnrollment && selectedProgramme.trim().toUpperCase() !== registeredProgForEnrollment.toUpperCase()) {
+      const msg = `Enrollment number already exists in another programme: Enrollment ${cleanEnrollment} is registered under Programme "${registeredProgForEnrollment}". In IGNOU, an enrollment number cannot belong to a different programme ("${selectedProgramme.trim().toUpperCase()}").`;
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Validate',
+        rule: 'Rule 1: Enrollment Number vs. Programme Scope',
+        reason: msg,
+        timestamp: new Date().toISOString(),
+        attemptedData: {
+          enrollmentNo: cleanEnrollment,
+          studentName: studentName.trim(),
+          programmeCode: selectedProgramme.trim().toUpperCase(),
+          courseCodes: coursesArray,
+          session: targetSession,
+        },
+      });
+      return;
+    }
+
+    const validation = validateIntake({
+      enrollmentNo: cleanEnrollment,
+      programmeCode: selectedProgramme.trim().toUpperCase(),
+      courseCodes: coursesArray,
+      session: targetSession,
+    });
+
+    if (!validation.valid) {
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Validate',
+        rule: (validation as any).rule || 'Data Integrity Rule',
+        reason: validation.reason,
+        timestamp: new Date().toISOString(),
+        attemptedData: {
+          enrollmentNo: cleanEnrollment,
+          studentName: studentName.trim(),
+          programmeCode: selectedProgramme.trim().toUpperCase(),
+          courseCodes: coursesArray,
+          session: targetSession,
+        },
+      });
+    } else {
+      setValidationResult({
+        status: 'Success',
+        action: 'Validate',
+        timestamp: new Date().toISOString(),
+        cleanData: {
+          enrollmentNo: cleanEnrollment,
+          studentName: studentName.trim() || 'Candidate Name Pending',
+          programmeCode: selectedProgramme.trim().toUpperCase(),
+          courseCodes: coursesArray,
+          session: targetSession,
+          submissionDate,
+          submissionMode,
+        },
+      });
     }
   };
 
@@ -753,7 +1038,20 @@ export const IntakeDesk: React.FC = () => {
       </div>
 
       {deskView === 'REGISTER' && (
-        <div className="space-y-6">
+        <div className="space-y-4">
+          {/* Validation Summary: Displays results of the integrity check (Success or Rejected with reason) after user attempts an intake entry */}
+          {validationResult && (
+            <ValidationSummary
+              status={validationResult.status as 'Success' | 'Rejected'}
+              reason={validationResult.reason}
+              rule={validationResult.rule}
+              action={validationResult.action}
+              cleanData={validationResult.cleanData}
+              onDismiss={() => setValidationResult(null)}
+              onClose={() => setValidationResult(null)}
+            />
+          )}
+
           {/* Intake Registration Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left: Dynamic Multi-Course Registration Desk (7 cols) */}
@@ -830,6 +1128,45 @@ export const IntakeDesk: React.FC = () => {
                     />
                   </div>
                 </div>
+
+                {/* Rule 1 Violation Alert & Rule 2 Multi-Course Allowance Banner */}
+                {isRule1Violated && (
+                  <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-900 flex items-start gap-2.5 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="font-bold text-rose-950">Rule 1 Block: Enrollment Number Scope Conflict</div>
+                      <div className="mt-0.5">
+                        Enrollment Number <strong className="font-mono font-black text-rose-950">{enrollmentNo}</strong> is registered under Programme <strong className="font-mono font-black text-rose-950">{registeredProgForEnrollment}</strong>. An enrollment number cannot exist in another programme (<span className="font-mono font-bold">{selectedProgramme}</span>).
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedProgramme(registeredProgForEnrollment || '');
+                          setErrorMsg('');
+                        }}
+                        className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 bg-rose-700 hover:bg-rose-800 text-white rounded-md text-[11px] font-bold cursor-pointer transition shadow-2xs"
+                      >
+                        <span>Switch to {registeredProgForEnrollment}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {!isRule1Violated && alreadyEnrolledCourses.size > 0 && (
+                  <div className="p-3 bg-indigo-50/90 border border-indigo-200 rounded-xl text-xs text-indigo-950 flex items-start gap-2.5">
+                    <CheckCircle2 className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold text-indigo-950">Rule 2 Multi-Course Intake Allowance Active</div>
+                      <div className="mt-0.5">
+                        Candidate has previously submitted courses:{' '}
+                        <span className="font-mono font-black text-indigo-950">
+                          {Array.from(alreadyEnrolledCourses).join(', ')}
+                        </span>{' '}
+                        under {selectedProgramme || registeredProgForEnrollment}. Intake can be taken further for any different courses.
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* 2. Contact Number, Session, Submission Mode & Intake Date */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1298,22 +1635,26 @@ export const IntakeDesk: React.FC = () => {
                         <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1 bg-white rounded border border-zinc-100 mb-2">
                           {availableProgrammeCourses.map((c) => {
                             const isAlreadySelected = selectedCourses.includes(c.code);
+                            const isAlreadyEnrolled = alreadyEnrolledCourses.has(c.code);
                             const title = getCourseTitle(c.code, selectedProgramme);
                             return (
                               <button
                                 type="button"
                                 key={c.code}
-                                disabled={isAlreadySelected}
+                                disabled={isAlreadySelected || isAlreadyEnrolled}
                                 onClick={() => handleAddCourse(c.code)}
                                 className={`px-2 py-0.5 text-[11px] font-mono rounded font-bold transition cursor-pointer flex items-center gap-1 ${
                                   isAlreadySelected
                                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 opacity-60 cursor-not-allowed'
+                                    : isAlreadyEnrolled
+                                    ? 'bg-amber-100 text-amber-900 border border-amber-300 opacity-75 cursor-not-allowed'
                                     : 'bg-zinc-50 hover:bg-indigo-50 text-indigo-900 border border-zinc-200 hover:border-indigo-400'
                                 }`}
-                                title={`${c.code}: ${title}`}
+                                title={isAlreadyEnrolled ? `Rule 3: Course ${c.code} is already enrolled by this student.` : `${c.code}: ${title}`}
                               >
                                 <span>{c.code}</span>
-                                {isAlreadySelected ? <Check className="w-2.5 h-2.5" /> : <Plus className="w-2.5 h-2.5" />}
+                                {isAlreadySelected ? <Check className="w-2.5 h-2.5" /> : isAlreadyEnrolled ? <Lock className="w-2.5 h-2.5 text-amber-700" /> : <Plus className="w-2.5 h-2.5" />}
+                                {isAlreadyEnrolled && <span className="text-[9px] font-normal text-amber-800 font-sans">(Enrolled)</span>}
                               </button>
                             );
                           })}
@@ -1506,40 +1847,74 @@ export const IntakeDesk: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Immediate Feedback Validation Summary after submission / validation attempts */}
+                {validationResult && (
+                  <div className="pt-2">
+                    <ValidationSummary
+                      status={validationResult.status as 'Success' | 'Rejected'}
+                      reason={validationResult.reason}
+                      rule={validationResult.rule}
+                      action={validationResult.action}
+                      cleanData={validationResult.cleanData}
+                      onDismiss={() => setValidationResult(null)}
+                      onClose={() => setValidationResult(null)}
+                    />
+                  </div>
+                )}
+
                 {/* Form Actions: "Submit & Generate Receipt" (Non-Financial) */}
                 <div className="pt-4 border-t border-zinc-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="text-[11px] text-zinc-500">
                     Session: <strong className="text-zinc-800">{selectedSession}</strong> • Non-Financial Counter Intake (SC-2033)
                   </div>
 
-                  <button
-                    type="submit"
-                    id="submit-and-generate-receipt-btn"
-                    disabled={isSubmitting}
-                    className={`px-6 py-2.5 font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 ${
-                      isSubmitting
-                        ? 'bg-indigo-400 text-white cursor-not-allowed opacity-80'
-                        : 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer active:scale-98'
-                    }`}
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Recording...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Printer className="w-4 h-4" />
-                        <span>Confirm Intake & Save</span>
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                    <button
+                      type="button"
+                      id="run-integrity-check-btn"
+                      onClick={handleRunPreCheck}
+                      className="px-4 py-2.5 font-bold text-xs rounded-xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-98"
+                      title="Validate entry against Rule 1, Rule 2, and Rule 3 before saving"
+                    >
+                      <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                      <span>Check Integrity</span>
+                    </button>
+
+                    <button
+                      type="submit"
+                      id="submit-and-generate-receipt-btn"
+                      disabled={isSubmitting}
+                      className={`px-6 py-2.5 font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 ${
+                        isSubmitting
+                          ? 'bg-indigo-400 text-white cursor-not-allowed opacity-80'
+                          : 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer active:scale-98'
+                      }`}
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Recording...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Printer className="w-4 h-4" />
+                          <span>Confirm Intake & Save</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>
 
-            {/* Right: Counter Live Activity for Current Session (5 cols) */}
+            {/* Right: Counter Live Activity & Analytics Dashboard Widget (5 cols) */}
             <div className="lg:col-span-5 space-y-4">
+              {/* Dashboard Widget: Visualizes total number of student intakes per programme using a bar chart */}
+              <ProgrammeIntakeBarChart
+                onSelectProgramme={(code) => setSelectedChartProgramme(code)}
+                selectedProgramme={selectedChartProgramme}
+              />
+
               <div className="bg-white rounded-2xl border border-zinc-200 p-5 shadow-xs">
                 <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
                   <div className="flex items-center gap-2">
@@ -1548,24 +1923,55 @@ export const IntakeDesk: React.FC = () => {
                       Recent Receipts ({currentSession})
                     </h3>
                   </div>
-                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700 font-semibold">
-                    {filteredIntake.length} Intake Records
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {selectedChartProgramme && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedChartProgramme(null)}
+                        className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 font-semibold cursor-pointer transition flex items-center gap-1"
+                        title="Clear programme filter"
+                      >
+                        <span>{selectedChartProgramme}</span>
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700 font-semibold">
+                      {displayedRecentIntakes.length} {displayedRecentIntakes.length === 1 ? 'Record' : 'Records'}
+                    </span>
+                  </div>
                 </div>
 
                 <p className="text-xs text-zinc-500 mt-2 mb-3">
-                  Click any student record to preview or re-print the official acknowledgment receipt slip.
+                  {selectedChartProgramme
+                    ? `Filtered by programme ${selectedChartProgramme}. Click any student record to preview or re-print.`
+                    : 'Click any student record to preview or re-print the official acknowledgment receipt slip.'}
                 </p>
 
-                <div className="space-y-2.5 max-h-[560px] overflow-y-auto pr-1">
-                  {filteredIntake.length === 0 ? (
-                    <div className="text-center py-12 text-zinc-400 text-xs">
-                      No submissions recorded yet for {currentSession}.
-                      <br />
-                      Use the registration form on the left to register a student.
+                <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                  {displayedRecentIntakes.length === 0 ? (
+                    <div className="text-center py-10 text-zinc-400 text-xs">
+                      {selectedChartProgramme ? (
+                        <>
+                          No student intakes found for programme <strong className="text-zinc-700">{selectedChartProgramme}</strong> in {currentSession}.
+                          <br />
+                          <button
+                            type="button"
+                            onClick={() => setSelectedChartProgramme(null)}
+                            className="mt-2 text-indigo-600 hover:underline font-semibold cursor-pointer inline-block"
+                          >
+                            Show all programmes
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          No submissions recorded yet for {currentSession}.
+                          <br />
+                          Use the registration form on the left to register a student.
+                        </>
+                      )}
                     </div>
                   ) : (
-                    filteredIntake.map((record: any) => {
+                    displayedRecentIntakes.map((record: any, idx: number) => {
                       const enr = record.Enrollment_No || record.enrollmentNo || record["Enrollment No"] || "-";
                       const candName = record.Candidate_Name || record.candidateName || record["Candidate Name"] || record.studentName || "-";
                       const prog = record.Programme || record.programme || record.programmeCode || "-";
@@ -1582,7 +1988,7 @@ export const IntakeDesk: React.FC = () => {
 
                       return (
                         <div
-                          key={record.id || token || enr}
+                          key={`recent-intake-${record.id || token || enr}-${idx}`}
                           className="p-3 bg-zinc-50 hover:bg-indigo-50/40 border border-zinc-200 hover:border-indigo-300 rounded-xl transition group text-xs"
                         >
                           <div className="flex items-start justify-between gap-2">
@@ -1713,7 +2119,7 @@ export const IntakeDesk: React.FC = () => {
                 No registration receipts issued yet in cycle {currentSession}.
               </div>
             ) : (
-              filteredReceipts.map((rcpt: any) => {
+              filteredReceipts.map((rcpt: any, idx: number) => {
                 const enrollment = rcpt.Enrollment_No || rcpt.enrollmentNo || rcpt.studentId || rcpt["Enrollment No"] || "-";
                 const candidateName = rcpt.Candidate_Name || rcpt.candidateName || rcpt.studentName || rcpt["Candidate Name"] || "-";
                 const contact = rcpt.Contact || rcpt.contact || rcpt.studentPhone || rcpt["Contact Number"] || "";
@@ -1726,7 +2132,7 @@ export const IntakeDesk: React.FC = () => {
 
                 return (
                   <div
-                    key={rcpt.id || rcptNo || enrollment}
+                    key={`mobile-receipt-${rcpt.id || rcptNo || enrollment}-${idx}`}
                     style={{
                       backgroundColor: '#fff',
                       border: '1px solid #e2e8f0',
@@ -1789,7 +2195,7 @@ export const IntakeDesk: React.FC = () => {
                     </td>
                   </tr>
                 ) : (
-                  filteredReceipts.map((rcpt: any) => {
+                  filteredReceipts.map((rcpt: any, idx: number) => {
                     const enrollment = rcpt.Enrollment_No || rcpt.enrollmentNo || rcpt.studentId || rcpt["Enrollment No"] || "-";
                     const candidateName = rcpt.Candidate_Name || rcpt.candidateName || rcpt.studentName || rcpt["Candidate Name"] || "-";
                     const contact = rcpt.Contact || rcpt.contact || rcpt.studentPhone || rcpt["Contact Number"] || "";
@@ -1805,7 +2211,7 @@ export const IntakeDesk: React.FC = () => {
                     const rcptNo = rcpt.receiptNumber || rcpt.Token_No || rcpt.tokenNo || rcpt.id || "-";
 
                     return (
-                      <tr key={rcpt.id || rcptNo || enrollment} className="hover:bg-zinc-50/70 transition">
+                      <tr key={`receipt-row-${rcpt.id || rcptNo || enrollment}-${idx}`} className="hover:bg-zinc-50/70 transition">
                         <td className="py-3 px-4 font-mono font-bold text-indigo-950">
                           {rcptNo}
                           <div className="text-[10px] text-zinc-500 font-sans font-medium">

@@ -632,9 +632,9 @@ export const IntakeStatusMatrix: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((row) => (
+                filteredRows.map((row, idx) => (
                   <tr
-                    key={row.key}
+                    key={`matrix-row-${row.key}-${idx}`}
                     className={`hover:bg-indigo-50/30 transition ${
                       row.key === 'ALL-OVERALL' ? 'bg-zinc-50 font-bold' : ''
                     }`}

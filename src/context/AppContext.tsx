@@ -40,6 +40,14 @@ import {
 } from '../data/ignouComprehensiveCatalog';
 import { generateSessionCode, generateDeterministicSubmissionKey, calculateIGNOUGrade, getIgnouGrade, formatDate } from '../utils/helpers';
 import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, SCRIPT_URL, normalizeSessionName, norm } from '../services/sheetsService';
+import {
+  validateIntakeRecord,
+  applyCascadingUpdate,
+  applyCascadingDeletion,
+  getRegisteredProgrammeForEnrollment as getRegisteredProgHelper,
+  getEnrolledCoursesForStudent as getEnrolledCoursesHelper,
+  ValidationResult,
+} from '../services/intakeValidationEngine';
 
 export { normalizeSessionName, norm };
 export const normalizeSession = (s: any): string => norm(s);
@@ -96,6 +104,15 @@ interface AppContextType {
   }) => void;
   updateIntakeDate: (idOrToken: string, newDate: string) => void;
   deleteIntakeRecord: (id: string) => boolean;
+  getRegisteredProgrammeForEnrollment: (enrollmentNo: string, currentIntakeId?: string) => string | null;
+  getEnrolledCoursesForStudent: (enrollmentNo: string, currentIntakeId?: string) => Set<string>;
+  validateIntake: (params: {
+    enrollmentNo: string;
+    programmeCode: string;
+    courseCodes: string[];
+    session?: string;
+    currentIntakeId?: string;
+  }) => ValidationResult;
   updateMarks: (intakeId: string, courseCode: string, marks: number | null) => void;
   saveOrUpdateMarksAndLock: (
     row: any,
@@ -607,7 +624,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.getItem('ignou_intake_register');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const seenIds = new Set<string>();
+          return parsed.map((item: any, idx: number) => {
+            let id = item.id;
+            const enr = item.enrollmentNo || 'cand';
+            const sess = (item.session || 'July2026').replace(/\s+/g, '');
+            const courses = Array.isArray(item.courseCodes) ? item.courseCodes.slice().sort().join('_') : '';
+            if (!id || seenIds.has(id) || id === `intake-${enr}-${sess}`) {
+              id = `intake-${enr}-${sess}-${courses || idx}-${idx}`;
+            }
+            seenIds.add(id);
+            return { ...item, id };
+          });
+        }
       }
       return INITIAL_INTAKE_RECORDS;
     } catch {
@@ -1800,32 +1830,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Intake Actions
   const addIntakeRecord = useCallback(
     (data: Omit<IntakeRecord, 'id' | 'session' | 'tokenNo' | 'createdAt' | 'marks'> & { marks?: Record<string, number | null> }) => {
-      // Composite Duplicate Check: Block if SAME student submits EXACT SAME course code for this session
       const cleanEnr = data.enrollmentNo.trim();
-      const existingInSession = intakes.filter((r) => r.session === currentSession);
-      const duplicateCourses = data.courseCodes.filter((cc) => {
-        const normCC = cc.trim().toUpperCase();
-        return (
-          courseEvaluations.some(
-            (ce) =>
-              ce.enrollmentNo.trim() === cleanEnr &&
-              ce.session.trim().toLowerCase() === currentSession.trim().toLowerCase() &&
-              ce.courseCode.trim().toUpperCase() === normCC
-          ) ||
-          existingInSession.some(
-            (it) =>
-              it.enrollmentNo.trim() === cleanEnr &&
-              it.courseCodes.some((c) => c.trim().toUpperCase() === normCC)
-          )
-        );
+      const cleanProg = data.programmeCode.trim().toUpperCase();
+      const cleanCourses = Array.from(new Set(data.courseCodes.map((c) => c.trim().toUpperCase()).filter(Boolean)));
+
+      // Strict Validation: Enforces Rule 1 (Scope), Rule 2 (Multi-course allowance), Rule 3 (No duplicates)
+      const validation = validateIntakeRecord({
+        enrollmentNo: cleanEnr,
+        programmeCode: cleanProg,
+        courseCodes: cleanCourses,
+        session: currentSession,
+        existingIntakes: intakes,
+        existingEvaluations: courseEvaluations,
+        existingReceipts: registrationReceipts,
       });
 
-      if (duplicateCourses.length > 0) {
-        throw new Error(
-          `Duplicate Submission Blocked: Student ${cleanEnr} has already submitted course ${duplicateCourses.join(', ')} in session "${currentSession}".`
-        );
+      if (!validation.valid) {
+        logAuditEvent({
+          action: 'INTAKE_REJECTED',
+          category: 'SECURITY',
+          actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+          role: currentRole,
+          session: currentSession,
+          targetIdentifier: cleanEnr,
+          summary: `Intake validation rejected: ${validation.reason}`,
+          details: { enrollmentNo: cleanEnr, programmeCode: cleanProg, courses: cleanCourses, reason: validation.reason, rule: validation.rule },
+          status: 'FAILURE',
+        });
+        showToast(validation.reason, 'error');
+        throw new Error(validation.reason);
       }
 
+      const existingInSession = intakes.filter((r) => r.session === currentSession);
       const sessionCode = generateSessionCode(currentSession);
       // Count current session intakes to build deterministic sequential token
       const nextSequence = existingInSession.length + 1;
@@ -2010,10 +2046,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const activeSession = data.session || targetIntake?.session || currentSession;
       const cleanOrigEnr = data.originalEnrollmentNo.trim();
       const cleanNewEnr = data.enrollmentNo.trim();
-      const cleanName = data.candidateName.trim();
-      const cleanContact = data.contact.trim();
       const cleanProg = data.programme.trim().toUpperCase();
       const cleanCourses = Array.from(new Set(data.courses.map((c) => c.trim().toUpperCase()).filter(Boolean)));
+
+      // 1. Re-run all three validation rules on the modified data first
+      const validation = validateIntakeRecord({
+        enrollmentNo: cleanNewEnr,
+        programmeCode: cleanProg,
+        courseCodes: cleanCourses,
+        session: activeSession,
+        currentIntakeId: data.id,
+        existingIntakes: intakes,
+        existingEvaluations: courseEvaluations,
+        existingReceipts: registrationReceipts,
+      });
+
+      if (!validation.valid) {
+        logAuditEvent({
+          action: 'INTAKE_REJECTED',
+          category: 'SECURITY',
+          actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+          role: currentRole,
+          session: activeSession,
+          targetIdentifier: cleanNewEnr,
+          summary: `Edit intake rejected: ${validation.reason}`,
+          details: { enrollmentNo: cleanNewEnr, programmeCode: cleanProg, courses: cleanCourses, reason: validation.reason, rule: validation.rule },
+          status: 'FAILURE',
+        });
+        showToast(validation.reason, 'error');
+        throw new Error(validation.reason);
+      }
 
       // Check if any course removed by this edit was already locked in courseLedger
       const matchingCurrentStudentEvals = courseEvaluations.filter(
@@ -2031,7 +2093,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      // 1. Optimistic state update across intakeRegister (intakes)
+      // Auto-save custom programme & courses for future suggestions
       try {
         saveCustomProgramme({ code: cleanProg });
         cleanCourses.forEach((cc) => {
@@ -2042,40 +2104,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.warn('Could not auto-save custom programme or course:', e);
       }
 
-      let updatedIntakeRecord: IntakeRecord | null = null;
-      setIntakes((prev) => {
-        const next = prev.map((item) => {
-          if (item.id === data.id || (item.enrollmentNo.trim() === cleanOrigEnr && item.session === activeSession)) {
-            const newMarks: Record<string, number | null> = {};
-            cleanCourses.forEach((c) => {
-              newMarks[c] = item.marks?.[c] ?? null;
-            });
-            const allEntered = cleanCourses.length > 0 && cleanCourses.every((c) => newMarks[c] !== null && newMarks[c] !== undefined);
-            const hasSomeMarks = cleanCourses.some((c) => newMarks[c] !== null && newMarks[c] !== undefined);
-            const newStatus = allEntered ? 'Evaluated' : hasSomeMarks ? 'Under Evaluation' : item.status;
+      // 2. Apply Cascading Update across the entire database
+      const cascade = applyCascadingUpdate(
+        {
+          targetId: data.id,
+          originalEnrollmentNo: cleanOrigEnr,
+          enrollmentNo: cleanNewEnr,
+          studentName: data.candidateName.trim(),
+          studentPhone: data.contact.trim(),
+          programmeCode: cleanProg,
+          courseCodes: cleanCourses,
+          session: activeSession,
+          submissionDate: data.submissionDate,
+        },
+        {
+          intakes,
+          courseEvaluations,
+          registrationReceipts,
+          assignmentSubmissions,
+        }
+      );
 
-            const newSubDate = data.submissionDate ? data.submissionDate.trim() : item.submissionDate;
-            const updated: IntakeRecord = {
-              ...item,
-              enrollmentNo: cleanNewEnr,
-              studentName: cleanName,
-              studentPhone: cleanContact,
-              programmeCode: cleanProg,
-              courseCodes: cleanCourses,
-              submissionDate: newSubDate,
-              receiptDate: newSubDate,
-              Submission_Date: newSubDate,
-              Timestamp: `${newSubDate}T10:00:00.000Z`,
-              timestamp: `${newSubDate}T10:00:00.000Z`,
-              createdAt: `${newSubDate}T10:00:00.000Z`,
-              marks: newMarks,
-              status: newStatus,
-            };
-            updatedIntakeRecord = updated;
-            return updated;
-          }
-          return item;
-        });
+      // Overwrite and modify all linked records seamlessly
+      setIntakes((prev) => {
+        const next = prev.map((item) => (item.id === data.id ? cascade.updatedIntake : item));
         try {
           localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(next));
           localStorage.setItem('ignou_sc2033_intake', JSON.stringify(next));
@@ -2083,206 +2135,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return next;
       });
 
-      // 2. Optimistic state update across courseLedger (courseEvaluations)
-      setCourseEvaluations((prev) => {
-        const studentEvals = prev.filter(
-          (e) =>
-            (e.intakeId === data.id || e.enrollmentNo.trim() === cleanOrigEnr) &&
-            e.session.trim().toLowerCase() === activeSession.trim().toLowerCase()
-        );
-        const existingCodes = studentEvals.map((e) => e.courseCode.toUpperCase());
-        const otherEvals = prev.filter(
-          (e) =>
-            !(
-              (e.intakeId === data.id || e.enrollmentNo.trim() === cleanOrigEnr) &&
-              e.session.trim().toLowerCase() === activeSession.trim().toLowerCase()
-            )
-        );
-
-        // Update existing evaluations that are kept
-        const updatedExisting = studentEvals
-          .filter((e) => cleanCourses.includes(e.courseCode.toUpperCase()))
-          .map((e) => {
-            const detKey = generateDeterministicSubmissionKey(cleanNewEnr, e.courseCode, activeSession);
-            const resolvedDate = data.submissionDate ? data.submissionDate.trim() : e.submissionDate;
-            return {
-              ...e,
-              Sub_ID: detKey,
-              subId: detKey,
-              Session: activeSession,
-              Enrollment_No: cleanNewEnr,
-              Candidate_Name: cleanName,
-              Programme: cleanProg,
-              Course_Code: e.courseCode.toUpperCase(),
-              enrollmentNo: cleanNewEnr,
-              studentName: cleanName,
-              studentPhone: cleanContact,
-              programmeCode: cleanProg,
-              submissionKey: detKey,
-              submissionDate: resolvedDate,
-              receiptDate: resolvedDate,
-              Submission_Date: resolvedDate,
-              receivedDate: resolvedDate,
-              intakeDate: resolvedDate,
-              updatedAt: new Date().toISOString(),
-            };
-          });
-
-        // Create new unpacked rows for newly added courses
-        const addedCodes = cleanCourses.filter((c) => !existingCodes.includes(c));
-        const resolvedDate = data.submissionDate ? data.submissionDate.trim() : (targetIntake?.submissionDate || new Date().toISOString().split('T')[0]);
-        const newUnpackedRows: CourseEvaluationRecord[] = addedCodes.map((c) => {
-          const detKey = generateDeterministicSubmissionKey(cleanNewEnr, c, activeSession);
-          return {
-            Sub_ID: detKey,
-            subId: detKey,
-            Session: activeSession,
-            Enrollment_No: cleanNewEnr,
-            Candidate_Name: cleanName,
-            Programme: cleanProg,
-            Course_Code: c.toUpperCase(),
-            Allotted_Evaluator: '',
-            Marks: null,
-            Grade: '—',
-            Status: 'Pending Allotment',
-
-            id: detKey,
-            submissionKey: detKey,
-            intakeId: data.id,
-            tokenNo: targetIntake?.tokenNo || `SC2033-${generateSessionCode(activeSession)}-MOD`,
-            session: activeSession,
-            enrollmentNo: cleanNewEnr,
-            studentName: cleanName,
-            studentPhone: cleanContact,
-            programmeCode: cleanProg,
-            courseCode: c,
-            courseTitle: `${cleanProg} Course ${c}`,
-            submissionDate: resolvedDate,
-            receiptDate: resolvedDate,
-            Submission_Date: resolvedDate,
-            receivedDate: resolvedDate,
-            intakeDate: resolvedDate,
-            submissionMode: targetIntake?.submissionMode || 'In-Person (Desk)',
-            consignmentNo: targetIntake?.consignmentNo || null,
-            evaluatorId: null,
-            evaluatorCode: null,
-            evaluatorName: null,
-            allottedDate: null,
-            allottedBy: null,
-            marks: null,
-            grade: null,
-            gradeLabel: null,
-            isLocked: false,
-            lockedAt: null,
-            lockedBy: null,
-            status: 'Pending Allotment',
-            updatedAt: new Date().toISOString(),
-            remarks: targetIntake?.remarks,
-          };
-        });
-
-        const combined = [...otherEvals, ...updatedExisting, ...newUnpackedRows];
+      setCourseEvaluations(() => {
         try {
-          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(combined));
-          localStorage.setItem('ignou_sc2033_ledger', JSON.stringify(combined));
+          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(cascade.updatedEvaluations));
+          localStorage.setItem('ignou_sc2033_ledger', JSON.stringify(cascade.updatedEvaluations));
         } catch {}
-        return combined;
+        return cascade.updatedEvaluations;
       });
 
-      // 3. Keep registration receipts in sync
-      setRegistrationReceipts((prev) => {
-        const next = prev.map((rcpt) => {
-          const isMatch =
-            rcpt.id === data.id ||
-            (rcpt as any).intakeId === data.id ||
-            (rcpt.studentId.trim() === cleanOrigEnr && norm(rcpt.session) === norm(activeSession)) ||
-            (rcpt.studentId.trim() === cleanNewEnr && norm(rcpt.session) === norm(activeSession)) ||
-            (targetIntake?.tokenNo && (rcpt as any).tokenNo === targetIntake.tokenNo) ||
-            (targetIntake?.tokenNo && rcpt.receiptNumber === targetIntake.tokenNo);
-
-          if (isMatch) {
-            const resolvedDate = data.submissionDate ? data.submissionDate.trim() : rcpt.submissionDate;
-            return {
-              ...rcpt,
-              studentId: cleanNewEnr,
-              studentName: cleanName,
-              studentPhone: cleanContact,
-              programmeCode: cleanProg,
-              registeredCourses: cleanCourses,
-              submissionDate: resolvedDate,
-              receiptDate: resolvedDate,
-              Submission_Date: resolvedDate,
-              issuedAt: resolvedDate ? `${resolvedDate}T${new Date().toTimeString().split(' ')[0]}` : rcpt.issuedAt,
-            };
-          }
-          return rcpt;
-        });
+      setRegistrationReceipts(() => {
         try {
-          localStorage.setItem(STORAGE_KEYS.REGISTRATION_RECEIPTS, JSON.stringify(next));
+          localStorage.setItem(STORAGE_KEYS.REGISTRATION_RECEIPTS, JSON.stringify(cascade.updatedReceipts));
         } catch {}
-        return next;
+        return cascade.updatedReceipts;
       });
 
-      // 4. Keep assignment submissions in sync
-      setAssignmentSubmissions((prev) => {
-        const next = prev.map((sub) => {
-          if (
-            sub.studentId.trim() === cleanOrigEnr &&
-            (!activeSession || norm(sub.session) === norm(activeSession))
-          ) {
-            return {
-              ...sub,
-              studentId: cleanNewEnr,
-              studentName: cleanName,
-              programmeCode: cleanProg,
-              submissionDate: data.submissionDate ? data.submissionDate.trim() : sub.submissionDate,
-              updatedAt: new Date().toISOString(),
-            };
-          }
-          return sub;
-        });
+      setAssignmentSubmissions(() => {
         try {
-          localStorage.setItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS, JSON.stringify(next));
+          localStorage.setItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS, JSON.stringify(cascade.updatedSubmissions));
         } catch {}
-        return next;
+        return cascade.updatedSubmissions;
       });
 
-      // Keep open receipt modals in sync
-      if (updatedIntakeRecord) {
-        setSelectedReceiptRecord((prev) => (prev && (prev.id === data.id || prev.enrollmentNo === cleanOrigEnr) ? { ...prev, ...updatedIntakeRecord } : prev));
-      }
+      // Keep open modals in sync
+      setSelectedReceiptRecord((prev) => (prev && (prev.id === data.id || prev.enrollmentNo === cleanOrigEnr) ? { ...prev, ...cascade.updatedIntake } : prev));
       setSelectedRegistrationReceipt((prev) => {
         if (!prev) return null;
-        if (
-          prev.id === data.id ||
-          (prev as any).intakeId === data.id ||
-          prev.studentId.trim() === cleanOrigEnr ||
-          prev.studentId.trim() === cleanNewEnr
-        ) {
-          const resolvedDate = data.submissionDate ? data.submissionDate.trim() : prev.submissionDate;
-          return {
-            ...prev,
-            studentId: cleanNewEnr,
-            studentName: cleanName,
-            studentPhone: cleanContact,
-            programmeCode: cleanProg,
-            registeredCourses: cleanCourses,
-            submissionDate: resolvedDate,
-            receiptDate: resolvedDate,
-            Submission_Date: resolvedDate,
-            issuedAt: resolvedDate ? `${resolvedDate}T${new Date().toTimeString().split(' ')[0]}` : prev.issuedAt,
-          };
+        if (prev.id === data.id || (prev as any).intakeId === data.id || prev.studentId.trim() === cleanOrigEnr || prev.studentId.trim() === cleanNewEnr) {
+          const match = cascade.updatedReceipts.find((r) => r.id === data.id || (r as any).intakeId === data.id);
+          return match || prev;
         }
         return prev;
       });
 
-      // 5. Dispatch POST to Google Apps Script:
-      // action: "EDIT_INTAKE",
+      // Dispatch to Google Apps Script / backend
       postEditIntake({
+        id: data.id,
         originalEnrollmentNo: cleanOrigEnr,
         enrollmentNo: cleanNewEnr,
-        candidateName: cleanName,
-        contact: cleanContact,
+        candidateName: data.candidateName.trim(),
+        contact: data.contact.trim(),
         programme: cleanProg,
         courses: cleanCourses,
         session: activeSession,
@@ -2291,7 +2183,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.warn('Google Sheets EDIT_INTAKE notification warning:', err);
       });
 
-      // 5. Close modal & Toast: "Intake entry updated & synced"
       logAuditEvent({
         action: 'INTAKE_UPDATED',
         category: 'ASSIGNMENT_INTAKE',
@@ -2299,14 +2190,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         role: currentRole,
         session: activeSession,
         targetIdentifier: cleanNewEnr,
-        summary: `Modified intake record for ${cleanName} (Enrollment: ${cleanNewEnr}, Programme: ${cleanProg}, Courses: ${cleanCourses.join(', ')})`,
+        summary: `Cascading update applied for intake ${cascade.updatedIntake.tokenNo} (${cleanNewEnr}, ${cleanProg})`,
         details: { enrollmentNo: cleanNewEnr, courses: cleanCourses, session: activeSession },
         status: 'SUCCESS',
       });
 
-      showToast('Intake entry updated & synced', 'success');
+      showToast('Intake entry updated & cascaded across all records', 'success');
+      return {
+        Status: 'Success' as const,
+        Action: 'Update' as const,
+        Data: cascade.updatedIntake,
+      };
     },
-    [intakes, courseEvaluations, currentSession, showToast, logAuditEvent, currentRole, settings.coordinatorName]
+    [intakes, courseEvaluations, registrationReceipts, assignmentSubmissions, currentSession, showToast, logAuditEvent, currentRole, settings.coordinatorName]
   );
 
   const deleteIntakeRecord = useCallback(
@@ -2317,10 +2213,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const targetSession = target.session || currentSession;
       const cleanEnr = target.enrollmentNo.trim();
 
-      // Check if any course for this student in courseLedger has status === "Locked" or isLocked:
+      // Check if any course for this intake in courseLedger has status === "Locked" or isLocked:
+      const targetCoursesUpper = (target.courseCodes || []).map((c) => c.trim().toUpperCase());
       const hasLocked = courseEvaluations.some(
         (ce) =>
-          ce.enrollmentNo.trim() === cleanEnr &&
+          (ce.intakeId === id || (ce.enrollmentNo.trim() === cleanEnr && targetCoursesUpper.includes(ce.courseCode.trim().toUpperCase()))) &&
           ce.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
           (ce.isLocked || ce.status === 'Locked' || ce.status === 'Marks Locked')
       );
@@ -2330,72 +2227,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return false;
       }
 
-      // Optimistically remove the row from intakeRegister
-      setIntakes((prev) => {
-        const next = prev.filter((item) => item.id !== id);
-        try {
-          localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(next));
-        } catch {}
-        return next;
+      // Execute cascading deletion: completely remove the record & dependent/mirrored data
+      const cascade = applyCascadingDeletion(id, {
+        intakes,
+        courseEvaluations,
+        registrationReceipts,
+        assignmentSubmissions,
       });
 
-      // Remove corresponding scripts from courseLedger
-      setCourseEvaluations((prev) => {
-        const next = prev.filter(
-          (e) =>
-            !(
-              (e.intakeId === id || e.enrollmentNo.trim() === cleanEnr) &&
-              e.session.trim().toLowerCase() === targetSession.trim().toLowerCase()
-            )
-        );
+      setIntakes(() => {
         try {
-          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(next));
+          localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(cascade.updatedIntakes));
+          localStorage.setItem('ignou_sc2033_intake', JSON.stringify(cascade.updatedIntakes));
         } catch {}
-        return next;
+        return cascade.updatedIntakes;
       });
 
-      // Also remove from registrationReceipts
-      setRegistrationReceipts((prev) => {
-        const next = prev.filter(
-          (rcpt) =>
-            !(
-              (rcpt.studentId.trim() === cleanEnr || rcpt.receiptNumber === target.tokenNo) &&
-              rcpt.session.trim().toLowerCase() === targetSession.trim().toLowerCase()
-            )
-        );
+      setCourseEvaluations(() => {
         try {
-          localStorage.setItem(STORAGE_KEYS.REGISTRATION_RECEIPTS, JSON.stringify(next));
+          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(cascade.updatedEvaluations));
+          localStorage.setItem('ignou_sc2033_ledger', JSON.stringify(cascade.updatedEvaluations));
         } catch {}
-        return next;
+        return cascade.updatedEvaluations;
       });
 
-      // Also remove from assignmentSubmissions
-      setAssignmentSubmissions((prev) => {
-        const next = prev.filter(
-          (sub) =>
-            !(
-              sub.studentId.trim() === cleanEnr &&
-              sub.session.trim().toLowerCase() === targetSession.trim().toLowerCase()
-            )
-        );
+      setRegistrationReceipts(() => {
         try {
-          localStorage.setItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS, JSON.stringify(next));
+          localStorage.setItem(STORAGE_KEYS.REGISTRATION_RECEIPTS, JSON.stringify(cascade.updatedReceipts));
         } catch {}
-        return next;
+        return cascade.updatedReceipts;
       });
 
-      // Dispatch POST to Google Apps Script:
-      // action: "DELETE_INTAKE",
-      // payload: { enrollmentNo, session: activeSession }
-      // using mode: 'no-cors'.
+      setAssignmentSubmissions(() => {
+        try {
+          localStorage.setItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS, JSON.stringify(cascade.updatedSubmissions));
+        } catch {}
+        return cascade.updatedSubmissions;
+      });
+
+      // Also clean up any open receipt modals if they matched the deleted item
+      setSelectedReceiptRecord((prev) => (prev && prev.id === id ? null : prev));
+      setSelectedRegistrationReceipt((prev) => (prev && (prev.id === id || (prev as any).intakeId === id) ? null : prev));
+
+      // Dispatch DELETE_INTAKE to Google Apps Script / backend
       postDeleteIntake({
+        id,
         enrollmentNo: cleanEnr,
         session: targetSession,
       }).catch((err) => {
         console.warn('Google Sheets DELETE_INTAKE notification warning:', err);
       });
 
-      // Toast: "Intake receipt and ledger rows deleted"
       logAuditEvent({
         action: 'INTAKE_DELETED',
         category: 'ASSIGNMENT_INTAKE',
@@ -2403,15 +2285,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         role: currentRole,
         session: targetSession,
         targetIdentifier: cleanEnr,
-        summary: `Purged intake submission & course ledger entries for student enrollment: ${cleanEnr}`,
+        summary: `Purged intake submission ${target.tokenNo} & cleaned up linked records for student enrollment: ${cleanEnr}`,
         status: 'WARNING',
-        details: { enrollmentNo: cleanEnr, session: targetSession },
+        details: { id, tokenNo: target.tokenNo, enrollmentNo: cleanEnr, courses: target.courseCodes },
       });
 
-      showToast('Intake receipt and ledger rows deleted', 'success');
+      showToast('Intake entry and all linked records deleted', 'success');
       return true;
     },
-    [intakes, courseEvaluations, currentSession, showToast, logAuditEvent, currentRole, settings.coordinatorName]
+    [intakes, courseEvaluations, registrationReceipts, assignmentSubmissions, currentSession, showToast, logAuditEvent, currentRole, settings.coordinatorName]
+  );
+
+  const getRegisteredProgrammeForEnrollment = useCallback(
+    (enrollmentNo: string, currentIntakeId?: string) => {
+      return getRegisteredProgHelper(
+        enrollmentNo,
+        intakes,
+        courseEvaluations,
+        registrationReceipts,
+        currentIntakeId
+      );
+    },
+    [intakes, courseEvaluations, registrationReceipts]
+  );
+
+  const getEnrolledCoursesForStudent = useCallback(
+    (enrollmentNo: string, currentIntakeId?: string) => {
+      return getEnrolledCoursesHelper(
+        enrollmentNo,
+        intakes,
+        courseEvaluations,
+        currentIntakeId
+      );
+    },
+    [intakes, courseEvaluations]
+  );
+
+  const validateIntake = useCallback(
+    (params: {
+      enrollmentNo: string;
+      programmeCode: string;
+      courseCodes: string[];
+      session?: string;
+      currentIntakeId?: string;
+    }) => {
+      return validateIntakeRecord({
+        ...params,
+        session: params.session || currentSession,
+        existingIntakes: intakes,
+        existingEvaluations: courseEvaluations,
+        existingReceipts: registrationReceipts,
+      });
+    },
+    [intakes, courseEvaluations, registrationReceipts, currentSession]
   );
 
   const updateIntakeDate = useCallback(
@@ -3276,7 +3202,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const rawLedger = data.courseLedger || data.course_ledger || data.Course_Ledger || [];
 
         // 1. Universal Normalizer: Intake Register
-        const cleanIntake = rawIntake.map((r: any) => {
+        const seenIntakeIds = new Set<string>();
+        const cleanIntake = rawIntake.map((r: any, idx: number) => {
           const rawCourses = r.Courses || r.courses || r.courseCodes || "";
           const courseArr = Array.isArray(rawCourses)
             ? rawCourses
@@ -3295,7 +3222,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             : (rawTimestamp ? String(rawTimestamp).split('T')[0] : new Date().toISOString().split('T')[0]);
           const timestamp = rawTimestamp || `${subDate}T10:00:00Z`;
           const official = r.Official || r.handledBy || r.official || "Desk Official";
-          const id = r.id || r.tokenNo || r.Token_No || `intake-${enrollment}-${session.replace(/\s+/g, '')}`;
+          
+          const rawId = r.id || r.tokenNo || r.Token_No;
+          const baseLegacyId = `intake-${enrollment}-${session.replace(/\s+/g, '')}`;
+          const courseSlug = courseArr.slice().sort().join('_') || `entry${idx}`;
+          let id = rawId ? String(rawId).trim() : '';
+          if (!id || seenIntakeIds.has(id) || id === baseLegacyId) {
+            id = `intake-${enrollment || 'cand'}-${session.replace(/\s+/g, '')}-${courseSlug}-${idx}`;
+            if (seenIntakeIds.has(id)) {
+              id = `${id}-${Math.random().toString(36).substring(2, 6)}`;
+            }
+          }
+          seenIntakeIds.add(id);
           const tokenNo = r.tokenNo || r.Token_No || id;
 
           return {
@@ -3951,6 +3889,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         editIntakeEntry,
         updateIntakeDate,
         deleteIntakeRecord,
+        getRegisteredProgrammeForEnrollment,
+        getEnrolledCoursesForStudent,
+        validateIntake,
         updateMarks,
         saveOrUpdateMarksAndLock,
         // Module B: Course Evaluations

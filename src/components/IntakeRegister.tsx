@@ -46,28 +46,15 @@ export const IntakeRegister: React.FC = () => {
   };
 
   const handleDeleteClick = (record: any) => {
-    // 4. Access Guard: Require Coordinator Mode (PIN 2033) for Delete actions
-    if (!isAdmin) {
-      const enteredPin = window.prompt('Coordinator PIN Required: Enter PIN 2033 to authorize deletion of intake records:');
-      if (!enteredPin) return;
-      if (enteredPin.trim() === '2033') {
-        const authorized = verifyAndSetAdminRole('2033');
-        if (!authorized) {
-          alert('Coordinator PIN verification failed.');
-          return;
-        }
-      } else {
-        alert('Unauthorized: Incorrect Coordinator PIN.');
-        return;
-      }
-    }
-
-    // 3. Check if any course for this student in courseLedger has status === "Locked" or isLocked
+    const candName = record.Candidate_Name || record.candidateName || record["Candidate Name"] || record.studentName || '-';
+    const enr = record.Enrollment_No || record.enrollmentNo || record["Enrollment No"] || '-';
     const activeSession = record.Session || record.session || currentSession;
+
+    // Check if any course for this student in courseLedger has status === "Locked" or isLocked
     const isAnyCourseLocked = allCourseEvaluations.some(
       (ce) =>
-        (ce.intakeId === record.id || ce.enrollmentNo.trim() === (record.Enrollment_No || record.enrollmentNo || '').trim()) &&
-        ce.session.trim().toLowerCase() === activeSession.trim().toLowerCase() &&
+        (ce.intakeId === record.id || ce.enrollmentNo.trim() === String(enr).trim()) &&
+        norm(ce.session) === norm(activeSession) &&
         (ce.isLocked || ce.status === 'Locked' || ce.status === 'Marks Locked')
     );
 
@@ -76,12 +63,9 @@ export const IntakeRegister: React.FC = () => {
       return;
     }
 
-    const candName = record.Candidate_Name || record.candidateName || record["Candidate Name"] || record.studentName || '-';
-    const enr = record.Enrollment_No || record.enrollmentNo || record["Enrollment No"] || '-';
-
-    // Confirmation dialog
+    // Confirmation dialog allowing users to delete mistakes made during intake
     const confirmed = window.confirm(
-      `Are you sure you want to delete intake receipt for ${candName} (${enr})? This will also remove unpacked pending scripts from Course Ledger.`
+      `Delete Intake Entry?\n\nAre you sure you want to delete intake record for ${candName} (${enr})?\n\nThis will completely purge the intake record and cascade cleanup across Course Ledger, Receipts, and Submissions.`
     );
 
     if (confirmed) {
@@ -330,7 +314,7 @@ export const IntakeRegister: React.FC = () => {
             No assignment submissions match your criteria in {currentSession}.
           </div>
         ) : (
-          filteredRecords.map((row: any) => {
+          filteredRecords.map((row: any, idx: number) => {
             const enrollment = row.Enrollment_No || row.enrollmentNo || row["Enrollment No"] || "-";
             const candidateName = row.Candidate_Name || row.candidateName || row["Candidate Name"] || row.studentName || "-";
             const contact = row.Contact || row.contact || row["Contact Number"] || row.studentPhone || "";
@@ -344,7 +328,7 @@ export const IntakeRegister: React.FC = () => {
 
             return (
               <div
-                key={row.id || token || enrollment}
+                key={`mobile-intake-${row.id || token || enrollment}-${idx}`}
                 style={{
                   backgroundColor: '#fff',
                   border: '1px solid #e2e8f0',
@@ -386,15 +370,14 @@ export const IntakeRegister: React.FC = () => {
                     >
                       Edit
                     </button>
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteClick(row)}
-                        className="px-2 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-600 hover:text-white rounded-md border border-rose-200"
-                      >
-                        Delete
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteClick(row)}
+                      className="px-2 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-600 hover:text-white rounded-md border border-rose-200"
+                      title="Delete Intake Mistake"
+                    >
+                      Delete
+                    </button>
                     <button
                       type="button"
                       onClick={() => openReceiptModal(row)}
@@ -435,7 +418,7 @@ export const IntakeRegister: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((record: any) => {
+                filteredRecords.map((record: any, idx: number) => {
                   const enrollment = record.Enrollment_No || record.enrollmentNo || record["Enrollment No"] || "-";
                   const studentName = record.Candidate_Name || record.candidateName || record["Candidate Name"] || record.studentName || "-";
                   const contact = record.Contact || record.contact || record["Contact Number"] || record.studentPhone || "";
@@ -455,7 +438,7 @@ export const IntakeRegister: React.FC = () => {
                   const allMarksEntered = marksCount > 0 && marksCount === courseCodes.length;
 
                   return (
-                    <tr key={record.id || tokenNo || enrollment} className="hover:bg-zinc-50 transition">
+                    <tr key={`intake-row-${record.id || tokenNo || enrollment}-${idx}`} className="hover:bg-zinc-50 transition">
                       {/* Token & Date */}
                       <td className="py-3 px-4">
                         <div className="font-mono font-bold text-indigo-950 text-xs">
@@ -582,18 +565,16 @@ export const IntakeRegister: React.FC = () => {
                             <span>Edit</span>
                           </button>
 
-                          {/* Delete Button (Coordinator Only) */}
-                          {isAdmin && (
-                            <button
-                              id={`delete-btn-${record.id}`}
-                              onClick={() => handleDeleteClick(record)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-lg transition shadow-2xs cursor-pointer"
-                              title="Delete Intake Record (Coordinator PIN Required)"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Delete</span>
-                            </button>
-                          )}
+                          {/* Delete Button (Allowed for fixing intake mistakes) */}
+                          <button
+                            id={`delete-btn-${record.id}`}
+                            onClick={() => handleDeleteClick(record)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-lg transition shadow-2xs cursor-pointer"
+                            title="Delete Intake Mistake (Cascades cleanup to Course Ledger & Receipts)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete</span>
+                          </button>
 
                           {/* Print / View Acknowledgment Slip */}
                           <button

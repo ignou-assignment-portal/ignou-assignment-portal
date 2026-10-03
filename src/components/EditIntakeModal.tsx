@@ -29,7 +29,13 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
   onClose,
   record,
 }) => {
-  const { editIntakeEntry, currentSession, allCourseEvaluations } = useApp();
+  const {
+    editIntakeEntry,
+    currentSession,
+    allCourseEvaluations,
+    validateIntake,
+    getRegisteredProgrammeForEnrollment,
+  } = useApp();
 
   const [originalEnrollmentNo, setOriginalEnrollmentNo] = useState('');
   const [enrollmentNo, setEnrollmentNo] = useState('');
@@ -40,6 +46,18 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
   const [submissionDate, setSubmissionDate] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Live Rule 1 scope check during edit
+  const registeredProg = useMemo(() => {
+    if (!enrollmentNo.trim() || enrollmentNo.trim().length < 5) return null;
+    return getRegisteredProgrammeForEnrollment(enrollmentNo, record?.id);
+  }, [enrollmentNo, record?.id, getRegisteredProgrammeForEnrollment]);
+
+  const isProgrammeConflict = Boolean(
+    registeredProg &&
+    programme &&
+    registeredProg.toUpperCase() !== programme.trim().toUpperCase()
+  );
 
   // Populate form fields whenever record changes
   useEffect(() => {
@@ -145,6 +163,21 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
       return;
     }
 
+    // Strict Enforcement of Rule 1, Rule 2, and Rule 3 via Validation Engine
+    const validation = validateIntake({
+      enrollmentNo: cleanEnr,
+      programmeCode: cleanProg,
+      courseCodes: parsedCourses,
+      session: record.session || currentSession,
+      currentIntakeId: record.id,
+    });
+
+    if (!validation.valid) {
+      setFormError(validation.reason);
+      alert(validation.reason);
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       // Perform optimistic state update & dispatch POST EDIT_INTAKE via AppContext
@@ -233,6 +266,18 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
               Receipt Token: <span className="font-mono">{record.tokenNo}</span>
             </span>
           </div>
+
+          {/* Rule 1 Conflict Banner */}
+          {isProgrammeConflict && (
+            <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-900 flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <strong className="font-bold text-rose-950">Rule 1 Scope Conflict:</strong> Enrollment Number{' '}
+                <strong className="font-mono text-rose-950">{enrollmentNo}</strong> is registered under Programme{' '}
+                <strong className="font-mono text-rose-950">{registeredProg}</strong>. In IGNOU, an enrollment number cannot exist in a different programme.
+              </div>
+            </div>
+          )}
 
           {/* Grid: Enrollment Number & Student Name */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
