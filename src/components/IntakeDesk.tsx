@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp, norm } from '../context/AppContext';
-import { SubmissionMode } from '../types';
+import { SubmissionMode, IntakeRecord } from '../types';
 import { formatDate, formatDateTime } from '../utils/helpers';
 import { IntakeStatusMatrix } from './IntakeStatusMatrix';
 import {
@@ -45,8 +45,9 @@ import { IntakeRegister } from './IntakeRegister';
 import { EditIntakeModal } from './EditIntakeModal';
 import { ValidationSummary, ValidationSummaryProps } from './ValidationSummary';
 import { ProgrammeIntakeBarChart } from './ProgrammeIntakeBarChart';
+import { EnrollmentAuditModal, DuplicateEnrollmentGroup } from './EnrollmentAuditModal';
 
-export { ValidationSummary, ProgrammeIntakeBarChart };
+export { ValidationSummary, ProgrammeIntakeBarChart, EnrollmentAuditModal };
 export type { ValidationSummaryProps };
 
 export interface ValidationSummaryItem {
@@ -132,6 +133,8 @@ export const IntakeDesk: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationResult, setValidationResult] = useState<ValidationSummaryItem | null>(null);
   const [selectedChartProgramme, setSelectedChartProgramme] = useState<string | null>(null);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isScanningDuplicates, setIsScanningDuplicates] = useState(false);
 
   // Scope and course validation states for Rule 1, 2, and 3
   const registeredProgForEnrollment = useMemo(() => {
@@ -226,6 +229,59 @@ export const IntakeDesk: React.FC = () => {
       return prog === selectedChartProgramme.toUpperCase();
     });
   }, [filteredIntake, selectedChartProgramme]);
+
+  // Validity Rule Audit: Checks whether any enrollment number has duplicate entries across all intakes in the active session
+  const duplicateEnrollmentGroups = useMemo<DuplicateEnrollmentGroup[]>(() => {
+    const targetSession = selectedSession || currentSession;
+    const recordsInSession = sessionIntakes.filter((r) => {
+      const s = r.session || (r as any).Session;
+      return !s || norm(s) === norm(targetSession);
+    });
+
+    const enrollmentMap = new Map<string, IntakeRecord[]>();
+    recordsInSession.forEach((r) => {
+      const clean = (r.enrollmentNo || (r as any).Enrollment_No || '').trim();
+      if (!clean) return;
+      const list = enrollmentMap.get(clean) || [];
+      list.push(r);
+      enrollmentMap.set(clean, list);
+    });
+
+    const dupes: DuplicateEnrollmentGroup[] = [];
+    enrollmentMap.forEach((records, enrollmentNo) => {
+      if (records.length > 1) {
+        const studentName = records[0].studentName || (records[0] as any).Candidate_Name || 'Candidate';
+        const progs = Array.from(new Set(records.map((r) => (r.programmeCode || (r as any).Programme || '').trim().toUpperCase())));
+        const isProgrammeConflict = progs.length > 1;
+
+        // Check duplicate courses
+        const allCourses: string[] = [];
+        const dupeCourses: string[] = [];
+        records.forEach((r) => {
+          const cList = r.courseCodes || (r as any).Courses || [];
+          const arr = Array.isArray(cList) ? cList : String(cList).split(',').map((c: string) => c.trim().toUpperCase());
+          arr.forEach((c: string) => {
+            if (allCourses.includes(c) && !dupeCourses.includes(c)) {
+              dupeCourses.push(c);
+            }
+            allCourses.push(c);
+          });
+        });
+
+        dupes.push({
+          enrollmentNo,
+          studentName,
+          programmeCodes: progs,
+          records,
+          isProgrammeConflict,
+          duplicateCourses: dupeCourses,
+          isSupplementaryMultiCourse: !isProgrammeConflict && dupeCourses.length === 0,
+        });
+      }
+    });
+
+    return dupes;
+  }, [sessionIntakes, selectedSession, currentSession]);
 
   const filteredReceipts = useMemo(() => {
     const list = (allRegistrationReceipts && allRegistrationReceipts.length > 0)
@@ -926,6 +982,108 @@ export const IntakeDesk: React.FC = () => {
     }
   };
 
+  // Validity Rule Audit: Trigger integrity scan to detect duplicate enrollment numbers across all current active session records
+  const handleTriggerIntegrityScan = () => {
+    setIsScanningDuplicates(true);
+    const targetSession = selectedSession || currentSession;
+
+    setTimeout(() => {
+      setIsScanningDuplicates(false);
+      setIsAuditModalOpen(true);
+      const totalEnrCount = new Set(sessionIntakes.map((r) => r.enrollmentNo)).size;
+      if (duplicateEnrollmentGroups.length > 0) {
+        setValidationResult({
+          status: 'Rejected',
+          action: 'Validate',
+          rule: 'Integrity Scan: Duplicate Enrollment Numbers',
+          reason: `Integrity Scan Alert: Found ${duplicateEnrollmentGroups.length} duplicate enrollment number(s) across ${duplicateEnrollmentGroups.reduce((acc, g) => acc + g.records.length, 0)} intake records in active session ${targetSession}.`,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        setValidationResult({
+          status: 'Success',
+          action: 'Validate',
+          rule: 'Integrity Scan: Duplicate Enrollment Numbers',
+          reason: `Integrity Scan Passed: All ${totalEnrCount} student enrollment numbers across ${sessionIntakes.length} intake records in active session ${targetSession} are completely unique. No duplicates detected.`,
+          timestamp: new Date().toISOString(),
+          cleanData: {
+            session: targetSession,
+            totalRecords: sessionIntakes.length,
+            uniqueEnrollments: totalEnrCount,
+          },
+        });
+      }
+    }, 250);
+  };
+
+  const handleOpenEnrollmentAudit = handleTriggerIntegrityScan;
+
+  // Single Enrollment Check: checks if the entered enrollment number already has an intake in the active session
+  const handleCheckSingleEnrollmentInActiveSession = () => {
+    const cleanEnr = enrollmentNo.trim();
+    if (!cleanEnr) {
+      const msg = 'Please enter an Enrollment Number to check.';
+      setErrorMsg(msg);
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Validate',
+        rule: 'Enrollment Input Required',
+        reason: 'Please enter a 9 or 10-digit Student Enrollment Number first.',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    const targetSession = selectedSession || currentSession;
+    const existingMatches = sessionIntakes.filter((r) => {
+      const s = r.session || (r as any).Session;
+      const matchSession = !s || norm(s) === norm(targetSession);
+      const matchEnr = (r.enrollmentNo || (r as any).Enrollment_No || '').trim() === cleanEnr;
+      return matchSession && matchEnr;
+    });
+
+    if (existingMatches.length > 0) {
+      const first = existingMatches[0];
+      const prog = first.programmeCode || (first as any).Programme;
+      const allSubmittedCourses = existingMatches.flatMap((m) => m.courseCodes || (m as any).Courses || []);
+      const coursesStr = allSubmittedCourses.join(', ');
+
+      const msg = `Enrollment ${cleanEnr} already has ${existingMatches.length} intake record(s) in active session (${targetSession}). Registered under Programme ${prog} with Token ${first.tokenNo} (Courses: ${coursesStr}).`;
+      setErrorMsg(msg);
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Validate',
+        rule: 'Rule: Enrollment Number Uniqueness in Active Session',
+        reason: msg,
+        timestamp: new Date().toISOString(),
+        attemptedData: first,
+      });
+
+      // Autofill candidate name and programme if currently empty
+      if (!studentName && first.studentName) {
+        setStudentName(first.studentName);
+      }
+      if (!selectedProgramme && prog) {
+        setSelectedProgramme(prog);
+      }
+    } else {
+      setErrorMsg('');
+      const msg = `Verified: Enrollment ${cleanEnr} has NO intake record in active session (${targetSession}). It is completely unique and ready for intake registration.`;
+      setSuccessMsg(msg);
+      setValidationResult({
+        status: 'Success',
+        action: 'Validate',
+        rule: 'Rule: Enrollment Number Uniqueness in Active Session',
+        reason: msg,
+        timestamp: new Date().toISOString(),
+        cleanData: {
+          enrollmentNo: cleanEnr,
+          session: targetSession,
+        },
+      });
+    }
+  };
+
   const handleIntakeSubmit = handleSubmitAndGenerateReceipt;
 
   return (
@@ -986,53 +1144,94 @@ export const IntakeDesk: React.FC = () => {
         </div>
       </div>
 
-      {/* Desk Official Sub-Navigation Tabs */}
-      <div className="flex flex-wrap items-center gap-2 p-1 bg-zinc-200/80 rounded-xl max-w-fit text-xs font-semibold">
-        <button
-          id="desk-view-register-tab"
-          type="button"
-          onClick={() => setDeskView('REGISTER')}
-          className={`px-4 py-2 rounded-lg transition flex items-center gap-2 cursor-pointer ${
-            deskView === 'REGISTER'
-              ? 'bg-white text-zinc-950 shadow-xs font-bold'
-              : 'text-zinc-600 hover:text-zinc-900'
-          }`}
-        >
-          <UserPlus className="w-3.5 h-3.5 text-indigo-600" />
-          <span>Registration Desk & Status Matrix</span>
-        </button>
+      {/* Desk Official Sub-Navigation Tabs & Audit Action Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2 p-1 bg-zinc-200/80 rounded-xl max-w-fit text-xs font-semibold">
+          <button
+            id="desk-view-register-tab"
+            type="button"
+            onClick={() => setDeskView('REGISTER')}
+            className={`px-4 py-2 rounded-lg transition flex items-center gap-2 cursor-pointer ${
+              deskView === 'REGISTER'
+                ? 'bg-white text-zinc-950 shadow-xs font-bold'
+                : 'text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            <UserPlus className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Registration Desk & Status Matrix</span>
+          </button>
 
+          <button
+            id="desk-view-submissions-tab"
+            type="button"
+            onClick={() => setDeskView('SUBMISSIONS_REGISTER')}
+            className={`px-4 py-2 rounded-lg transition flex items-center gap-2 cursor-pointer ${
+              deskView === 'SUBMISSIONS_REGISTER'
+                ? 'bg-white text-zinc-950 shadow-xs font-bold'
+                : 'text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            <TableProperties className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Submissions Register</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-100 text-indigo-800 font-bold">
+              {sessionIntakes.length}
+            </span>
+          </button>
+
+          <button
+            id="desk-view-receipts-tab"
+            type="button"
+            onClick={() => setDeskView('RECEIPTS')}
+            className={`px-4 py-2 rounded-lg transition flex items-center gap-2 cursor-pointer ${
+              deskView === 'RECEIPTS'
+                ? 'bg-white text-zinc-950 shadow-xs font-bold'
+                : 'text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            <Receipt className="w-3.5 h-3.5 text-teal-600" />
+            <span>Registration Receipts Register</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-teal-100 text-teal-800 font-bold">
+              {sessionRegistrationReceipts.length}
+            </span>
+          </button>
+        </div>
+
+        {/* Button to trigger integrity scan to detect duplicate enrollment numbers across all current active session records */}
         <button
-          id="desk-view-submissions-tab"
           type="button"
-          onClick={() => setDeskView('SUBMISSIONS_REGISTER')}
-          className={`px-4 py-2 rounded-lg transition flex items-center gap-2 cursor-pointer ${
-            deskView === 'SUBMISSIONS_REGISTER'
-              ? 'bg-white text-zinc-950 shadow-xs font-bold'
-              : 'text-zinc-600 hover:text-zinc-900'
+          id="trigger-integrity-scan-btn"
+          data-testid="trigger-integrity-scan-btn"
+          onClick={handleTriggerIntegrityScan}
+          disabled={isScanningDuplicates}
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-2xs border ${
+            duplicateEnrollmentGroups.length > 0
+              ? 'bg-rose-50 border-rose-300 text-rose-950 hover:bg-rose-100'
+              : 'bg-emerald-50 border-emerald-300 text-emerald-950 hover:bg-emerald-100'
           }`}
+          title={`Run integrity scan to detect duplicate enrollment numbers across all records in active session (${currentSession})`}
         >
-          <TableProperties className="w-3.5 h-3.5 text-indigo-600" />
-          <span>Submissions Register</span>
-          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-100 text-indigo-800 font-bold">
-            {sessionIntakes.length}
+          {isScanningDuplicates ? (
+            <Loader2 className="w-4 h-4 animate-spin text-indigo-600 shrink-0" />
+          ) : duplicateEnrollmentGroups.length > 0 ? (
+            <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+          ) : (
+            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+          )}
+          <span>
+            {isScanningDuplicates
+              ? 'Scanning Records...'
+              : `Trigger Integrity Scan (${currentSession})`}
           </span>
-        </button>
-
-        <button
-          id="desk-view-receipts-tab"
-          type="button"
-          onClick={() => setDeskView('RECEIPTS')}
-          className={`px-4 py-2 rounded-lg transition flex items-center gap-2 cursor-pointer ${
-            deskView === 'RECEIPTS'
-              ? 'bg-white text-zinc-950 shadow-xs font-bold'
-              : 'text-zinc-600 hover:text-zinc-900'
-          }`}
-        >
-          <Receipt className="w-3.5 h-3.5 text-teal-600" />
-          <span>Registration Receipts Register</span>
-          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-teal-100 text-teal-800 font-bold">
-            {sessionRegistrationReceipts.length}
+          <span
+            className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+              duplicateEnrollmentGroups.length > 0
+                ? 'bg-rose-600 text-white'
+                : 'bg-emerald-600 text-white'
+            }`}
+          >
+            {duplicateEnrollmentGroups.length > 0
+              ? `${duplicateEnrollmentGroups.length} Duplicate${duplicateEnrollmentGroups.length === 1 ? '' : 's'}`
+              : '100% Unique'}
           </span>
         </button>
       </div>
@@ -1092,9 +1291,21 @@ export const IntakeDesk: React.FC = () => {
                 {/* 1. Student Enrollment Number (9-10 digits) & Candidate Name */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                      Student Enrollment Number <span className="text-rose-500">*</span>
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label htmlFor="enrollment-input" className="block text-xs font-semibold text-zinc-700">
+                        Student Enrollment Number <span className="text-rose-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        id="btn-check-enrollment-active-session"
+                        onClick={handleCheckSingleEnrollmentInActiveSession}
+                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 cursor-pointer transition"
+                        title={`Check if this enrollment number is already registered in active session (${selectedSession || currentSession})`}
+                      >
+                        <Search className="w-3 h-3" />
+                        <span>Check in {selectedSession || currentSession}</span>
+                      </button>
+                    </div>
                     <div className="relative">
                       <Hash className="w-4 h-4 text-zinc-400 absolute left-3 top-2.5" />
                       <input
@@ -1108,9 +1319,18 @@ export const IntakeDesk: React.FC = () => {
                         required
                       />
                     </div>
-                    <span className="text-[10px] text-zinc-500 mt-0.5 block">
-                      {enrollmentNo.length}/10 digits (Numbers only)
-                    </span>
+                    <div className="flex items-center justify-between text-[10px] text-zinc-500 mt-0.5">
+                      <span>{enrollmentNo.length}/10 digits (Numbers only)</span>
+                      {enrollmentNo.trim().length >= 5 && (
+                        <button
+                          type="button"
+                          onClick={handleCheckSingleEnrollmentInActiveSession}
+                          className="text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer font-semibold"
+                        >
+                          Verify Uniqueness
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div>
@@ -1871,6 +2091,17 @@ export const IntakeDesk: React.FC = () => {
                   <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                     <button
                       type="button"
+                      id="check-duplicate-enrollment-btn"
+                      onClick={handleCheckSingleEnrollmentInActiveSession}
+                      className="px-3.5 py-2.5 font-bold text-xs rounded-xl border border-zinc-200 bg-zinc-50/90 hover:bg-zinc-100 text-zinc-700 transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-98"
+                      title="Check whether this enrollment number already has an intake in the active session"
+                    >
+                      <Hash className="w-4 h-4 text-zinc-500" />
+                      <span>Check Duplicate</span>
+                    </button>
+
+                    <button
+                      type="button"
                       id="run-integrity-check-btn"
                       onClick={handleRunPreCheck}
                       className="px-4 py-2.5 font-bold text-xs rounded-xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-98"
@@ -2282,6 +2513,18 @@ export const IntakeDesk: React.FC = () => {
         isOpen={!!editingRecord}
         record={editingRecord}
         onClose={() => setEditingRecord(null)}
+      />
+
+      {/* Enrollment Uniqueness Audit Modal (Active Session Duplicate Check) */}
+      <EnrollmentAuditModal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        sessionName={selectedSession || currentSession}
+        duplicateGroups={duplicateEnrollmentGroups}
+        totalIntakes={sessionIntakes.length}
+        totalUniqueEnrollments={new Set(sessionIntakes.map((r) => r.enrollmentNo)).size}
+        onInspectRecord={(record) => openReceiptModal(record)}
+        onEditRecord={(record) => setEditingRecord(record)}
       />
     </div>
   );
