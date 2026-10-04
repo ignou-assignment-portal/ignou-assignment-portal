@@ -13,6 +13,7 @@ import { EvaluatorDirectory } from './components/EvaluatorDirectory';
 import { RemunerationBilling } from './components/RemunerationBilling';
 import { SystemSettingsView } from './components/SystemSettingsView';
 import { AuditTrail } from './components/AuditTrail';
+import { IntegrityAuditView } from './components/IntegrityAuditView';
 import { ReceiptModal } from './components/ReceiptModal';
 import { RegistrationReceiptModal } from './components/RegistrationReceiptModal';
 import { StudentSearchModal } from './components/StudentSearchModal';
@@ -75,6 +76,7 @@ const DashboardContent: React.FC<DashboardContentProps> = ({ onViewHome }) => {
             {activeTab === 'COURSE_LEDGER' && <CourseLedgerView />}
             {activeTab === 'EVALUATORS' && <EvaluatorDirectory />}
             {activeTab === 'REMUNERATION' && (!isUrlLockedDeskMode && isAdmin ? <RemunerationBilling /> : <IntakeDesk />)}
+            {activeTab === 'INTEGRITY_AUDIT' && (!isUrlLockedDeskMode && isAdmin ? <IntegrityAuditView /> : <IntakeDesk />)}
             {activeTab === 'AUDIT_TRAIL' && <AuditTrail />}
             {activeTab === 'SETTINGS' && (!isUrlLockedDeskMode && isAdmin ? <SystemSettingsView /> : <IntakeDesk />)}
           </main>

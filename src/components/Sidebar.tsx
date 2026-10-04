@@ -18,6 +18,7 @@ import {
   Search,
   Home,
   History as HistoryIcon,
+  ShieldCheck,
 } from 'lucide-react';
 
 export type TabType =
@@ -30,6 +31,7 @@ export type TabType =
   | 'COURSE_LEDGER'
   | 'EVALUATORS'
   | 'REMUNERATION'
+  | 'INTEGRITY_AUDIT'
   | 'AUDIT_TRAIL'
   | 'SETTINGS';
 
@@ -187,6 +189,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onVie
           roles: ['ADMIN', 'OFFICIAL'],
           badge: evalDirectoryCount > 0 ? `${evalDirectoryCount}` : null,
           badgeColor: 'bg-zinc-200 text-zinc-800 border-zinc-300',
+        },
+        {
+          id: 'INTEGRITY_AUDIT' as TabType,
+          stageTag: null,
+          label: 'Integrity Audit',
+          fullTitle: 'Database Health Check & Statutory Integrity Audit',
+          icon: ShieldCheck,
+          roles: ['ADMIN'],
+          adminOnly: true,
+          badge: 'Health Check',
+          badgeColor: 'bg-indigo-100 text-indigo-900 border-indigo-200',
         },
         {
           id: 'AUDIT_TRAIL' as TabType,

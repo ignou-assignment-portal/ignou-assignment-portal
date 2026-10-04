@@ -40,14 +40,17 @@ import {
   FileCode,
   Copy,
   ArrowRight,
+  FileDown,
 } from 'lucide-react';
 import { IntakeRegister } from './IntakeRegister';
 import { EditIntakeModal } from './EditIntakeModal';
 import { ValidationSummary, ValidationSummaryProps } from './ValidationSummary';
 import { ProgrammeIntakeBarChart } from './ProgrammeIntakeBarChart';
 import { EnrollmentAuditModal, DuplicateEnrollmentGroup } from './EnrollmentAuditModal';
+import { IntakeReportModal } from './IntakeReportModal';
+import { downloadStudentIntakePDF } from '../services/pdfReportGenerator';
 
-export { ValidationSummary, ProgrammeIntakeBarChart, EnrollmentAuditModal };
+export { ValidationSummary, ProgrammeIntakeBarChart, EnrollmentAuditModal, IntakeReportModal };
 export type { ValidationSummaryProps };
 
 export interface ValidationSummaryItem {
@@ -135,6 +138,7 @@ export const IntakeDesk: React.FC = () => {
   const [selectedChartProgramme, setSelectedChartProgramme] = useState<string | null>(null);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [isScanningDuplicates, setIsScanningDuplicates] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   // Scope and course validation states for Rule 1, 2, and 3
   const registeredProgForEnrollment = useMemo(() => {
@@ -1133,6 +1137,17 @@ export const IntakeDesk: React.FC = () => {
 
             <button
               type="button"
+              onClick={() => setIsReportModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white font-semibold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0"
+              title={`Compile all student data for ${currentSession} into a downloadable PDF summary report`}
+            >
+              <FileDown className="w-3.5 h-3.5 text-indigo-300" />
+              <span className="hidden sm:inline">Generate Report</span>
+              <span className="sm:hidden font-mono text-[11px]">PDF</span>
+            </button>
+
+            <button
+              type="button"
               onClick={toggleBannerCollapsed}
               className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-zinc-200 hover:text-white transition cursor-pointer shrink-0"
               title={isBannerCollapsed ? "Expand Banner Overview" : "Collapse Banner to save screen space"}
@@ -1196,44 +1211,62 @@ export const IntakeDesk: React.FC = () => {
           </button>
         </div>
 
-        {/* Button to trigger integrity scan to detect duplicate enrollment numbers across all current active session records */}
-        <button
-          type="button"
-          id="trigger-integrity-scan-btn"
-          data-testid="trigger-integrity-scan-btn"
-          onClick={handleTriggerIntegrityScan}
-          disabled={isScanningDuplicates}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-2xs border ${
-            duplicateEnrollmentGroups.length > 0
-              ? 'bg-rose-50 border-rose-300 text-rose-950 hover:bg-rose-100'
-              : 'bg-emerald-50 border-emerald-300 text-emerald-950 hover:bg-emerald-100'
-          }`}
-          title={`Run integrity scan to detect duplicate enrollment numbers across all records in active session (${currentSession})`}
-        >
-          {isScanningDuplicates ? (
-            <Loader2 className="w-4 h-4 animate-spin text-indigo-600 shrink-0" />
-          ) : duplicateEnrollmentGroups.length > 0 ? (
-            <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
-          ) : (
-            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-          )}
-          <span>
-            {isScanningDuplicates
-              ? 'Scanning Records...'
-              : `Trigger Integrity Scan (${currentSession})`}
-          </span>
-          <span
-            className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-              duplicateEnrollmentGroups.length > 0
-                ? 'bg-rose-600 text-white'
-                : 'bg-emerald-600 text-white'
-            }`}
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          {/* Generate Report Button: compiles all student data for current session into a downloadable PDF summary */}
+          <button
+            type="button"
+            id="generate-report-btn"
+            data-testid="generate-report-btn"
+            onClick={() => setIsReportModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-2xs border border-indigo-200 bg-indigo-50/90 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 active:scale-98"
+            title={`Compile all student data for ${selectedSession || currentSession} into a downloadable PDF summary`}
           >
-            {duplicateEnrollmentGroups.length > 0
-              ? `${duplicateEnrollmentGroups.length} Duplicate${duplicateEnrollmentGroups.length === 1 ? '' : 's'}`
-              : '100% Unique'}
-          </span>
-        </button>
+            <FileDown className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span>Generate Report</span>
+            <span className="px-1.5 py-0.2 rounded-md bg-indigo-200/70 text-indigo-900 font-mono text-[10px] font-bold">
+              PDF
+            </span>
+          </button>
+
+          {/* Button to trigger integrity scan to detect duplicate enrollment numbers across all current active session records */}
+          <button
+            type="button"
+            id="trigger-integrity-scan-btn"
+            data-testid="trigger-integrity-scan-btn"
+            onClick={handleTriggerIntegrityScan}
+            disabled={isScanningDuplicates}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-2xs border ${
+              duplicateEnrollmentGroups.length > 0
+                ? 'bg-rose-50 border-rose-300 text-rose-950 hover:bg-rose-100'
+                : 'bg-emerald-50 border-emerald-300 text-emerald-950 hover:bg-emerald-100'
+            }`}
+            title={`Run integrity scan to detect duplicate enrollment numbers across all records in active session (${currentSession})`}
+          >
+            {isScanningDuplicates ? (
+              <Loader2 className="w-4 h-4 animate-spin text-indigo-600 shrink-0" />
+            ) : duplicateEnrollmentGroups.length > 0 ? (
+              <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+            ) : (
+              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            )}
+            <span>
+              {isScanningDuplicates
+                ? 'Scanning Records...'
+                : `Trigger Integrity Scan (${currentSession})`}
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                duplicateEnrollmentGroups.length > 0
+                  ? 'bg-rose-600 text-white'
+                  : 'bg-emerald-600 text-white'
+              }`}
+            >
+              {duplicateEnrollmentGroups.length > 0
+                ? `${duplicateEnrollmentGroups.length} Duplicate${duplicateEnrollmentGroups.length === 1 ? '' : 's'}`
+                : '100% Unique'}
+            </span>
+          </button>
+        </div>
       </div>
 
       {deskView === 'REGISTER' && (
@@ -2525,6 +2558,14 @@ export const IntakeDesk: React.FC = () => {
         totalUniqueEnrollments={new Set(sessionIntakes.map((r) => r.enrollmentNo)).size}
         onInspectRecord={(record) => openReceiptModal(record)}
         onEditRecord={(record) => setEditingRecord(record)}
+      />
+
+      {/* Student Intake Compiled PDF Summary Report Modal */}
+      <IntakeReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        sessionName={selectedSession || currentSession}
+        records={filteredIntake}
       />
     </div>
   );
