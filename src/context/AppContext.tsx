@@ -2585,22 +2585,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return prev;
       });
 
-      // 6. Writeback to Google Sheets
+      // 6. Persist to local date overrides registry so re-fetching or background sync never reverts date
       const primaryEnr = Array.from(matchingEnrs)[0];
-      if (primaryEnr) {
-        const curIntake = targetIntake || intakes.find((i) => i.enrollmentNo.trim() === primaryEnr);
-        if (curIntake) {
-          postEditIntake({
-            originalEnrollmentNo: primaryEnr,
-            enrollmentNo: primaryEnr,
-            candidateName: curIntake.studentName,
-            contact: curIntake.studentPhone || '',
-            programme: curIntake.programmeCode,
-            courses: curIntake.courseCodes,
-            session: curIntake.session || targetSession,
-            submissionDate: cleanDate,
-          }).catch((err) => console.warn('Google Sheets update date sync warning:', err));
-        }
+      const curIntake = targetIntake || (primaryEnr ? intakes.find((i) => i.enrollmentNo.trim() === primaryEnr) : null);
+      const targetIntakeId = curIntake?.id || cleanTarget;
+      const targetTokenNo = curIntake?.tokenNo || Array.from(matchingTokens)[0];
+
+      try {
+        const ovRaw = localStorage.getItem('ignou_sc2033_receipt_date_overrides');
+        const overridesMap: Record<string, string> = ovRaw ? JSON.parse(ovRaw) : {};
+        if (primaryEnr) overridesMap[`enr_${primaryEnr}`] = cleanDate;
+        matchingIds.forEach((id) => { if (id) overridesMap[`id_${id}`] = cleanDate; });
+        matchingTokens.forEach((tok) => { if (tok) overridesMap[`tok_${tok}`] = cleanDate; });
+        localStorage.setItem('ignou_sc2033_receipt_date_overrides', JSON.stringify(overridesMap));
+      } catch {}
+
+      // 7. Writeback to Express backend update-date endpoint
+      try {
+        fetch('/api/intake/update-date', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: targetIntakeId,
+            tokenNo: targetTokenNo,
+            enrollmentNo: primaryEnr || (curIntake?.enrollmentNo ? curIntake.enrollmentNo.trim() : ''),
+            session: curIntake?.session || targetSession,
+            newDate: cleanDate,
+          }),
+        }).catch((err) => console.warn('[updateIntakeDate] Backend sync warning:', err));
+      } catch {}
+
+      // 8. Writeback to Google Sheets
+      if (primaryEnr && curIntake) {
+        postEditIntake({
+          id: curIntake.id,
+          originalEnrollmentNo: primaryEnr,
+          enrollmentNo: primaryEnr,
+          candidateName: curIntake.studentName,
+          contact: curIntake.studentPhone || '',
+          programme: curIntake.programmeCode,
+          courses: curIntake.courseCodes,
+          session: curIntake.session || targetSession,
+          submissionDate: cleanDate,
+          receiptDate: cleanDate,
+        }).catch((err) => console.warn('Google Sheets update date sync warning:', err));
       }
 
       logAuditEvent({
@@ -3201,6 +3229,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const rawIntake = data.intakeRegister || data.intakes || data.Intake_Register || [];
         const rawLedger = data.courseLedger || data.course_ledger || data.Course_Ledger || [];
 
+        // Load local date overrides so server/remote sync NEVER restores to an old timestamp
+        let localDateOverrides: Record<string, string> = {};
+        try {
+          const ovStr = localStorage.getItem('ignou_sc2033_receipt_date_overrides');
+          if (ovStr) localDateOverrides = JSON.parse(ovStr);
+        } catch {}
+
+        const getLocalOverrideDate = (enr: string, token: string, id: string) => {
+          const cleanE = enr ? enr.replace(/\D/g, '').trim() : '';
+          const cleanTok = token ? token.trim() : '';
+          const cleanId = id ? id.trim() : '';
+          return (
+            (cleanE && localDateOverrides[`enr_${cleanE}`]) ||
+            (cleanTok && localDateOverrides[`tok_${cleanTok}`]) ||
+            (cleanId && localDateOverrides[`id_${cleanId}`]) ||
+            null
+          );
+        };
+
         // 1. Universal Normalizer: Intake Register
         const seenIntakeIds = new Set<string>();
         const cleanIntake = rawIntake.map((r: any, idx: number) => {
@@ -3215,14 +3262,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const programme = (r.Programme || r.programme || r.programmeCode || "MEG").toString().trim();
           const rawContact = r.Contact || r.contact || r.studentPhone || "";
           const contact = (rawContact).toString().replace(/^'/, '').trim();
-          const explicitDate = r.submissionDate || r.Submission_Date || r.Date || r.date || r.receiptDate;
-          const rawTimestamp = r.Timestamp || r.timestamp || r.createdAt || "";
-          const subDate = explicitDate
-            ? String(explicitDate).split('T')[0]
-            : (rawTimestamp ? String(rawTimestamp).split('T')[0] : new Date().toISOString().split('T')[0]);
-          const timestamp = rawTimestamp || `${subDate}T10:00:00Z`;
-          const official = r.Official || r.handledBy || r.official || "Desk Official";
-          
+
           const rawId = r.id || r.tokenNo || r.Token_No;
           const baseLegacyId = `intake-${enrollment}-${session.replace(/\s+/g, '')}`;
           const courseSlug = courseArr.slice().sort().join('_') || `entry${idx}`;
@@ -3235,6 +3275,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
           seenIntakeIds.add(id);
           const tokenNo = r.tokenNo || r.Token_No || id;
+
+          const overrideDate = getLocalOverrideDate(enrollment, tokenNo, id) || r.submissionDate || r.receiptDate || r.Submission_Date;
+          const explicitDate = overrideDate || r.Date || r.date;
+          const rawTimestamp = r.Timestamp || r.timestamp || r.createdAt || "";
+          const subDate = explicitDate
+            ? String(explicitDate).split('T')[0]
+            : (rawTimestamp ? String(rawTimestamp).split('T')[0] : new Date().toISOString().split('T')[0]);
+          const timestamp = overrideDate ? `${subDate}T10:00:00.000Z` : (rawTimestamp || `${subDate}T10:00:00.000Z`);
+          const official = r.Official || r.handledBy || r.official || "Desk Official";
 
           return {
             timestamp,
@@ -3263,6 +3312,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             programmeCode: programme,
             courseCodes: courseArr,
             submissionDate: subDate,
+            receiptDate: subDate,
+            Submission_Date: subDate,
             submissionMode: r.submissionMode || 'In-Person (Desk)',
             status: r.status || r.Status || 'Received',
             marks: r.marks || {},
@@ -3285,6 +3336,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const grade = r.Grade || r.grade || (numMarks !== null ? calculateIGNOUGrade(numMarks).grade : "");
           const status = r.Status || r.status || "Pending";
           const isLocked = Boolean(status === 'Locked' || status === 'Marks Locked' || r.isLocked);
+
+          const ledgerOverrideDate = getLocalOverrideDate(enrollment, r.tokenNo || '', subId) || r.submissionDate || r.receiptDate || r.Submission_Date;
+          const ledgerDate = ledgerOverrideDate ? String(ledgerOverrideDate).split('T')[0] : (r.submissionDate || new Date().toISOString().split('T')[0]);
 
           return {
             subId,
@@ -3316,7 +3370,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             evaluatorName: evaluator !== 'Unallotted' ? evaluator : null,
             isLocked,
             tokenNo: r.tokenNo || '',
-            submissionDate: r.submissionDate || new Date().toISOString().split('T')[0],
+            submissionDate: ledgerDate,
+            receiptDate: ledgerDate,
+            Submission_Date: ledgerDate,
+            receivedDate: ledgerDate,
+            intakeDate: ledgerDate,
             submissionMode: r.submissionMode || 'In-Person (Desk)',
           };
         });

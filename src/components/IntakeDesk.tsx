@@ -2729,8 +2729,17 @@ export const IntakeDesk: React.FC = () => {
                       <tr key={`receipt-row-${rcpt.id || rcptNo || enrollment}-${idx}`} className="hover:bg-zinc-50/70 transition">
                         <td className="py-3 px-4 font-mono font-bold text-indigo-950">
                           {rcptNo}
-                          <div className="text-[10px] text-zinc-500 font-sans font-medium">
-                            {formatDate(rcptDate)}
+                          <div className="mt-0.5">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDateEdit(rcpt)}
+                              className="inline-flex items-center gap-1 text-[10px] font-sans font-medium text-zinc-600 hover:text-indigo-600 hover:underline cursor-pointer group"
+                              title="Edit Receipt Date (Quick Presets & Custom Picker)"
+                            >
+                              <Calendar className="w-3 h-3 text-indigo-600 shrink-0 group-hover:scale-110 transition" />
+                              <span>{formatDate(rcptDate)}</span>
+                              <Pencil className="w-2.5 h-2.5 text-zinc-400 group-hover:text-indigo-600 shrink-0 ml-0.5" />
+                            </button>
                           </div>
                         </td>
                         <td className="py-3 px-4">
@@ -2774,13 +2783,24 @@ export const IntakeDesk: React.FC = () => {
                           </div>
                         </td>
                         <td className="py-3 px-4 text-right">
-                          <button
-                            onClick={() => openRegistrationReceiptModal(rcpt)}
-                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-xs transition inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                            <span>Print Slip</span>
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              id={`receipt-date-edit-btn-${rcpt.id || rcptNo || enrollment}`}
+                              onClick={() => handleOpenDateEdit(rcpt)}
+                              className="p-1.5 text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 border border-zinc-200 rounded-lg text-xs font-semibold transition cursor-pointer"
+                              title="Edit Receipt Date (Quick Presets Today/Yesterday or Custom Picker)"
+                            >
+                              <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                            </button>
+                            <button
+                              onClick={() => openRegistrationReceiptModal(rcpt)}
+                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-xs transition inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                              <span>Print Slip</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

@@ -209,6 +209,104 @@ app.post("/api/intake/create", (req, res) => {
   });
 });
 
+app.post("/api/intake/update-date", (req, res) => {
+  const { id, tokenNo, enrollmentNo, session, newDate } = req.body || {};
+  if (!newDate) {
+    return res.status(400).json({ Status: "Rejected", Reason: "New date is required." });
+  }
+
+  const cleanDate = String(newDate).trim();
+  const cleanId = id ? String(id).trim() : "";
+  const cleanToken = tokenNo ? String(tokenNo).trim() : "";
+  const cleanEnr = enrollmentNo ? String(enrollmentNo).replace(/\D/g, "").trim() : "";
+  const cleanSession = session ? String(session).trim().toLowerCase() : "";
+
+  const store = loadStore();
+  store.dateOverrides = store.dateOverrides || {};
+  if (cleanEnr) store.dateOverrides[`enr_${cleanEnr}`] = cleanDate;
+  if (cleanToken) store.dateOverrides[`token_${cleanToken}`] = cleanDate;
+  if (cleanId) store.dateOverrides[`id_${cleanId}`] = cleanDate;
+
+  const isMatch = (item: any) => {
+    if (cleanId && (item.id === cleanId || item.intakeId === cleanId)) return true;
+    if (cleanToken && (item.tokenNo === cleanToken || item.receiptNumber === cleanToken)) return true;
+    if (cleanEnr) {
+      const itemEnr = String(item.enrollmentNo || item.Enrollment_No || item.studentId || "").replace(/\D/g, "").trim();
+      const itemSess = String(item.session || item.Session || "").trim().toLowerCase();
+      if (itemEnr === cleanEnr && (!cleanSession || itemSess === cleanSession)) return true;
+    }
+    return false;
+  };
+
+  let matchedAny = false;
+  store.intakes = (store.intakes || []).map((it: any) => {
+    if (isMatch(it)) {
+      matchedAny = true;
+      return {
+        ...it,
+        submissionDate: cleanDate,
+        receiptDate: cleanDate,
+        Submission_Date: cleanDate,
+        Date: cleanDate,
+        date: cleanDate,
+        Timestamp: `${cleanDate}T10:00:00.000Z`,
+        timestamp: `${cleanDate}T10:00:00.000Z`,
+        createdAt: `${cleanDate}T10:00:00.000Z`,
+      };
+    }
+    return it;
+  });
+
+  store.courseLedger = (store.courseLedger || []).map((ce: any) => {
+    if (isMatch(ce)) {
+      return {
+        ...ce,
+        submissionDate: cleanDate,
+        receiptDate: cleanDate,
+        Submission_Date: cleanDate,
+        receivedDate: cleanDate,
+        intakeDate: cleanDate,
+        Date: cleanDate,
+        date: cleanDate,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    return ce;
+  });
+
+  store.registrationReceipts = (store.registrationReceipts || []).map((rcpt: any) => {
+    if (isMatch(rcpt)) {
+      return {
+        ...rcpt,
+        submissionDate: cleanDate,
+        receiptDate: cleanDate,
+        Submission_Date: cleanDate,
+        issuedAt: `${cleanDate}T10:00:00.000Z`,
+      };
+    }
+    return rcpt;
+  });
+
+  store.assignmentSubmissions = (store.assignmentSubmissions || []).map((sub: any) => {
+    if (isMatch(sub)) {
+      return {
+        ...sub,
+        submissionDate: cleanDate,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    return sub;
+  });
+
+  saveStore(store);
+
+  return res.json({
+    Status: "Success",
+    Action: "UpdateDate",
+    Data: { date: cleanDate, matched: matchedAny },
+  });
+});
+
 app.post("/api/intake/update", (req, res) => {
   const {
     id,
@@ -227,8 +325,22 @@ app.post("/api/intake/update", (req, res) => {
   } = req.body || {};
   const store = loadStore();
 
-  if (!id) {
-    return res.status(400).json({ Status: "Rejected", Reason: "Intake record ID is required for update." });
+  let resolvedId = id ? String(id).trim() : "";
+  if (!resolvedId) {
+    const cleanEnr = String(enrollmentNo || originalEnrollmentNo || "").trim();
+    const cleanSess = String(session || "July 2026").trim().toLowerCase();
+    const match = (store.intakes || []).find(
+      (it: any) =>
+        String(it.enrollmentNo || it.Enrollment_No || "").trim() === cleanEnr &&
+        String(it.session || it.Session || "").trim().toLowerCase() === cleanSess
+    );
+    if (match) {
+      resolvedId = match.id || match.tokenNo;
+    }
+  }
+
+  if (!resolvedId) {
+    return res.status(400).json({ Status: "Rejected", Reason: "Intake record ID or matching Enrollment No is required for update." });
   }
 
   const cleanCourses = (Array.isArray(courseCodes) ? courseCodes : String(courseCodes || "").split(","))
@@ -240,7 +352,7 @@ app.post("/api/intake/update", (req, res) => {
     programmeCode: String(programmeCode || ""),
     courseCodes: cleanCourses,
     session: session || "July 2026",
-    currentIntakeId: String(id),
+    currentIntakeId: resolvedId,
     existingIntakes: store.intakes || [],
     existingEvaluations: store.courseLedger || [],
   });
@@ -410,24 +522,91 @@ app.get("/api/sheets", async (req, res) => {
     const text = await remoteResponse.text();
     try {
       const json = JSON.parse(text);
+      const store = loadStore();
+      const overrides = store.dateOverrides || {};
+
+      const getOverrideDate = (item: any) => {
+        const enr = String(item.Enrollment_No || item.enrollmentNo || item.studentId || "").replace(/\D/g, "").trim();
+        const tok = String(item.Token_No || item.tokenNo || item.receiptNumber || "").trim();
+        const id = String(item.id || item.Sub_ID || item.subId || "").trim();
+        if (enr && overrides[`enr_${enr}`]) return overrides[`enr_${enr}`];
+        if (tok && overrides[`token_${tok}`]) return overrides[`token_${tok}`];
+        if (id && overrides[`id_${id}`]) return overrides[`id_${id}`];
+
+        // Also check matched records in store.intakes
+        const matchIntake = (store.intakes || []).find((si: any) => {
+          if (id && (si.id === id || si.tokenNo === id)) return true;
+          if (tok && (si.tokenNo === tok || si.receiptNumber === tok)) return true;
+          if (enr) {
+            const siEnr = String(si.enrollmentNo || si.Enrollment_No || "").replace(/\D/g, "").trim();
+            if (siEnr === enr) return true;
+          }
+          return false;
+        });
+        if (matchIntake && (matchIntake.submissionDate || matchIntake.receiptDate)) {
+          return matchIntake.submissionDate || matchIntake.receiptDate;
+        }
+        return null;
+      };
+
+      if (json.intakeRegister && Array.isArray(json.intakeRegister)) {
+        json.intakeRegister = json.intakeRegister.map((it: any) => {
+          const ov = getOverrideDate(it);
+          if (ov) {
+            return {
+              ...it,
+              submissionDate: ov,
+              receiptDate: ov,
+              Submission_Date: ov,
+              Date: ov,
+              date: ov,
+              Timestamp: `${ov}T10:00:00.000Z`,
+              timestamp: `${ov}T10:00:00.000Z`,
+            };
+          }
+          return it;
+        });
+      }
+
+      if (json.courseLedger && Array.isArray(json.courseLedger)) {
+        json.courseLedger = json.courseLedger.map((ce: any) => {
+          const ov = getOverrideDate(ce);
+          if (ov) {
+            return {
+              ...ce,
+              submissionDate: ov,
+              receiptDate: ov,
+              Submission_Date: ov,
+              receivedDate: ov,
+              intakeDate: ov,
+              Date: ov,
+              date: ov,
+            };
+          }
+          return ce;
+        });
+      }
+
       return res.json(json);
     } catch {
       // If remote returned HTML or non-JSON (e.g. 404 landing or auth page)
+      const store = loadStore();
       return res.status(200).json({
         status: "fallback",
         remoteStatus: remoteResponse.status,
         message: "Google Apps Script returned non-JSON response.",
-        intakes: [],
-        courseLedger: [],
+        intakes: store.intakes || [],
+        courseLedger: store.courseLedger || [],
       });
     }
   } catch (error: any) {
     console.error("[Proxy GET Error]:", error.message);
+    const store = loadStore();
     return res.status(200).json({
       status: "fallback",
       error: error.message,
-      intakes: [],
-      courseLedger: [],
+      intakes: store.intakes || [],
+      courseLedger: store.courseLedger || [],
     });
   }
 });
