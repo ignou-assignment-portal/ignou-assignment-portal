@@ -86,7 +86,8 @@ export const AssignmentStatusSummaryCard: React.FC<AssignmentStatusSummaryCardPr
       const isRejectedAction =
         log.action === 'INTAKE_REJECTED' ||
         (log.action as string) === 'INTAKE_REJECTED' ||
-        log.status === 'FAILURE' ||
+        log.status === 'FAILED' ||
+        (log.status as any) === 'FAILURE' ||
         (log.summary && log.summary.toLowerCase().includes('reject')) ||
         (log.summary && log.summary.toLowerCase().includes('violation'));
       return isCurrentSession && isRejectedAction;

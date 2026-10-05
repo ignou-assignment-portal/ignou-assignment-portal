@@ -1855,7 +1855,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           targetIdentifier: cleanEnr,
           summary: `Intake validation rejected: ${validation.reason}`,
           details: { enrollmentNo: cleanEnr, programmeCode: cleanProg, courses: cleanCourses, reason: validation.reason, rule: validation.rule },
-          status: 'FAILURE',
+          status: 'FAILED',
         });
         showToast(validation.reason, 'error');
         throw new Error(validation.reason);
@@ -2071,7 +2071,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           targetIdentifier: cleanNewEnr,
           summary: `Edit intake rejected: ${validation.reason}`,
           details: { enrollmentNo: cleanNewEnr, programmeCode: cleanProg, courses: cleanCourses, reason: validation.reason, rule: validation.rule },
-          status: 'FAILURE',
+          status: 'FAILED',
         });
         showToast(validation.reason, 'error');
         throw new Error(validation.reason);
