@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
 import { formatDate, marksToWords } from '../utils/helpers';
@@ -177,14 +177,25 @@ export const AssignmentIntakePrintModal: React.FC<AssignmentIntakePrintModalProp
   };
 
   const handlePrint = () => {
+    document.body.classList.add('printing-intake-matrix-report');
     window.print();
   };
+
+  // Keep body class in sync when modal is open so print mode renders report on page 1 without blank page
+  useEffect(() => {
+    if (isOpen) {
+      document.body.classList.add('printing-intake-matrix-report');
+      return () => {
+        document.body.classList.remove('printing-intake-matrix-report');
+      };
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 bg-zinc-950/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto animate-in fade-in">
-      <div className="bg-white rounded-2xl max-w-5xl w-full shadow-2xl border border-zinc-300 overflow-hidden my-auto print:m-0 print:border-none print:shadow-none print:w-full print:rounded-none">
+    <div className="fixed inset-0 bg-zinc-950/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto animate-in fade-in print:p-0 print:m-0 print:static print:bg-transparent print:overflow-visible print:block">
+      <div className="bg-white rounded-2xl max-w-5xl w-full shadow-2xl border border-zinc-300 overflow-hidden my-auto print:m-0 print:p-0 print:border-none print:shadow-none print:w-full print:rounded-none print:overflow-visible">
         {/* Modal Action Bar (Hidden when printing) */}
         <div className="px-5 py-3.5 bg-zinc-900 text-white flex items-center justify-between gap-3 border-b border-zinc-800 print:hidden">
           <div className="flex items-center gap-2.5">
@@ -296,7 +307,7 @@ export const AssignmentIntakePrintModal: React.FC<AssignmentIntakePrintModalProp
         {/* Printable Document Body */}
         <div
           id="printable-intake-matrix-report"
-          className="p-6 md:p-8 space-y-6 bg-white text-zinc-900 max-h-[78vh] overflow-y-auto print:max-h-none print:overflow-visible print:p-6"
+          className="p-6 md:p-8 space-y-6 bg-white text-zinc-900 max-h-[78vh] overflow-y-auto print:max-h-none print:overflow-visible print:p-0 print:m-0 print:space-y-4"
         >
           {/* Institutional University & Study Centre Header */}
           <div className="border-b-2 border-zinc-900 pb-4">
@@ -562,7 +573,7 @@ export const AssignmentIntakePrintModal: React.FC<AssignmentIntakePrintModalProp
           </div>
 
           {/* Statutory Formal Sign-Off Footer */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 text-xs border-t border-zinc-300">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 text-xs border-t border-zinc-300 print:grid-cols-3 print:break-inside-avoid print:gap-3 print:pt-3">
             {/* Column 1: Intake Desk Official */}
             <div className="p-3.5 flex flex-col justify-between space-y-6 bg-white border-0 border-none shadow-none print:border-none print:shadow-none">
               <div>

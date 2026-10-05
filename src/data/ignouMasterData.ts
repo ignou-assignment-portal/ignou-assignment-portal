@@ -1529,5 +1529,25 @@ export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
     details: { syncStatus: 'Complete', rowCount: 18 },
     status: 'SUCCESS',
   },
+  {
+    id: 'audit-008',
+    timestamp: '2026-09-24T14:15:30.000Z',
+    action: 'INTAKE_REJECTED' as any,
+    category: 'ASSIGNMENT_INTAKE' as any,
+    actor: 'Desk Official (Intake Counter)',
+    role: 'OFFICIAL',
+    session: 'July 2026',
+    targetIdentifier: '2401928371',
+    summary: 'Intake validation rejected: Duplicate Course Submission (Rule 3) — Candidate already submitted MEG-01 in active cycle',
+    details: {
+      enrollmentNo: '2401928371',
+      studentName: 'Aarav Sharma',
+      programmeCode: 'MEG',
+      courses: ['MEG-01'],
+      reason: 'Duplicate Course Submission: Course MEG-01 already exists in active cycle',
+      rule: 'Rule 3: Course Uniqueness Constraint',
+    },
+    status: 'FAILED',
+  },
 ];
 

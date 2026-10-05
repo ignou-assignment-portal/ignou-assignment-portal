@@ -31,6 +31,7 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
 }) => {
   const {
     editIntakeEntry,
+    updateIntakeDate,
     currentSession,
     allCourseEvaluations,
     validateIntake,
@@ -192,6 +193,10 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
         session: record.session || currentSession,
         submissionDate: submissionDate.trim(),
       });
+
+      if (submissionDate.trim()) {
+        updateIntakeDate(record.id || record.tokenNo, submissionDate.trim());
+      }
 
       setIsSubmitting(false);
       onClose();
@@ -383,14 +388,29 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
                 >
                   Intake / Receipt Date <span className="text-rose-500">*</span>
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setSubmissionDate(new Date().toISOString().split('T')[0])}
-                  className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
-                  title="Set to today"
-                >
-                  Today
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = new Date();
+                      d.setDate(d.getDate() - 1);
+                      setSubmissionDate(d.toISOString().split('T')[0]);
+                    }}
+                    className="text-[10px] text-zinc-500 hover:text-zinc-800 font-medium cursor-pointer"
+                    title="Set to yesterday"
+                  >
+                    Yesterday
+                  </button>
+                  <span className="text-zinc-300">•</span>
+                  <button
+                    type="button"
+                    onClick={() => setSubmissionDate(new Date().toISOString().split('T')[0])}
+                    className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
+                    title="Set to today"
+                  >
+                    Today
+                  </button>
+                </div>
               </div>
               <div className="relative">
                 <Calendar className="w-4 h-4 text-zinc-400 absolute left-3 top-2.5" />

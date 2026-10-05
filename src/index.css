@@ -308,6 +308,26 @@ html.dark .border-indigo-200 {
     display: none !important;
   }
 
+  /* Hide root element completely when printing the portaled Regional Office report so page 1 begins directly with the document */
+  body.printing-intake-matrix-report #root,
+  body:has(#printable-intake-matrix-report) #root {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  /* Reset any full-viewport heights that push content to subsequent pages */
+  #root,
+  .min-h-screen {
+    min-height: 0 !important;
+    height: auto !important;
+  }
+
   /* When printing, make the modal overlay natural flow and single-page */
   .fixed.inset-0 {
     position: static !important;
@@ -333,11 +353,30 @@ html.dark .border-indigo-200 {
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 1mm 0 !important;
+    padding: 0 !important;
     box-shadow: none !important;
     border: none !important;
     page-break-inside: auto !important;
     break-inside: auto !important;
+  }
+
+  #printable-intake-matrix-report table {
+    width: 100% !important;
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+  }
+
+  #printable-intake-matrix-report thead {
+    display: table-header-group !important;
+  }
+
+  #printable-intake-matrix-report tfoot {
+    display: table-footer-group !important;
+  }
+
+  #printable-intake-matrix-report tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   .print\:block {

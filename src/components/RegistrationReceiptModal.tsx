@@ -83,9 +83,21 @@ export const RegistrationReceiptModal: React.FC = () => {
                 value={currentReceiptDate}
                 onChange={handleDateChange}
                 max="2099-12-31"
-                className="bg-zinc-950 border border-zinc-700 text-white text-xs px-2 py-0.5 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-hidden cursor-pointer"
+                className="bg-zinc-950 border border-zinc-700 text-white text-xs px-2 py-0.5 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-hidden cursor-pointer font-mono"
                 title="Select receipt intake date"
               />
+              <button
+                type="button"
+                onClick={() => {
+                  const today = new Date().toISOString().split('T')[0];
+                  setCurrentReceiptDate(today);
+                  updateIntakeDate(selectedRegistrationReceipt.id || selectedRegistrationReceipt.receiptNumber, today);
+                }}
+                className="text-[10px] text-indigo-300 hover:text-white underline cursor-pointer ml-1"
+                title="Set receipt date to today"
+              >
+                Today
+              </button>
             </div>
             <button
               onClick={handlePrint}
@@ -139,10 +151,27 @@ export const RegistrationReceiptModal: React.FC = () => {
               </span>
             </div>
             <div>
-              <span className="text-zinc-500 font-semibold block text-[9px] print:text-[7.5px] uppercase">Intake Receipt Date</span>
-              <span className="font-bold text-zinc-900 text-xs print:text-[9.5px]">
-                {formatDate(currentReceiptDate || receiptDateVal)}
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-500 font-semibold block text-[9px] print:text-[7.5px] uppercase">
+                  Intake Receipt Date
+                </span>
+                <span className="print:hidden text-[8px] text-indigo-600 font-bold uppercase tracking-wider">
+                  (Editable)
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="font-bold text-zinc-900 text-xs print:text-[9.5px]">
+                  {formatDate(currentReceiptDate || receiptDateVal)}
+                </span>
+                <input
+                  type="date"
+                  value={currentReceiptDate}
+                  onChange={handleDateChange}
+                  max="2099-12-31"
+                  className="print:hidden text-[10px] font-mono border border-zinc-300 rounded px-1 py-0.2 bg-zinc-50 text-zinc-800 cursor-pointer focus:ring-1 focus:ring-indigo-500"
+                  title="Change date of this receipt"
+                />
+              </div>
             </div>
           </div>
 
