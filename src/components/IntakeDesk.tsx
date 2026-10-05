@@ -41,6 +41,7 @@ import {
   Copy,
   ArrowRight,
   FileDown,
+  Download,
   Activity,
   Clock,
   TrendingUp,
@@ -124,6 +125,7 @@ export const IntakeDesk: React.FC = () => {
     validateIntake,
     updateIntakeDate,
     logAuditEvent,
+    showToast,
   } = useApp();
 
   // Form states
@@ -208,6 +210,99 @@ export const IntakeDesk: React.FC = () => {
     } catch (e) {
       console.error('Failed to log rejected intake attempt', e);
     }
+  };
+
+  // Export current session data as CSV (Restricted to Authorized Administrators)
+  const handleExportSessionCSV = () => {
+    if (!isAdmin) {
+      showToast('Permission Denied: Only Administrators can export session data.', 'error');
+      return;
+    }
+
+    if (!sessionIntakes || sessionIntakes.length === 0) {
+      showToast(`No intake records found in session ${currentSession} to export.`, 'warning');
+      return;
+    }
+
+    const headers = [
+      'Token No',
+      'Session',
+      'Enrollment No',
+      'Student Name',
+      'Phone Number',
+      'Email Address',
+      'Programme Code',
+      'Course Count',
+      'Course Codes',
+      'Submission Date',
+      'Submission Mode',
+      'Consignment No',
+      'Status',
+      'Marks Awarded',
+      'Registered By',
+      'Created At',
+      'Remarks',
+    ];
+
+    const rows = sessionIntakes.map((r) => {
+      const marksStr = r.marks
+        ? Object.entries(r.marks)
+            .map(([c, m]) => `${c}:${m !== null && m !== undefined ? m : 'NA'}`)
+            .join('; ')
+        : '';
+
+      return [
+        `"${r.tokenNo || ''}"`,
+        `"${r.session || currentSession}"`,
+        `'${r.enrollmentNo || ''}`,
+        `"${(r.studentName || '').replace(/"/g, '""')}"`,
+        `"${r.studentPhone || ''}"`,
+        `"${r.studentEmail || ''}"`,
+        `"${r.programmeCode || ''}"`,
+        r.courseCodes ? r.courseCodes.length : 0,
+        `"${(r.courseCodes || []).join(', ')}"`,
+        `"${r.submissionDate || ''}"`,
+        `"${r.submissionMode || ''}"`,
+        `"${r.consignmentNo || ''}"`,
+        `"${r.status || 'Received'}"`,
+        `"${marksStr}"`,
+        `"${r.registeredBy || ''}"`,
+        `"${r.createdAt || ''}"`,
+        `"${(r.remarks || '').replace(/"/g, '""')}"`,
+      ];
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const safeSession = (currentSession || 'session').replace(/[^a-zA-Z0-9_-]/g, '_');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `IGNOU_SC2033_Intake_Session_${safeSession}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    try {
+      logAuditEvent({
+        action: 'SHEETS_SYNCED' as any,
+        category: 'ASSIGNMENT_INTAKE' as any,
+        actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Administrator',
+        role: currentRole,
+        session: currentSession,
+        targetIdentifier: `SESSION_CSV_${safeSession}`,
+        summary: `Exported ${sessionIntakes.length} session intake records to CSV for ${currentSession}`,
+        details: {
+          session: currentSession,
+          totalRecords: sessionIntakes.length,
+          totalCourses: sessionIntakes.reduce((acc, r) => acc + (r.courseCodes ? r.courseCodes.length : 0), 0),
+        },
+        status: 'SUCCESS',
+      });
+    } catch {}
+
+    showToast(`Successfully exported ${sessionIntakes.length} records for ${currentSession} to CSV`, 'success');
   };
 
   // Scope and course validation states for Rule 1, 2, and 3
@@ -1207,6 +1302,22 @@ export const IntakeDesk: React.FC = () => {
               </div>
             </div>
 
+            {/* Export CSV Button (Visible only to authorized Administrators) */}
+            {isAdmin && (
+              <button
+                type="button"
+                id="banner-export-session-csv-btn"
+                data-testid="banner-export-session-csv-btn"
+                onClick={handleExportSessionCSV}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-400/40 text-emerald-200 hover:text-white font-semibold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0"
+                title={`Export all student intake records for ${currentSession} as a CSV spreadsheet (Authorized Administrator only)`}
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-300" />
+                <span className="hidden sm:inline">Export CSV</span>
+                <span className="sm:hidden font-mono text-[11px]">CSV</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setIsReportModalOpen(true)}
@@ -1287,6 +1398,24 @@ export const IntakeDesk: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          {/* CSV Export Button: Visible only to authorized users (Administrators/Coordinators) */}
+          {isAdmin && (
+            <button
+              type="button"
+              id="export-session-csv-btn"
+              data-testid="export-session-csv-btn"
+              onClick={handleExportSessionCSV}
+              className="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-2xs border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 hover:border-emerald-400 active:scale-98"
+              title={`Export all student intake records for ${currentSession} as a CSV spreadsheet (Authorized Administrator only)`}
+            >
+              <Download className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>Export CSV</span>
+              <span className="px-1.5 py-0.2 rounded-md bg-emerald-200/80 text-emerald-900 font-mono text-[10px] font-bold">
+                {sessionIntakes.length}
+              </span>
+            </button>
+          )}
+
           {/* Generate Report Button: compiles all student data for current session into a downloadable PDF summary */}
           <button
             type="button"
