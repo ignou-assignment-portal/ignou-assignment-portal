@@ -49,12 +49,12 @@ export interface ValidateIntakeParams {
 /**
  * Normalizes text by removing non-alphanumeric chars for IDs or trimming and uppercasing.
  */
-export const normCode = (val?: string | null): string => {
-  return (val || '').trim().toUpperCase();
+export const normCode = (val?: any): string => {
+  return String(val ?? '').trim().toUpperCase();
 };
 
-export const normEnrollment = (val?: string | null): string => {
-  return (val || '').replace(/\D/g, '').trim();
+export const normEnrollment = (val?: any): string => {
+  return String(val ?? '').replace(/\D/g, '').trim();
 };
 
 /**
@@ -63,7 +63,7 @@ export const normEnrollment = (val?: string | null): string => {
  */
 export function getRegisteredProgrammeForEnrollment(
   enrollmentNo: string,
-  existingIntakes: IntakeRecord[],
+  existingIntakes: IntakeRecord[] = [],
   existingEvaluations?: CourseEvaluationRecord[],
   existingReceipts?: RegistrationReceipt[],
   currentIntakeId?: string
@@ -72,29 +72,40 @@ export function getRegisteredProgrammeForEnrollment(
   if (!cleanEnr) return null;
 
   // 1. Check existing intakes
-  for (const it of existingIntakes) {
-    if (currentIntakeId && it.id === currentIntakeId) continue;
-    if (normEnrollment(it.enrollmentNo) === cleanEnr && it.programmeCode) {
-      return normCode(it.programmeCode);
+  if (Array.isArray(existingIntakes)) {
+    for (const it of existingIntakes) {
+      if (!it) continue;
+      if (currentIntakeId && (it.id === currentIntakeId || it.tokenNo === currentIntakeId)) continue;
+      const itEnr = normEnrollment(it.enrollmentNo || (it as any).Enrollment_No || (it as any).studentId || (it as any)['Enrollment No']);
+      const itProg = it.programmeCode || (it as any).Programme || (it as any).programme || (it as any).Programme_Code || (it as any)['Programme'];
+      if (itEnr === cleanEnr && itProg) {
+        return normCode(itProg);
+      }
     }
   }
 
   // 2. Check existing course evaluations
-  if (existingEvaluations) {
+  if (Array.isArray(existingEvaluations)) {
     for (const ce of existingEvaluations) {
-      if (currentIntakeId && ce.intakeId === currentIntakeId) continue;
-      if (normEnrollment(ce.enrollmentNo) === cleanEnr && ce.programmeCode) {
-        return normCode(ce.programmeCode);
+      if (!ce) continue;
+      if (currentIntakeId && (ce.intakeId === currentIntakeId || ce.id === currentIntakeId)) continue;
+      const ceEnr = normEnrollment(ce.enrollmentNo || (ce as any).Enrollment_No || (ce as any)['Enrollment No']);
+      const ceProg = ce.programmeCode || (ce as any).Programme || (ce as any).programme || (ce as any).Programme_Code || (ce as any)['Programme'];
+      if (ceEnr === cleanEnr && ceProg) {
+        return normCode(ceProg);
       }
     }
   }
 
   // 3. Check existing receipts
-  if (existingReceipts) {
+  if (Array.isArray(existingReceipts)) {
     for (const rcpt of existingReceipts) {
+      if (!rcpt) continue;
       if (currentIntakeId && (rcpt.id === currentIntakeId || (rcpt as any).intakeId === currentIntakeId)) continue;
-      if (normEnrollment(rcpt.studentId) === cleanEnr && rcpt.programmeCode) {
-        return normCode(rcpt.programmeCode);
+      const rcptEnr = normEnrollment(rcpt.studentId || (rcpt as any).enrollmentNo || (rcpt as any).Enrollment_No || (rcpt as any)['Enrollment No']);
+      const rcptProg = rcpt.programmeCode || (rcpt as any).Programme || (rcpt as any).programme || (rcpt as any).Programme_Code || (rcpt as any)['Programme'];
+      if (rcptEnr === cleanEnr && rcptProg) {
+        return normCode(rcptProg);
       }
     }
   }
@@ -108,7 +119,7 @@ export function getRegisteredProgrammeForEnrollment(
  */
 export function getEnrolledCoursesForStudent(
   enrollmentNo: string,
-  existingIntakes: IntakeRecord[],
+  existingIntakes: IntakeRecord[] = [],
   existingEvaluations?: CourseEvaluationRecord[],
   currentIntakeId?: string
 ): Set<string> {
@@ -116,21 +127,32 @@ export function getEnrolledCoursesForStudent(
   const enrolled = new Set<string>();
   if (!cleanEnr) return enrolled;
 
-  existingIntakes.forEach((it) => {
-    if (currentIntakeId && it.id === currentIntakeId) return;
-    if (normEnrollment(it.enrollmentNo) === cleanEnr) {
-      (it.courseCodes || []).forEach((c) => {
-        const cleanC = normCode(c);
-        if (cleanC) enrolled.add(cleanC);
-      });
-    }
-  });
+  if (Array.isArray(existingIntakes)) {
+    existingIntakes.forEach((it) => {
+      if (!it) return;
+      if (currentIntakeId && (it.id === currentIntakeId || it.tokenNo === currentIntakeId)) return;
+      const itEnr = normEnrollment(it.enrollmentNo || (it as any).Enrollment_No || (it as any).studentId || (it as any)['Enrollment No']);
+      if (itEnr === cleanEnr) {
+        const rawCourses = it.courseCodes || (it as any).courses || (it as any).Courses || [];
+        const courseArr = Array.isArray(rawCourses)
+          ? rawCourses
+          : String(rawCourses || '').split(',').map((c) => c.trim()).filter(Boolean);
+        courseArr.forEach((c) => {
+          const cleanC = normCode(c);
+          if (cleanC) enrolled.add(cleanC);
+        });
+      }
+    });
+  }
 
-  if (existingEvaluations) {
+  if (Array.isArray(existingEvaluations)) {
     existingEvaluations.forEach((ce) => {
-      if (currentIntakeId && ce.intakeId === currentIntakeId) return;
-      if (normEnrollment(ce.enrollmentNo) === cleanEnr && ce.courseCode) {
-        const cleanC = normCode(ce.courseCode);
+      if (!ce) return;
+      if (currentIntakeId && (ce.intakeId === currentIntakeId || ce.id === currentIntakeId)) return;
+      const ceEnr = normEnrollment(ce.enrollmentNo || (ce as any).Enrollment_No || (ce as any)['Enrollment No']);
+      const course = ce.courseCode || (ce as any).Course_Code || (ce as any)['Course Code'];
+      if (ceEnr === cleanEnr && course) {
+        const cleanC = normCode(course);
         if (cleanC) enrolled.add(cleanC);
       }
     });
@@ -149,6 +171,9 @@ export function validateIntakeRecord(params: ValidateIntakeParams): ValidationRe
   const cleanEnr = normEnrollment(params.enrollmentNo);
   const cleanProg = normCode(params.programmeCode);
   const rawCourses = params.courseCodes || [];
+  const courseList = Array.isArray(rawCourses)
+    ? rawCourses
+    : String(rawCourses || '').split(',').map((c: string) => c.trim()).filter(Boolean);
 
   // Basic sanity check
   if (!cleanEnr) {
@@ -167,7 +192,7 @@ export function validateIntakeRecord(params: ValidateIntakeParams): ValidationRe
     };
   }
 
-  if (rawCourses.length === 0) {
+  if (courseList.length === 0) {
     return {
       valid: false,
       rule: 'Rule 3: No Duplicate Course Selections',
@@ -179,7 +204,7 @@ export function validateIntakeRecord(params: ValidateIntakeParams): ValidationRe
   const seenInBatch = new Set<string>();
   const internalDuplicates: string[] = [];
 
-  for (const c of rawCourses) {
+  for (const c of courseList) {
     const clean = normCode(c);
     if (!clean) continue;
     if (seenInBatch.has(clean)) {

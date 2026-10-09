@@ -103,7 +103,7 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
         (ce) =>
           (ce.intakeId === record.id || ce.enrollmentNo.trim() === record.enrollmentNo.trim()) &&
           ce.session.trim().toLowerCase() === activeSession.trim().toLowerCase() &&
-          (ce.isLocked || ce.status === 'Locked' || ce.status === 'Marks Locked')
+          (ce.isLocked || (ce.status as any) === 'Locked' || ce.status === 'Marks Locked')
       )
       .map((ce) => ce.courseCode.toUpperCase());
   }, [record, currentSession, allCourseEvaluations]);

@@ -56,6 +56,21 @@ export const ValidationSummary: React.FC<ValidationSummaryProps> = ({
   const isSuccess = normalized === 'success';
   const handleDismiss = onClose || onDismiss || onClear;
 
+  const rawCourses = cleanData?.courseCodes || cleanData?.courses || cleanData?.Courses;
+  const coursesStr = Array.isArray(rawCourses)
+    ? rawCourses.map((c) => String(c || '').trim()).filter(Boolean).join(', ')
+    : typeof rawCourses === 'string'
+    ? rawCourses
+    : '';
+
+  const displayReason = typeof reason === 'string'
+    ? reason
+    : (reason as any)?.message
+    ? String((reason as any).message)
+    : reason
+    ? String(reason)
+    : '';
+
   if (isSuccess) {
     return (
       <div
@@ -88,7 +103,7 @@ export const ValidationSummary: React.FC<ValidationSummaryProps> = ({
               </div>
 
               <p className="text-xs text-green-800 font-medium leading-relaxed">
-                {reason || 'Intake submission passed all institutional validation rules successfully.'}
+                {displayReason || 'Intake submission passed all institutional validation rules successfully.'}
               </p>
 
               {cleanData && (
@@ -105,10 +120,10 @@ export const ValidationSummary: React.FC<ValidationSummaryProps> = ({
                       <strong>Prog:</strong> {cleanData.programmeCode}
                     </span>
                   )}
-                  {cleanData.courseCodes && cleanData.courseCodes.length > 0 && (
+                  {coursesStr && (
                     <span className="flex items-center gap-1">
                       <Layers className="w-3 h-3 text-green-600" />
-                      <strong>Courses:</strong> {cleanData.courseCodes.join(', ')}
+                      <strong>Courses:</strong> {coursesStr}
                     </span>
                   )}
                 </div>
@@ -167,7 +182,7 @@ export const ValidationSummary: React.FC<ValidationSummaryProps> = ({
             </div>
 
             <p id="validation-summary-reason" className="text-xs text-red-800 font-semibold leading-relaxed">
-              {reason || 'The submitted intake record violated data integrity constraints and was rejected.'}
+              {displayReason || 'The submitted intake record violated data integrity constraints and was rejected.'}
             </p>
           </div>
         </div>

@@ -87,8 +87,8 @@ export const MarksEntry: React.FC = () => {
           (e.courseCode === courseCode || e.Course_Code === courseCode)
       );
       if (matchingEval) {
-        const m = matchingEval.marks !== undefined && matchingEval.marks !== '' ? matchingEval.marks : matchingEval.Marks;
-        if (m !== undefined && m !== null && m !== '' && !isNaN(Number(m))) {
+        const m = (matchingEval.marks !== undefined && (matchingEval.marks as any) !== '') ? matchingEval.marks : (matchingEval as any).Marks;
+        if (m !== undefined && m !== null && (m as any) !== '' && !isNaN(Number(m))) {
           return Number(m);
         }
       }

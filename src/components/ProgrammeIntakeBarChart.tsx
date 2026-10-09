@@ -101,6 +101,7 @@ export const ProgrammeIntakeBarChart: React.FC<ProgrammeIntakeBarChartProps> = (
     >();
 
     activeRecords.forEach((record: any) => {
+      if (!record) return;
       const rawProg =
         record.programmeCode ||
         record.Programme ||

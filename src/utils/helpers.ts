@@ -120,14 +120,15 @@ export const getIgnouGrade = calculateIGNOUGrade;
 export function generateDeterministicSubmissionKey(
   enrollmentNo: string,
   courseCode: string,
-  session: string
+  session?: string
 ): string {
-  const cleanEnr = enrollmentNo.trim();
-  const cleanCourse = courseCode.trim().replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  const cleanEnr = String(enrollmentNo || '').trim();
+  const cleanCourse = String(courseCode || '').trim().replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  const safeSession = String(session || 'July 2026').trim();
 
   // For session like "July 2026", parts: "JUL" + "2026" => "JUL2026"
-  const parts = session.trim().split(/\s+/);
-  let cleanTerm = session.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  const parts = safeSession.split(/\s+/);
+  let cleanTerm = safeSession.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   if (parts.length >= 2) {
     const month = parts[0].substring(0, 3).toUpperCase();
     const year = parts[1].length === 2 ? `20${parts[1]}` : parts[1];
@@ -136,15 +137,16 @@ export function generateDeterministicSubmissionKey(
   return `SUB_${cleanEnr}_${cleanCourse}_${cleanTerm}`;
 }
 
-export function generateSessionCode(session: string): string {
+export function generateSessionCode(session?: string): string {
+  const safeSession = String(session || 'July 2026').trim();
   // 'July 2026' -> 'JUL26', 'Jan 2027' -> 'JAN27'
-  const parts = session.trim().split(' ');
+  const parts = safeSession.split(/\s+/);
   if (parts.length >= 2) {
     const month = parts[0].substring(0, 3).toUpperCase();
     const year = parts[1].slice(-2);
     return `${month}${year}`;
   }
-  return session.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  return safeSession.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'JUL26';
 }
 
 export function maskAccountNumber(acc: string): string {

@@ -46,6 +46,7 @@ import {
   Clock,
   TrendingUp,
   ArrowUpRight,
+  Lock,
 } from 'lucide-react';
 import { IntakeRegister } from './IntakeRegister';
 import { EditIntakeModal } from './EditIntakeModal';
@@ -55,6 +56,7 @@ import { EnrollmentAuditModal, DuplicateEnrollmentGroup } from './EnrollmentAudi
 import { IntakeReportModal } from './IntakeReportModal';
 import { downloadStudentIntakePDF } from '../services/pdfReportGenerator';
 import { AssignmentStatusSummaryCard } from './AssignmentStatusSummaryCard';
+import { ErrorBoundary } from './ErrorBoundary';
 
 export { ValidationSummary, ProgrammeIntakeBarChart, EnrollmentAuditModal, IntakeReportModal, AssignmentStatusSummaryCard };
 export type { ValidationSummaryProps };
@@ -307,35 +309,75 @@ export const IntakeDesk: React.FC = () => {
 
   // Scope and course validation states for Rule 1, 2, and 3
   const registeredProgForEnrollment = useMemo(() => {
-    if (!enrollmentNo.trim() || enrollmentNo.trim().length < 5) return null;
-    return getRegisteredProgrammeForEnrollment(enrollmentNo);
+    const clean = String(enrollmentNo || '').trim();
+    if (!clean || clean.length < 5) return null;
+    try {
+      const res = getRegisteredProgrammeForEnrollment(clean);
+      return typeof res === 'string' ? res : res ? String(res) : null;
+    } catch {
+      return null;
+    }
   }, [enrollmentNo, getRegisteredProgrammeForEnrollment]);
 
-  const alreadyEnrolledCourses = useMemo(() => {
-    if (!enrollmentNo.trim()) return new Set<string>();
-    return getEnrolledCoursesForStudent(enrollmentNo);
+  const alreadyEnrolledCourses = useMemo<Set<string>>(() => {
+    const clean = String(enrollmentNo || '').trim();
+    if (!clean) return new Set<string>();
+    try {
+      const res = getEnrolledCoursesForStudent(clean);
+      if (res instanceof Set) return res;
+      if (Array.isArray(res)) return new Set(res);
+      return new Set<string>();
+    } catch {
+      return new Set<string>();
+    }
   }, [enrollmentNo, getEnrolledCoursesForStudent]);
 
   const isRule1Violated = Boolean(
     registeredProgForEnrollment &&
     selectedProgramme &&
-    registeredProgForEnrollment.toUpperCase() !== selectedProgramme.trim().toUpperCase()
+    String(registeredProgForEnrollment).toUpperCase() !== String(selectedProgramme || '').trim().toUpperCase()
   );
 
   // Auto-fill student profile when existing enrollment is typed
   useEffect(() => {
-    const clean = enrollmentNo.trim();
+    const clean = String(enrollmentNo || '').trim();
     if (clean.length >= 9) {
-      const existingProg = getRegisteredProgrammeForEnrollment(clean);
-      if (existingProg && !selectedProgramme) {
-        setSelectedProgramme(existingProg);
-      }
-      const match = allIntakes.find((i) => i.enrollmentNo.trim() === clean) ||
-                    allCourseEvaluations.find((e) => e.enrollmentNo.trim() === clean);
-      if (match) {
-        if (!studentName && match.studentName) setStudentName(match.studentName);
-        if (!studentPhone && match.studentPhone) setStudentPhone(match.studentPhone.replace(/\D/g, '').slice(0, 10));
-        if (!studentEmail && (match as any).studentEmail) setStudentEmail((match as any).studentEmail);
+      try {
+        const existingProg = getRegisteredProgrammeForEnrollment(clean);
+        if (existingProg && !selectedProgramme) {
+          setSelectedProgramme(String(existingProg));
+        }
+        const match =
+          (allIntakes || []).find((i) => String(i?.enrollmentNo || (i as any)?.Enrollment_No || '').trim() === clean) ||
+          (allCourseEvaluations || []).find((e) => String(e?.enrollmentNo || (e as any)?.Enrollment_No || '').trim() === clean);
+        if (match) {
+          const matchedName =
+            match.studentName ||
+            (match as any).Candidate_Name ||
+            (match as any)['Candidate Name'] ||
+            (match as any).candidateName;
+          if (!studentName && matchedName) setStudentName(String(matchedName));
+
+          const matchedPhone =
+            match.studentPhone ||
+            (match as any).Contact ||
+            (match as any)['Contact'] ||
+            (match as any).contact;
+          if (!studentPhone && matchedPhone) {
+            setStudentPhone(String(matchedPhone).replace(/\D/g, '').slice(0, 10));
+          }
+
+          const matchedEmail =
+            (match as any).studentEmail ||
+            (match as any).Email ||
+            (match as any)['Email_ID'] ||
+            (match as any).email;
+          if (!studentEmail && matchedEmail) {
+            setStudentEmail(String(matchedEmail));
+          }
+        }
+      } catch (err) {
+        console.warn('Auto-fill profile error:', err);
       }
     }
   }, [enrollmentNo, allIntakes, allCourseEvaluations, getRegisteredProgrammeForEnrollment, selectedProgramme, studentName, studentPhone, studentEmail]);
@@ -409,7 +451,7 @@ export const IntakeDesk: React.FC = () => {
 
     const enrollmentMap = new Map<string, IntakeRecord[]>();
     recordsInSession.forEach((r) => {
-      const clean = (r.enrollmentNo || (r as any).Enrollment_No || '').trim();
+      const clean = String(r?.enrollmentNo || (r as any)?.Enrollment_No || '').trim();
       if (!clean) return;
       const list = enrollmentMap.get(clean) || [];
       list.push(r);
@@ -474,11 +516,11 @@ export const IntakeDesk: React.FC = () => {
       if (enteredPin.trim() === '2033') {
         const authorized = verifyAndSetAdminRole('2033');
         if (!authorized) {
-          alert('Coordinator PIN verification failed.');
+          showToast('Coordinator PIN verification failed.', 'error');
           return;
         }
       } else {
-        alert('Unauthorized: Incorrect Coordinator PIN.');
+        showToast('Unauthorized: Incorrect Coordinator PIN.', 'error');
         return;
       }
     }
@@ -487,13 +529,13 @@ export const IntakeDesk: React.FC = () => {
     const activeSession = record.session || currentSession;
     const isAnyCourseLocked = allCourseEvaluations.some(
       (ce) =>
-        (ce.intakeId === record.id || ce.enrollmentNo.trim() === record.enrollmentNo.trim()) &&
-        ce.session.trim().toLowerCase() === activeSession.trim().toLowerCase() &&
-        (ce.isLocked || ce.status === 'Locked' || ce.status === 'Marks Locked')
+        (ce.intakeId === record.id || String(ce?.enrollmentNo || '').trim() === String(record?.enrollmentNo || '').trim()) &&
+        String(ce.session || '').trim().toLowerCase() === String(activeSession || '').trim().toLowerCase() &&
+        (ce.isLocked || (ce.status as any) === 'Locked' || ce.status === 'Marks Locked')
     );
 
     if (isAnyCourseLocked) {
-      alert('Cannot delete intake. Marks have already been locked for one or more courses.');
+      showToast('Cannot delete intake. Marks have already been locked for one or more courses.', 'error');
       return;
     }
 
@@ -601,7 +643,7 @@ export const IntakeDesk: React.FC = () => {
     saveCustomProgramme({
       code: clean,
       name: customName?.trim() || `Programme ${clean}`,
-      level: 'Degree / Diploma / Certificate',
+      level: 'Diploma',
     });
     setSelectedProgramme(clean);
     setIsCustomProgMode(false);
@@ -622,7 +664,7 @@ export const IntakeDesk: React.FC = () => {
     saveCustomProgramme({
       code: cleanCode,
       name: inlineNewProgName.trim() || `Programme ${cleanCode}`,
-      level: 'Degree / Diploma / Certificate',
+      level: 'Diploma',
     });
     setSelectedProgramme(cleanCode);
     setInlineNewProgCode('');
@@ -654,9 +696,9 @@ export const IntakeDesk: React.FC = () => {
     for (const clean of splitCourses) {
       // Rule 3: No duplicate course selection across entries or unique student profile
       if (cleanEnrollment) {
-        if (alreadyEnrolledCourses.has(clean)) {
+        if (alreadyEnrolledCourses instanceof Set && alreadyEnrolledCourses.has(clean)) {
           const msg = `Duplicate course selection detected: Student ${cleanEnrollment} is already enrolled in course "${clean}". A student cannot be enrolled in the exact same course more than once.`;
-          alert(msg);
+          showToast(msg, 'error');
           setErrorMsg(msg);
           return;
         }
@@ -676,7 +718,7 @@ export const IntakeDesk: React.FC = () => {
       }
 
       // Fetch or update course title from IGNOU.ac.in in background
-      updateCourseTitleFromIgnou(clean, selectedProgramme);
+      updateCourseTitleFromIgnou(clean, selectedProgramme).catch(() => {});
     }
 
     if (newCoursesToAdd.length > 0) {
@@ -991,7 +1033,7 @@ export const IntakeDesk: React.FC = () => {
       saveCustomProgramme({ code: progClean });
       coursesArray.forEach((c) => {
         saveCustomCourse(progClean, { code: c });
-        updateCourseTitleFromIgnou(c, progClean);
+        updateCourseTitleFromIgnou(c, progClean).catch(() => {});
       });
 
       setJustSubmittedToken(newRecord.tokenNo);
@@ -1161,7 +1203,7 @@ export const IntakeDesk: React.FC = () => {
     setTimeout(() => {
       setIsScanningDuplicates(false);
       setIsAuditModalOpen(true);
-      const totalEnrCount = new Set(sessionIntakes.map((r) => r.enrollmentNo)).size;
+      const totalEnrCount = new Set(sessionIntakes.map((r) => String(r?.enrollmentNo || '').trim()).filter(Boolean)).size;
       if (duplicateEnrollmentGroups.length > 0) {
         setValidationResult({
           status: 'Rejected',
@@ -1209,14 +1251,21 @@ export const IntakeDesk: React.FC = () => {
     const existingMatches = sessionIntakes.filter((r) => {
       const s = r.session || (r as any).Session;
       const matchSession = !s || norm(s) === norm(targetSession);
-      const matchEnr = (r.enrollmentNo || (r as any).Enrollment_No || '').trim() === cleanEnr;
+      const matchEnr = String(r?.enrollmentNo || (r as any)?.Enrollment_No || '').trim() === cleanEnr;
       return matchSession && matchEnr;
     });
 
     if (existingMatches.length > 0) {
       const first = existingMatches[0];
       const prog = first.programmeCode || (first as any).Programme;
-      const allSubmittedCourses = existingMatches.flatMap((m) => m.courseCodes || (m as any).Courses || []);
+      const allSubmittedCourses = existingMatches.flatMap((m) => {
+        const raw = m.courseCodes || (m as any).courses || (m as any).Courses || [];
+        return Array.isArray(raw)
+          ? raw
+          : typeof raw === 'string'
+          ? raw.split(',').map((c: string) => c.trim()).filter(Boolean)
+          : [];
+      });
       const coursesStr = allSubmittedCourses.join(', ');
 
       const msg = `Enrollment ${cleanEnr} already has ${existingMatches.length} intake record(s) in active session (${targetSession}). Registered under Programme ${prog} with Token ${first.tokenNo} (Courses: ${coursesStr}).`;
@@ -1231,11 +1280,16 @@ export const IntakeDesk: React.FC = () => {
       });
 
       // Autofill candidate name and programme if currently empty
-      if (!studentName && first.studentName) {
-        setStudentName(first.studentName);
+      const candName =
+        first.studentName ||
+        (first as any).Candidate_Name ||
+        (first as any)['Candidate Name'] ||
+        (first as any).candidateName;
+      if (!studentName && candName) {
+        setStudentName(String(candName));
       }
       if (!selectedProgramme && prog) {
-        setSelectedProgramme(prog);
+        setSelectedProgramme(String(prog));
       }
     } else {
       setErrorMsg('');
@@ -1290,14 +1344,17 @@ export const IntakeDesk: React.FC = () => {
               <div className="text-right">
                 <div className="text-zinc-300 text-[10px] uppercase font-bold">Candidates</div>
                 <div className="text-base sm:text-lg font-black text-white leading-tight">
-                  {new Set(sessionIntakes.map((r) => r.enrollmentNo)).size}
+                  {new Set(sessionIntakes.map((r) => String(r?.enrollmentNo || '').trim()).filter(Boolean)).size}
                 </div>
               </div>
               <div className="w-px h-6 bg-white/20"></div>
               <div className="text-right">
                 <div className="text-zinc-300 text-[10px] uppercase font-bold">Scripts</div>
                 <div className="text-base sm:text-lg font-black text-amber-300 leading-tight">
-                  {sessionIntakes.reduce((sum, r) => sum + r.courseCodes.length, 0)}
+                  {sessionIntakes.reduce((sum, r) => {
+                    const c = r?.courseCodes || (r as any)?.courses || (r as any)?.Courses;
+                    return sum + (Array.isArray(c) ? c.length : typeof c === 'string' ? c.split(',').filter(Boolean).length : 0);
+                  }, 0)}
                 </div>
               </div>
             </div>
@@ -1552,6 +1609,16 @@ export const IntakeDesk: React.FC = () => {
                         placeholder="e.g. 2350198421 (9 or 10 digits)"
                         value={enrollmentNo}
                         onChange={(e) => setEnrollmentNo(e.target.value.replace(/\D/g, ''))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (enrollmentNo.trim().length >= 5) {
+                              handleCheckSingleEnrollmentInActiveSession();
+                            }
+                            const nameInput = document.getElementById('student-name-input');
+                            if (nameInput) nameInput.focus();
+                          }
+                        }}
                         className="w-full pl-9 pr-3 py-2 text-xs font-mono font-bold tracking-wider border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
                         required
                       />
@@ -1609,7 +1676,7 @@ export const IntakeDesk: React.FC = () => {
                   </div>
                 )}
 
-                {!isRule1Violated && alreadyEnrolledCourses.size > 0 && (
+                {!isRule1Violated && (alreadyEnrolledCourses instanceof Set ? alreadyEnrolledCourses.size : 0) > 0 && (
                   <div className="p-3 bg-indigo-50/90 border border-indigo-200 rounded-xl text-xs text-indigo-950 flex items-start gap-2.5">
                     <CheckCircle2 className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                     <div>
@@ -1617,7 +1684,7 @@ export const IntakeDesk: React.FC = () => {
                       <div className="mt-0.5">
                         Candidate has previously submitted courses:{' '}
                         <span className="font-mono font-black text-indigo-950">
-                          {Array.from(alreadyEnrolledCourses).join(', ')}
+                          {Array.from(alreadyEnrolledCourses || []).join(', ')}
                         </span>{' '}
                         under {selectedProgramme || registeredProgForEnrollment}. Intake can be taken further for any different courses.
                       </div>
@@ -2113,8 +2180,9 @@ export const IntakeDesk: React.FC = () => {
                       {availableProgrammeCourses.length > 0 ? (
                         <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1 bg-white rounded border border-zinc-100 mb-2">
                           {availableProgrammeCourses.map((c) => {
+                            if (!c || !c.code) return null;
                             const isAlreadySelected = selectedCourses.includes(c.code);
-                            const isAlreadyEnrolled = alreadyEnrolledCourses.has(c.code);
+                            const isAlreadyEnrolled = alreadyEnrolledCourses instanceof Set ? alreadyEnrolledCourses.has(c.code) : false;
                             const title = getCourseTitle(c.code, selectedProgramme);
                             return (
                               <button
@@ -2400,10 +2468,12 @@ export const IntakeDesk: React.FC = () => {
             {/* Right: Counter Live Activity & Analytics Dashboard Widget (5 cols) */}
             <div className="lg:col-span-5 space-y-4">
               {/* Dashboard Widget: Visualizes total number of student intakes per programme using a bar chart */}
-              <ProgrammeIntakeBarChart
-                onSelectProgramme={(code) => setSelectedChartProgramme(code)}
-                selectedProgramme={selectedChartProgramme}
-              />
+              <ErrorBoundary fallbackTitle="Programme Intake Bar Chart Encountered an Issue">
+                <ProgrammeIntakeBarChart
+                  onSelectProgramme={(code) => setSelectedChartProgramme(code)}
+                  selectedProgramme={selectedChartProgramme}
+                />
+              </ErrorBoundary>
 
               <div className="bg-white rounded-2xl border border-zinc-200 p-5 shadow-xs">
                 <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
@@ -2533,7 +2603,19 @@ export const IntakeDesk: React.FC = () => {
                               {/* Print Receipt */}
                               <button
                                 id={`recent-receipt-btn-${record.id || token}`}
-                                onClick={() => openReceiptModal(record)}
+                                onClick={() => {
+                                  openReceiptModal({
+                                    ...record,
+                                    courseCodes: coursesArr,
+                                    courses: coursesArr,
+                                    enrollmentNo: enr,
+                                    studentName: candName,
+                                    programmeCode: prog,
+                                    tokenNo: token,
+                                    submissionDate: subDate,
+                                    receiptDate: subDate,
+                                  });
+                                }}
                                 className="px-2 py-1 bg-white hover:bg-indigo-600 hover:text-white border border-zinc-300 text-zinc-700 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 shrink-0 shadow-2xs cursor-pointer"
                                 title="Print Official Acknowledgment Receipt"
                               >
@@ -2597,7 +2679,9 @@ export const IntakeDesk: React.FC = () => {
 
           {/* Module A Requirement 3: Assignment Status Analytics & Intake Matrix */}
           <div className="pt-2">
-            <IntakeStatusMatrix />
+            <ErrorBoundary fallbackTitle="Assignment Status Analytics & Intake Matrix Encountered an Issue">
+              <IntakeStatusMatrix />
+            </ErrorBoundary>
           </div>
         </div>
       )}
@@ -2826,7 +2910,7 @@ export const IntakeDesk: React.FC = () => {
         sessionName={selectedSession || currentSession}
         duplicateGroups={duplicateEnrollmentGroups}
         totalIntakes={sessionIntakes.length}
-        totalUniqueEnrollments={new Set(sessionIntakes.map((r) => r.enrollmentNo)).size}
+        totalUniqueEnrollments={new Set(sessionIntakes.map((r) => String(r?.enrollmentNo || '').trim()).filter(Boolean)).size}
         onInspectRecord={(record) => openReceiptModal(record)}
         onEditRecord={(record) => setEditingRecord(record)}
       />

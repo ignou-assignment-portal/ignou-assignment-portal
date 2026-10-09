@@ -41,6 +41,7 @@ const CATEGORY_LABELS: Record<AuditTargetCategory, { label: string; color: strin
   FINANCE_BILLS: { label: 'Remuneration & Bills', color: 'bg-purple-50 text-purple-700 border-purple-200' },
   SYSTEM_SETTINGS: { label: 'System & Security', color: 'bg-rose-50 text-rose-700 border-rose-200' },
   SESSION_MANAGEMENT: { label: 'Academic Cycle', color: 'bg-teal-50 text-teal-700 border-teal-200' },
+  SECURITY: { label: 'Security & Integrity', color: 'bg-rose-50 text-rose-800 border-rose-300' },
 };
 
 const ACTION_ICONS: Partial<Record<AuditActionType, React.ElementType>> = {
@@ -51,6 +52,7 @@ const ACTION_ICONS: Partial<Record<AuditActionType, React.ElementType>> = {
   INTAKE_CREATED: FileCheck2,
   INTAKE_UPDATED: Edit,
   INTAKE_DELETED: Trash2,
+  INTAKE_REJECTED: ShieldAlert,
   INTAKE_DATE_CHANGED: Calendar,
   MARKS_UPDATED: Edit,
   MARKS_LOCKED: Lock,

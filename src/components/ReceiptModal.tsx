@@ -44,6 +44,18 @@ export const ReceiptModal: React.FC = () => {
   // Programme info from dynamic registry
   const progInfo = allProgrammes.find((p) => p.code === selectedReceiptRecord.programmeCode);
 
+  // Safely extract course codes array from any record shape (courseCodes, courses, Courses)
+  const rawRecordCourses =
+    selectedReceiptRecord.courseCodes ||
+    (selectedReceiptRecord as any).courses ||
+    (selectedReceiptRecord as any).Courses ||
+    [];
+  const safeCourseCodes: string[] = Array.isArray(rawRecordCourses)
+    ? rawRecordCourses
+    : typeof rawRecordCourses === 'string'
+    ? rawRecordCourses.split(',').map((c: string) => c.trim()).filter(Boolean)
+    : [];
+
   // Simulated barcode stripes pattern
   const barcodePattern = [
     3, 1, 2, 1, 4, 1, 2, 3, 1, 2, 1, 3, 2, 4, 1, 2, 1, 3, 1, 4, 2, 1, 3, 2, 1, 2, 4, 1, 3, 1, 2, 3, 1, 4
@@ -237,7 +249,7 @@ export const ReceiptModal: React.FC = () => {
           {/* Bulleted / Structured Table of Registered Course Codes */}
           <div className="mt-1.5 print:mt-1">
             <div className="text-[11px] print:text-[8.5px] font-black text-zinc-900 mb-0.5 flex items-center justify-between uppercase tracking-wider">
-              <span>REGISTERED ASSIGNMENT COURSE CODES ({selectedReceiptRecord.courseCodes.length} Scripts)</span>
+              <span>REGISTERED ASSIGNMENT COURSE CODES ({safeCourseCodes.length} Scripts)</span>
               <span className="text-[10px] print:text-[8px] font-semibold text-zinc-500 lowercase">
                 session: {selectedReceiptRecord.session}
               </span>
@@ -253,7 +265,7 @@ export const ReceiptModal: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-200">
-                {selectedReceiptRecord.courseCodes.map((code, index) => {
+                {safeCourseCodes.map((code, index) => {
                   const cInfo = getCourseInfo(code, selectedReceiptRecord.programmeCode);
                   const title = cInfo?.title || getCourseTitle(code, selectedReceiptRecord.programmeCode) || 'Course Curriculum Module';
                   const credits = cInfo?.credits || 6;

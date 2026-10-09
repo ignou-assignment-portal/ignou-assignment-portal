@@ -84,7 +84,6 @@ export const AssignmentStatusSummaryCard: React.FC<AssignmentStatusSummaryCardPr
     return auditLogs.filter((log) => {
       const isCurrentSession = !log.session || norm(log.session) === norm(currentSession);
       const isRejectedAction =
-        log.action === 'INTAKE_REJECTED' ||
         (log.action as string) === 'INTAKE_REJECTED' ||
         log.status === 'FAILED' ||
         (log.status as any) === 'FAILURE' ||
@@ -119,10 +118,10 @@ export const AssignmentStatusSummaryCard: React.FC<AssignmentStatusSummaryCardPr
     if (!q) return pendingAssignmentsList;
     return pendingAssignmentsList.filter(
       (item) =>
-        item.enrollmentNo.toLowerCase().includes(q) ||
-        item.studentName.toLowerCase().includes(q) ||
-        item.courseCode.toLowerCase().includes(q) ||
-        item.programmeCode.toLowerCase().includes(q) ||
+        (item.enrollmentNo || '').toLowerCase().includes(q) ||
+        (item.studentName || '').toLowerCase().includes(q) ||
+        (item.courseCode || '').toLowerCase().includes(q) ||
+        (item.programmeCode || '').toLowerCase().includes(q) ||
         (item.evaluatorName && item.evaluatorName.toLowerCase().includes(q))
     );
   }, [pendingAssignmentsList, modalSearchQuery]);
@@ -132,10 +131,10 @@ export const AssignmentStatusSummaryCard: React.FC<AssignmentStatusSummaryCardPr
     if (!q) return verifiedAssignmentsList;
     return verifiedAssignmentsList.filter(
       (item) =>
-        item.enrollmentNo.toLowerCase().includes(q) ||
-        item.studentName.toLowerCase().includes(q) ||
-        item.courseCode.toLowerCase().includes(q) ||
-        item.programmeCode.toLowerCase().includes(q) ||
+        (item.enrollmentNo || '').toLowerCase().includes(q) ||
+        (item.studentName || '').toLowerCase().includes(q) ||
+        (item.courseCode || '').toLowerCase().includes(q) ||
+        (item.programmeCode || '').toLowerCase().includes(q) ||
         (item.lockedBy && item.lockedBy.toLowerCase().includes(q))
     );
   }, [verifiedAssignmentsList, modalSearchQuery]);

@@ -248,7 +248,8 @@ EXTENDED_IGNOU_PROGRAMMES.forEach((p) => {
  * e.g., 'BEGC101' -> 'BEGC-101', 'MEG01' -> 'MEG-01'
  */
 export const formatIgnouCourseCode = (input: string): string => {
-  const clean = input.trim().toUpperCase();
+  const clean = String(input ?? '').trim().toUpperCase();
+  if (!clean) return '';
   if (clean.includes('-')) return clean;
 
   const match = clean.match(/^([A-Z]+)(\d+.*)$/);

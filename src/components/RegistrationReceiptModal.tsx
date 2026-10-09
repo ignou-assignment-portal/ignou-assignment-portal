@@ -54,6 +54,19 @@ export const RegistrationReceiptModal: React.FC = () => {
     (p) => p.code === selectedRegistrationReceipt.programmeCode
   );
 
+  // Safely extract registered courses array from any record representation
+  const rawRegCourses =
+    selectedRegistrationReceipt.registeredCourses ||
+    (selectedRegistrationReceipt as any).courseCodes ||
+    (selectedRegistrationReceipt as any).courses ||
+    (selectedRegistrationReceipt as any).Courses ||
+    [];
+  const safeRegisteredCourses: string[] = Array.isArray(rawRegCourses)
+    ? rawRegCourses
+    : typeof rawRegCourses === 'string'
+    ? rawRegCourses.split(',').map((c: string) => c.trim()).filter(Boolean)
+    : [];
+
   return (
     <div className="fixed inset-0 bg-zinc-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 z-50 overflow-y-auto animate-in fade-in">
       <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-zinc-300 overflow-hidden my-auto print:m-0 print:border-none print:shadow-none print:w-full">
@@ -216,7 +229,7 @@ export const RegistrationReceiptModal: React.FC = () => {
                 <span>Enrolled Assignment Courses Received ({selectedRegistrationReceipt.session})</span>
               </h3>
               <span className="text-xs print:text-[8px] font-semibold text-zinc-600">
-                Total Received Courses: <strong>{selectedRegistrationReceipt.registeredCourses.length}</strong>
+                Total Received Courses: <strong>{safeRegisteredCourses.length}</strong>
               </span>
             </div>
 
@@ -232,7 +245,7 @@ export const RegistrationReceiptModal: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200">
-                  {selectedRegistrationReceipt.registeredCourses.map((code, idx) => {
+                  {safeRegisteredCourses.map((code, idx) => {
                     const cInfo = getCourseInfo(code, selectedRegistrationReceipt.programmeCode);
                     const title = cInfo?.title || getCourseTitle(code, selectedRegistrationReceipt.programmeCode) || 'Curriculum Course Module';
                     const credits = cInfo?.credits || 6;

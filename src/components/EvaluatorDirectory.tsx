@@ -145,7 +145,7 @@ export const EvaluatorDirectory: React.FC = () => {
 
           {/* Full Google Sheets Sync */}
           <button
-            onClick={syncGoogleSheets}
+            onClick={() => syncGoogleSheets()}
             disabled={isSyncingSheets}
             id="google-sheets-sync-btn"
             className="flex items-center gap-2 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer"

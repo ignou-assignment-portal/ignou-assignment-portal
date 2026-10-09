@@ -223,8 +223,14 @@ app.post("/api/intake/update-date", (req, res) => {
 
   const store = loadStore();
   store.dateOverrides = store.dateOverrides || {};
-  if (cleanEnr) store.dateOverrides[`enr_${cleanEnr}`] = cleanDate;
-  if (cleanToken) store.dateOverrides[`token_${cleanToken}`] = cleanDate;
+  if (cleanEnr) {
+    store.dateOverrides[`enr_${cleanEnr}`] = cleanDate;
+    store.dateOverrides[`enrollment_${cleanEnr}`] = cleanDate;
+  }
+  if (cleanToken) {
+    store.dateOverrides[`token_${cleanToken}`] = cleanDate;
+    store.dateOverrides[`tok_${cleanToken}`] = cleanDate;
+  }
   if (cleanId) store.dateOverrides[`id_${cleanId}`] = cleanDate;
 
   const isMatch = (item: any) => {
@@ -529,8 +535,8 @@ app.get("/api/sheets", async (req, res) => {
         const enr = String(item.Enrollment_No || item.enrollmentNo || item.studentId || "").replace(/\D/g, "").trim();
         const tok = String(item.Token_No || item.tokenNo || item.receiptNumber || "").trim();
         const id = String(item.id || item.Sub_ID || item.subId || "").trim();
-        if (enr && overrides[`enr_${enr}`]) return overrides[`enr_${enr}`];
-        if (tok && overrides[`token_${tok}`]) return overrides[`token_${tok}`];
+        if (enr && (overrides[`enr_${enr}`] || overrides[`enrollment_${enr}`])) return overrides[`enr_${enr}`] || overrides[`enrollment_${enr}`];
+        if (tok && (overrides[`token_${tok}`] || overrides[`tok_${tok}`])) return overrides[`token_${tok}`] || overrides[`tok_${tok}`];
         if (id && overrides[`id_${id}`]) return overrides[`id_${id}`];
 
         // Also check matched records in store.intakes

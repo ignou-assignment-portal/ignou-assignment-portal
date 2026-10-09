@@ -952,52 +952,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const coursesMap = new Map<string, IGNOUCourse>();
 
       // 1. From standard / extended catalog
-      const standardProg = EXTENDED_IGNOU_PROGRAMMES.find((p) => p.code.toUpperCase() === cleanProg);
-      if (standardProg) {
+      const standardProg = EXTENDED_IGNOU_PROGRAMMES.find((p) => (p.code || '').toUpperCase() === cleanProg);
+      if (standardProg && Array.isArray(standardProg.courses)) {
         for (const c of standardProg.courses) {
-          coursesMap.set(c.code.toUpperCase(), { ...c });
+          if (c && c.code) {
+            coursesMap.set(String(c.code).toUpperCase(), { ...c });
+          }
         }
       }
 
       // 2. From customProgrammes
-      const customProg = customProgrammes.find((p) => p.code.toUpperCase() === cleanProg);
-      if (customProg && customProg.courses) {
+      const customProg = customProgrammes.find((p) => (p.code || '').toUpperCase() === cleanProg);
+      if (customProg && Array.isArray(customProg.courses)) {
         for (const c of customProg.courses) {
-          coursesMap.set(c.code.toUpperCase(), { ...c });
+          if (c && c.code) {
+            coursesMap.set(String(c.code).toUpperCase(), { ...c });
+          }
         }
       }
 
       // 3. From customCourses record
-      if (customCourses[cleanProg]) {
+      if (customCourses && customCourses[cleanProg] && Array.isArray(customCourses[cleanProg])) {
         for (const c of customCourses[cleanProg]) {
-          coursesMap.set(c.code.toUpperCase(), { ...c });
+          if (c && c.code) {
+            coursesMap.set(String(c.code).toUpperCase(), { ...c });
+          }
         }
       }
 
       // 4. From intakes recorded for this programme
-      for (const it of intakes) {
-        if ((it.programmeCode || '').trim().toUpperCase() === cleanProg && Array.isArray(it.courseCodes)) {
-          for (const rawCode of it.courseCodes) {
-            const cCode = rawCode.trim().toUpperCase();
-            if (cCode && !coursesMap.has(cCode)) {
-              const reg = courseTitlesRegistry[cCode];
-              coursesMap.set(cCode, {
-                code: cCode,
-                title: reg?.title || getCourseTitle(cCode, cleanProg),
-                credits: reg?.credits || 6,
-                programme: cleanProg,
-              });
+      if (Array.isArray(intakes)) {
+        for (const it of intakes) {
+          if (!it) continue;
+          const itProg = (it.programmeCode || (it as any).Programme || '').toString().trim().toUpperCase();
+          if (itProg === cleanProg) {
+            const rawCourses = it.courseCodes || (it as any).courses || (it as any).Courses || [];
+            const courseArr = Array.isArray(rawCourses)
+              ? rawCourses
+              : typeof rawCourses === 'string'
+              ? rawCourses.split(',').map((c) => c.trim()).filter(Boolean)
+              : [];
+            for (const rawCode of courseArr) {
+              const cCode = String(rawCode || '').trim().toUpperCase();
+              if (cCode && !coursesMap.has(cCode)) {
+                const reg = courseTitlesRegistry ? courseTitlesRegistry[cCode] : undefined;
+                coursesMap.set(cCode, {
+                  code: cCode,
+                  title: reg?.title || getCourseTitle(cCode, cleanProg),
+                  credits: reg?.credits || 6,
+                  programme: cleanProg,
+                });
+              }
             }
           }
         }
       }
 
       // 5. Apply any updated course titles from courseTitlesRegistry
-      for (const [code, c] of coursesMap.entries()) {
-        const reg = courseTitlesRegistry[code] || courseTitlesRegistry[formatIgnouCourseCode(code)];
-        if (reg?.title) {
-          c.title = reg.title;
-          if (reg.credits) c.credits = reg.credits;
+      if (courseTitlesRegistry) {
+        for (const [code, c] of coursesMap.entries()) {
+          if (!code) continue;
+          const reg = courseTitlesRegistry[code] || courseTitlesRegistry[formatIgnouCourseCode(code)];
+          if (reg?.title) {
+            c.title = reg.title;
+            if (reg.credits) c.credits = reg.credits;
+          }
         }
       }
 
@@ -1610,14 +1629,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Flexible Session Isolation (Normalizes case and whitespace):
   // sessionIntakes, sessionPackets, sessionBills, sessionAssignmentSubmissions, sessionRegistrationReceipts
   const sessionIntakes = useMemo(() => {
-    return intakes.filter((r: any) => {
+    return (intakes || []).filter((r: any) => {
+      if (!r) return false;
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
       return normalizeSession(r.Session || r.session) === normalizeSession(currentSession);
     });
   }, [intakes, currentSession]);
 
   const sessionCourseEvaluations = useMemo(() => {
-    return courseEvaluations.filter((c: any) => {
+    return (courseEvaluations || []).filter((c: any) => {
+      if (!c) return false;
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
       return normalizeSession(c.Session || c.session) === normalizeSession(currentSession);
     });
@@ -1627,8 +1648,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (sessionCourseEvaluations.length === 0) {
       return [];
     }
-    const activeCourses = new Set(sessionCourseEvaluations.map((c: any) => (c.courseCode || c.Course_Code || '').toUpperCase()));
-    return packets.filter((p: any) => {
+    const activeCourses = new Set(
+      sessionCourseEvaluations.map((c: any) => (c?.courseCode || c?.Course_Code || '').toUpperCase()).filter(Boolean)
+    );
+    return (packets || []).filter((p: any) => {
+      if (!p) return false;
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
       return (
         normalizeSession(p.Session || p.session) === normalizeSession(currentSession) &&
@@ -1638,21 +1662,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [packets, currentSession, sessionCourseEvaluations]);
 
   const sessionBills = useMemo(() => {
-    return bills.filter((b: any) => {
+    return (bills || []).filter((b: any) => {
+      if (!b) return false;
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
       return normalizeSession(b.Session || b.session) === normalizeSession(currentSession);
     });
   }, [bills, currentSession]);
 
   const sessionAssignmentSubmissions = useMemo(() => {
-    return assignmentSubmissions.filter((s: any) => {
+    return (assignmentSubmissions || []).filter((s: any) => {
+      if (!s) return false;
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
       return normalizeSession(s.Session || s.session) === normalizeSession(currentSession);
     });
   }, [assignmentSubmissions, currentSession]);
 
   const sessionRegistrationReceipts = useMemo(() => {
-    return registrationReceipts.filter((r: any) => {
+    return (registrationReceipts || []).filter((r: any) => {
+      if (!r) return false;
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
       return normalizeSession(r.Session || r.session) === normalizeSession(currentSession);
     });
@@ -1787,8 +1814,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         tokenNo?: string;
       }
     ): RegistrationReceipt => {
-      const sessionCode = generateSessionCode(data.session);
-      const sessionReceipts = registrationReceipts.filter((r) => norm(r.session) === norm(data.session));
+      const targetSession = data.session || currentSession;
+      const sessionCode = generateSessionCode(targetSession);
+      const sessionReceipts = (registrationReceipts || []).filter((r) => r && norm(r.session || (r as any).Session) === norm(targetSession));
       const nextSequence = sessionReceipts.length + 1;
       const paddedSeq = String(nextSequence).padStart(4, '0');
       const receiptNumber = `REG-SC2033-${sessionCode}-${paddedSeq}`;
@@ -1861,7 +1889,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         throw new Error(validation.reason);
       }
 
-      const existingInSession = intakes.filter((r) => r.session === currentSession);
+      const existingInSession = (intakes || []).filter(
+        (r) => r && norm(r.session || (r as any).Session) === norm(currentSession)
+      );
       const sessionCode = generateSessionCode(currentSession);
       // Count current session intakes to build deterministic sequential token
       const nextSequence = existingInSession.length + 1;
@@ -2086,9 +2116,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       for (const ce of matchingCurrentStudentEvals) {
         if (
           !cleanCourses.includes(ce.courseCode.toUpperCase()) &&
-          (ce.isLocked || ce.status === 'Locked' || ce.status === 'Marks Locked')
+          (ce.isLocked || (ce.status as any) === 'Locked' || ce.status === 'Marks Locked')
         ) {
-          alert(`Cannot remove course ${ce.courseCode}: Marks have already been locked.`);
+          showToast(`Cannot remove course ${ce.courseCode}: Marks have already been locked.`, 'error');
           return;
         }
       }
@@ -2219,11 +2249,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         (ce) =>
           (ce.intakeId === id || (ce.enrollmentNo.trim() === cleanEnr && targetCoursesUpper.includes(ce.courseCode.trim().toUpperCase()))) &&
           ce.session.trim().toLowerCase() === targetSession.trim().toLowerCase() &&
-          (ce.isLocked || ce.status === 'Locked' || ce.status === 'Marks Locked')
+          (ce.isLocked || (ce.status as any) === 'Locked' || ce.status === 'Marks Locked')
       );
 
       if (hasLocked) {
-        alert('Cannot delete intake. Marks have already been locked for one or more courses.');
+        showToast('Cannot delete intake. Marks have already been locked for one or more courses.', 'error');
         return false;
       }
 
@@ -2594,9 +2624,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const ovRaw = localStorage.getItem('ignou_sc2033_receipt_date_overrides');
         const overridesMap: Record<string, string> = ovRaw ? JSON.parse(ovRaw) : {};
-        if (primaryEnr) overridesMap[`enr_${primaryEnr}`] = cleanDate;
+        if (primaryEnr) {
+          overridesMap[`enr_${primaryEnr}`] = cleanDate;
+          overridesMap[`enrollment_${primaryEnr}`] = cleanDate;
+        }
         matchingIds.forEach((id) => { if (id) overridesMap[`id_${id}`] = cleanDate; });
-        matchingTokens.forEach((tok) => { if (tok) overridesMap[`tok_${tok}`] = cleanDate; });
+        matchingTokens.forEach((tok) => {
+          if (tok) {
+            overridesMap[`tok_${tok}`] = cleanDate;
+            overridesMap[`token_${tok}`] = cleanDate;
+          }
+        });
         localStorage.setItem('ignou_sc2033_receipt_date_overrides', JSON.stringify(overridesMap));
       } catch {}
 
@@ -2878,13 +2916,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             Allotted_Evaluator: evalDisplayName,
             allottedDate: ev ? dateStr : null,
             allottedBy: ev ? allottedBy : null,
-            status: rec.isLocked
+            status: (rec.isLocked
               ? 'Marks Locked'
               : rec.marks !== null
               ? 'Evaluated'
               : ev
               ? 'Allotted'
-              : 'Pending Allotment',
+              : 'Pending Allotment') as EvaluationStatus,
             updatedAt: now,
           };
         });
@@ -3061,7 +3099,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               isLocked: true,
               lockedAt: now,
               lockedBy,
-              status: 'Marks Locked',
+              status: 'Marks Locked' as EvaluationStatus,
               updatedAt: now,
             };
           } else {
@@ -3081,7 +3119,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               isLocked: false,
               lockedAt: null,
               lockedBy,
-              status: rec.marks !== null ? 'Evaluated' : rec.evaluatorId ? 'Allotted' : 'Pending Allotment',
+              status: (rec.marks !== null ? 'Evaluated' : rec.evaluatorId ? 'Allotted' : 'Pending Allotment') as EvaluationStatus,
               updatedAt: now,
             };
           }
@@ -3241,8 +3279,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const cleanTok = token ? token.trim() : '';
           const cleanId = id ? id.trim() : '';
           return (
-            (cleanE && localDateOverrides[`enr_${cleanE}`]) ||
-            (cleanTok && localDateOverrides[`tok_${cleanTok}`]) ||
+            (cleanE && (localDateOverrides[`enr_${cleanE}`] || localDateOverrides[`enrollment_${cleanE}`])) ||
+            (cleanTok && (localDateOverrides[`token_${cleanTok}`] || localDateOverrides[`tok_${cleanTok}`])) ||
             (cleanId && localDateOverrides[`id_${cleanId}`]) ||
             null
           );
@@ -3270,7 +3308,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!id || seenIntakeIds.has(id) || id === baseLegacyId) {
             id = `intake-${enrollment || 'cand'}-${session.replace(/\s+/g, '')}-${courseSlug}-${idx}`;
             if (seenIntakeIds.has(id)) {
-              id = `${id}-${Math.random().toString(36).substring(2, 6)}`;
+              id = `${id}-${idx}`;
             }
           }
           seenIntakeIds.add(id);
@@ -3600,9 +3638,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         role: 'ADMIN',
         session: bill?.session || currentSession,
         targetIdentifier: bill?.billNumber || billId,
-        summary: `Statutory financial sanction granted for bill ${bill?.billNumber || billId} (₹${bill?.totalAmount.toFixed(2) || '0.00'})`,
+        summary: `Statutory financial sanction granted for bill ${bill?.billNumber || billId} (₹${(bill?.totalAmount || bill?.grossAmount || 0).toFixed(2)})`,
         status: 'SUCCESS',
-        details: { billId, amount: bill?.totalAmount, evaluator: bill?.evaluatorName },
+        details: { billId, amount: bill?.totalAmount || bill?.grossAmount || 0, evaluator: bill?.evaluatorName },
       });
     },
     [currentRole, settings, bills, currentSession, logAuditEvent]
@@ -3746,8 +3784,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         totalCourseScripts: sessionEvaluationsList.length,
         totalPackets: sessionPacketsList.length,
         totalBills: sessionBillsList.length,
-        totalEvaluated: sessionEvaluationsList.filter((e) => e.marks !== null && e.marks !== undefined && e.marks !== '').length,
-        totalLocked: sessionEvaluationsList.filter((e) => Boolean(e.isLocked || e.status === 'Locked' || e.status === 'Marks Locked')).length,
+        totalEvaluated: sessionEvaluationsList.filter((e) => e.marks !== null && e.marks !== undefined && (e.marks as any) !== '').length,
+        totalLocked: sessionEvaluationsList.filter((e) => Boolean(e.isLocked || (e.status as any) === 'Locked' || e.status === 'Marks Locked')).length,
       },
       snapshot: {
         session: targetSession,

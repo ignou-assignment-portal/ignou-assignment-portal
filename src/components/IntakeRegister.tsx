@@ -33,6 +33,7 @@ export const IntakeRegister: React.FC = () => {
     openReceiptModal,
     isAdmin,
     verifyAndSetAdminRole,
+    showToast,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,11 +56,11 @@ export const IntakeRegister: React.FC = () => {
       (ce) =>
         (ce.intakeId === record.id || ce.enrollmentNo.trim() === String(enr).trim()) &&
         norm(ce.session) === norm(activeSession) &&
-        (ce.isLocked || ce.status === 'Locked' || ce.status === 'Marks Locked')
+        (ce.isLocked || (ce.status as any) === 'Locked' || ce.status === 'Marks Locked')
     );
 
     if (isAnyCourseLocked) {
-      alert('Cannot delete intake. Marks have already been locked for one or more courses.');
+      showToast('Cannot delete intake. Marks have already been locked for one or more courses.', 'error');
       return;
     }
 

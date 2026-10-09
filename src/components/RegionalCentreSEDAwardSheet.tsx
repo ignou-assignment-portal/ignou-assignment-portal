@@ -119,7 +119,7 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
       const c = (r.Course_Code || r.courseCode || r["Course Code"] || "").toString().trim().toUpperCase();
       return c === selectedCourse.trim().toUpperCase();
     });
-    const progCode = sample?.Programme || sample?.programme || sample?.programmeCode || 'IGNOU';
+    const progCode = sample?.Programme || (sample as any)?.programme || sample?.programmeCode || 'IGNOU';
     return {
       title: `${selectedCourse} Assignment Course`,
       credits: 6,
@@ -139,11 +139,11 @@ export const RegionalCentreSEDAwardSheet: React.FC = () => {
   const detectedEvaluator = useMemo(() => {
     const found = currentCourseRecords.find(
       (r: any) => {
-        const ev = r.Allotted_Evaluator || r.allottedEvaluator || r.evaluatorName;
+        const ev = r.Allotted_Evaluator || (r as any).allottedEvaluator || r.evaluatorName;
         return ev && ev !== 'Unallotted' && ev.trim() !== '';
       }
     );
-    if (found) return found.Allotted_Evaluator || found.allottedEvaluator || found.evaluatorName;
+    if (found) return found.Allotted_Evaluator || (found as any).allottedEvaluator || found.evaluatorName;
 
     // Fallback to evaluatorName or evaluatorId from sample
     const sample = currentCourseRecords.find(

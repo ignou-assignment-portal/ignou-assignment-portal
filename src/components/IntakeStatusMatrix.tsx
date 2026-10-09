@@ -39,54 +39,79 @@ interface MatrixRow {
   enrolledCourses: { code: string; count: number; title?: string }[];
 }
 
+// Helper to safely extract course code strings from any record representation
+const getRecordCourses = (r: any): string[] => {
+  if (!r) return [];
+  const raw = r.courseCodes || r.courses || r.Courses;
+  if (Array.isArray(raw)) {
+    return raw.map((c: any) => String(c || '').trim().toUpperCase()).filter(Boolean);
+  }
+  if (typeof raw === 'string') {
+    return raw.split(',').map((c: string) => c.trim().toUpperCase()).filter(Boolean);
+  }
+  return [];
+};
+
 export const IntakeStatusMatrix: React.FC = () => {
-  const { currentSession, sessionIntakes, sessionPackets } = useApp();
+  const { currentSession, sessionIntakes = [], sessionPackets = [] } = useApp();
 
   const [grouping, setGrouping] = useState<MatrixGrouping>('PROGRAMME');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('ALL');
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
 
+  // Safe non-null session intakes list
+  const safeSessionIntakes = useMemo(() => {
+    return (sessionIntakes || []).filter((r): r is NonNullable<typeof r> => Boolean(r));
+  }, [sessionIntakes]);
+
   // Summary Metrics calculations
   const totalCandidates = useMemo(() => {
-    return new Set(sessionIntakes.map((r) => r.enrollmentNo)).size;
-  }, [sessionIntakes]);
+    return new Set(
+      safeSessionIntakes.map((r) =>
+        String(r?.enrollmentNo || (r as any)?.Enrollment_No || (r as any)?.studentId || '').trim()
+      ).filter(Boolean)
+    ).size;
+  }, [safeSessionIntakes]);
 
   const totalCourseScripts = useMemo(() => {
-    return sessionIntakes.reduce((acc, r) => acc + r.courseCodes.length, 0);
-  }, [sessionIntakes]);
+    return safeSessionIntakes.reduce((acc, r) => acc + getRecordCourses(r).length, 0);
+  }, [safeSessionIntakes]);
 
   const totalAllotted = useMemo(() => {
-    return sessionPackets
-      .filter((p) => p.evaluatorId !== null)
-      .reduce((acc, p) => acc + p.scriptCount, 0);
+    return (sessionPackets || [])
+      .filter((p) => p && p.evaluatorId !== null)
+      .reduce((acc, p) => acc + (p.scriptCount || 0), 0);
   }, [sessionPackets]);
 
   const totalEvaluated = useMemo(() => {
     let evalCount = 0;
-    sessionIntakes.forEach((r) => {
-      r.courseCodes.forEach((c) => {
+    safeSessionIntakes.forEach((r) => {
+      if (!r) return;
+      const courses = getRecordCourses(r);
+      courses.forEach((c) => {
         if (r.marks && r.marks[c] !== null && r.marks[c] !== undefined) {
           evalCount++;
         }
       });
     });
     // Check packets marked Evaluated as secondary check
-    const packetEval = sessionPackets
-      .filter((p) => p.status === 'Evaluated' || p.status === 'Archived')
-      .reduce((acc, p) => acc + p.scriptCount, 0);
+    const packetEval = (sessionPackets || [])
+      .filter((p) => p && (p.status === 'Evaluated' || p.status === 'Archived'))
+      .reduce((acc, p) => acc + (p.scriptCount || 0), 0);
     return Math.max(evalCount, Math.min(packetEval, totalCourseScripts));
-  }, [sessionIntakes, sessionPackets, totalCourseScripts]);
+  }, [safeSessionIntakes, sessionPackets, totalCourseScripts]);
 
   const totalLocked = useMemo(() => {
     let locked = 0;
-    sessionIntakes.forEach((r) => {
-      if (r.status === 'Marks Uploaded') {
-        locked += r.courseCodes.length;
+    safeSessionIntakes.forEach((r) => {
+      if (!r) return;
+      if (r.status === 'Marks Uploaded' || (r.status as any) === 'Locked' || (r as any).isLocked) {
+        locked += getRecordCourses(r).length;
       }
     });
     return locked;
-  }, [sessionIntakes]);
+  }, [safeSessionIntakes]);
 
   const pendingAllotment = useMemo(() => {
     return Math.max(0, totalCourseScripts - totalAllotted);
@@ -104,8 +129,8 @@ export const IntakeStatusMatrix: React.FC = () => {
       // Gather all programmes that exist in IGNOU master data or sessionIntakes
       const progCodes = Array.from(
         new Set([
-          ...sessionIntakes.map((r) => r.programmeCode),
-          ...IGNOU_PROGRAMMES.map((p) => p.code),
+          ...safeSessionIntakes.map((r) => String(r?.programmeCode || (r as any)?.Programme || '').trim().toUpperCase()).filter(Boolean),
+          ...IGNOU_PROGRAMMES.map((p) => p.code.toUpperCase()),
         ])
       );
 
@@ -113,24 +138,30 @@ export const IntakeStatusMatrix: React.FC = () => {
       let sNo = 1;
 
       progCodes.forEach((pCode) => {
-        const progMaster = IGNOU_PROGRAMMES.find((p) => p.code === pCode);
-        const progIntakes = sessionIntakes.filter((r) => r.programmeCode === pCode);
-        const totalIntake = progIntakes.reduce((acc, r) => acc + r.courseCodes.length, 0);
+        const progMaster = IGNOU_PROGRAMMES.find((p) => p.code.toUpperCase() === pCode);
+        const progIntakes = safeSessionIntakes.filter(
+          (r) => String(r?.programmeCode || (r as any)?.Programme || '').trim().toUpperCase() === pCode
+        );
+        const totalIntake = progIntakes.reduce((acc, r) => acc + getRecordCourses(r).length, 0);
 
         // Only show programmes with submissions or if no submissions at all, show master list
-        if (totalIntake === 0 && sessionIntakes.length > 0) return;
+        if (totalIntake === 0 && safeSessionIntakes.length > 0) return;
 
-        const candidates = new Set(progIntakes.map((r) => r.enrollmentNo)).size;
+        const candidates = new Set(
+          progIntakes.map((r) => String(r?.enrollmentNo || (r as any)?.Enrollment_No || '').trim()).filter(Boolean)
+        ).size;
 
         // Allotted scripts
-        const allotted = sessionPackets
-          .filter((p) => p.programmeCode === pCode && p.evaluatorId !== null)
-          .reduce((acc, p) => acc + p.scriptCount, 0);
+        const allotted = (sessionPackets || [])
+          .filter((p) => p && String(p.programmeCode || '').toUpperCase() === pCode && p.evaluatorId !== null)
+          .reduce((acc, p) => acc + (p.scriptCount || 0), 0);
 
         // Evaluated scripts
         let evaluated = 0;
         progIntakes.forEach((r) => {
-          r.courseCodes.forEach((c) => {
+          if (!r) return;
+          const courses = getRecordCourses(r);
+          courses.forEach((c) => {
             if (r.marks && r.marks[c] !== null && r.marks[c] !== undefined) {
               evaluated++;
             }
@@ -140,8 +171,9 @@ export const IntakeStatusMatrix: React.FC = () => {
         // Locked scripts
         let locked = 0;
         progIntakes.forEach((r) => {
-          if (r.status === 'Marks Uploaded') {
-            locked += r.courseCodes.length;
+          if (!r) return;
+          if (r.status === 'Marks Uploaded' || (r.status as any) === 'Locked' || (r as any).isLocked) {
+            locked += getRecordCourses(r).length;
           }
         });
 
@@ -150,13 +182,15 @@ export const IntakeStatusMatrix: React.FC = () => {
         // Enrolled courses breakdown
         const courseCountMap: Record<string, number> = {};
         progIntakes.forEach((r) => {
-          r.courseCodes.forEach((c) => {
+          if (!r) return;
+          const courses = getRecordCourses(r);
+          courses.forEach((c) => {
             courseCountMap[c] = (courseCountMap[c] || 0) + 1;
           });
         });
 
         const enrolledCourses = Object.entries(courseCountMap).map(([code, count]) => {
-          const cMaster = progMaster?.courses.find((c) => c.code === code);
+          const cMaster = progMaster?.courses?.find((c) => (c?.code || '').toUpperCase() === (code || '').toUpperCase());
           return { code, count, title: cMaster?.title };
         });
 
@@ -213,23 +247,27 @@ export const IntakeStatusMatrix: React.FC = () => {
         }
       > = {};
 
-      sessionIntakes.forEach((r) => {
-        r.courseCodes.forEach((cCode) => {
+      safeSessionIntakes.forEach((r) => {
+        if (!r) return;
+        const pCode = String(r?.programmeCode || (r as any)?.Programme || '').trim().toUpperCase();
+        const courses = getRecordCourses(r);
+        const enr = String(r?.enrollmentNo || (r as any)?.Enrollment_No || '').trim();
+        courses.forEach((cCode) => {
           if (!courseMap[cCode]) {
             courseMap[cCode] = {
               candidates: new Set(),
               intakesCount: 0,
               evaluatedCount: 0,
               lockedCount: 0,
-              programmeCode: r.programmeCode,
+              programmeCode: pCode,
             };
           }
-          courseMap[cCode].candidates.add(r.enrollmentNo);
+          if (enr) courseMap[cCode].candidates.add(enr);
           courseMap[cCode].intakesCount++;
           if (r.marks && r.marks[cCode] !== null && r.marks[cCode] !== undefined) {
             courseMap[cCode].evaluatedCount++;
           }
-          if (r.status === 'Marks Uploaded') {
+          if (r.status === 'Marks Uploaded' || (r.status as any) === 'Locked' || (r as any).isLocked) {
             courseMap[cCode].lockedCount++;
           }
         });
@@ -242,21 +280,21 @@ export const IntakeStatusMatrix: React.FC = () => {
         // Look up course title in master catalog
         let title = '';
         IGNOU_PROGRAMMES.forEach((p) => {
-          const c = p.courses.find((item) => item.code === cCode);
+          const c = p.courses?.find((item) => (item?.code || '').toUpperCase() === (cCode || '').toUpperCase());
           if (c) title = c.title;
         });
 
         // Check packet allotment
-        const packet = sessionPackets.find((p) => p.courseCode === cCode);
-        const allotted = packet && packet.evaluatorId ? packet.scriptCount : 0;
+        const packet = (sessionPackets || []).find((p) => p && String(p.courseCode || '').toUpperCase() === cCode.toUpperCase());
+        const allotted = packet && packet.evaluatorId ? (packet.scriptCount || 0) : 0;
         const pending = Math.max(0, stats.intakesCount - allotted);
 
         let status = 'Intake Open';
         let statusColor = 'bg-blue-100 text-blue-800';
-        if (stats.lockedCount >= stats.intakesCount) {
+        if (stats.lockedCount >= stats.intakesCount && stats.intakesCount > 0) {
           status = 'Marks Uploaded';
           statusColor = 'bg-emerald-100 text-emerald-800';
-        } else if (stats.evaluatedCount >= stats.intakesCount) {
+        } else if (stats.evaluatedCount >= stats.intakesCount && stats.intakesCount > 0) {
           status = 'Evaluated';
           statusColor = 'bg-teal-100 text-teal-800';
         } else if (allotted > 0) {
@@ -285,8 +323,10 @@ export const IntakeStatusMatrix: React.FC = () => {
     } else {
       // Overall Total (Single consolidated summary row + programme distribution)
       const allDistinctCourses: Record<string, number> = {};
-      sessionIntakes.forEach((r) => {
-        r.courseCodes.forEach((c) => {
+      safeSessionIntakes.forEach((r) => {
+        if (!r) return;
+        const courses = getRecordCourses(r);
+        courses.forEach((c) => {
           allDistinctCourses[c] = (allDistinctCourses[c] || 0) + 1;
         });
       });
@@ -317,7 +357,7 @@ export const IntakeStatusMatrix: React.FC = () => {
     }
   }, [
     grouping,
-    sessionIntakes,
+    safeSessionIntakes,
     sessionPackets,
     totalCandidates,
     totalCourseScripts,
@@ -332,12 +372,14 @@ export const IntakeStatusMatrix: React.FC = () => {
   // Filtered by search query & status
   const filteredRows = useMemo(() => {
     return matrixData.filter((row) => {
+      if (!row) return false;
       const q = searchQuery.toLowerCase().trim();
       const matchesQuery =
         !q ||
-        row.programmeOrTitle.toLowerCase().includes(q) ||
-        row.programmeCode.toLowerCase().includes(q) ||
-        row.enrolledCourses.some((c) => c.code.toLowerCase().includes(q));
+        (row.programmeOrTitle && row.programmeOrTitle.toLowerCase().includes(q)) ||
+        (row.programmeCode && row.programmeCode.toLowerCase().includes(q)) ||
+        (Array.isArray(row.enrolledCourses) &&
+          row.enrolledCourses.some((c) => c && c.code && c.code.toLowerCase().includes(q)));
 
       const matchesStatus =
         selectedStatusFilter === 'ALL' ||
@@ -345,7 +387,7 @@ export const IntakeStatusMatrix: React.FC = () => {
         (selectedStatusFilter === 'ALLOTTED' && row.allottedCount > 0) ||
         (selectedStatusFilter === 'EVALUATED' && row.evaluatedCount > 0);
 
-      return matchesQuery && matchesStatus;
+      return Boolean(matchesQuery && matchesStatus);
     });
   }, [matrixData, searchQuery, selectedStatusFilter]);
 
@@ -367,16 +409,16 @@ export const IntakeStatusMatrix: React.FC = () => {
 
     const rows = filteredRows.map((r) => [
       r.sNo,
-      `"${r.programmeOrTitle}"`,
-      r.programmeCode,
-      r.candidatesCount,
-      r.totalIntake,
-      r.pendingCount,
-      r.allottedCount,
-      r.evaluatedCount,
-      r.lockedCount,
-      `"${r.status}"`,
-      `"${r.enrolledCourses.map((c) => `${c.code} (${c.count})`).join(', ')}"`,
+      `"${r.programmeOrTitle || ''}"`,
+      r.programmeCode || '',
+      r.candidatesCount || 0,
+      r.totalIntake || 0,
+      r.pendingCount || 0,
+      r.allottedCount || 0,
+      r.evaluatedCount || 0,
+      r.lockedCount || 0,
+      `"${r.status || ''}"`,
+      `"${(r.enrolledCourses || []).map((c) => `${c?.code || ''} (${c?.count || 0})`).join(', ')}"`,
     ]);
 
     const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');

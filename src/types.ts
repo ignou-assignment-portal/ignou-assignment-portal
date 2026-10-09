@@ -104,6 +104,7 @@ export interface RemunerationBill {
   scriptAmount: number;
   conveyanceAmount: number;
   grossAmount: number;
+  totalAmount?: number;
   sanctionStatus: 'Draft' | 'Sanctioned' | 'Disbursed';
   sanctionedDate?: string;
   sanctionedBy?: string;
@@ -309,6 +310,7 @@ export type AuditActionType =
   | 'INTAKE_CREATED'
   | 'INTAKE_UPDATED'
   | 'INTAKE_DELETED'
+  | 'INTAKE_REJECTED'
   | 'INTAKE_DATE_CHANGED'
   | 'MARKS_UPDATED'
   | 'MARKS_LOCKED'
@@ -330,7 +332,8 @@ export type AuditTargetCategory =
   | 'PACKETS_DISPATCH'
   | 'FINANCE_BILLS'
   | 'SYSTEM_SETTINGS'
-  | 'SESSION_MANAGEMENT';
+  | 'SESSION_MANAGEMENT'
+  | 'SECURITY';
 
 export interface AuditLogEntry {
   id: string;

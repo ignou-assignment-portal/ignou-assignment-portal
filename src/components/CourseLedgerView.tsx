@@ -78,7 +78,7 @@ export const CourseLedgerView: React.FC = () => {
                 (e.enrollmentNo === intake.enrollmentNo || e.Enrollment_No === intake.enrollmentNo) &&
                 (e.courseCode === code || e.Course_Code === code)
             );
-            if (matchingEval && matchingEval.marks !== '' && matchingEval.marks !== undefined && matchingEval.marks !== null) {
+            if (matchingEval && matchingEval.marks !== null && matchingEval.marks !== undefined) {
               item.evaluated++;
             } else {
               item.pending++;

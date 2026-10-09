@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Header } from './components/Header';
 import { Sidebar, TabType } from './components/Sidebar';
 import { IntakeDesk } from './components/IntakeDesk';
@@ -67,18 +68,20 @@ const DashboardContent: React.FC<DashboardContentProps> = ({ onViewHome }) => {
           <main className={`flex-1 w-full mx-auto p-3 sm:p-5 space-y-5 transition-all duration-200 ${
             isContentFullWidth ? 'max-w-none px-4 sm:px-6' : 'max-w-7xl px-4 sm:p-6'
           }`}>
-            {activeTab === 'INTAKE_DESK' && <IntakeDesk />}
-            {activeTab === 'SUBMISSIONS_TRACKER' && <CourseSubmissionsTracker />}
-            {activeTab === 'INTAKE_REGISTER' && <IntakeRegister />}
-            {activeTab === 'EVALUATION_MASTER' && <CourseEvaluationMaster />}
-            {activeTab === 'SED_AWARD_SHEETS' && <RegionalCentreSEDAwardSheet />}
-            {activeTab === 'MARKS_ENTRY' && <MarksEntry />}
-            {activeTab === 'COURSE_LEDGER' && <CourseLedgerView />}
-            {activeTab === 'EVALUATORS' && <EvaluatorDirectory />}
-            {activeTab === 'REMUNERATION' && (!isUrlLockedDeskMode && isAdmin ? <RemunerationBilling /> : <IntakeDesk />)}
-            {activeTab === 'INTEGRITY_AUDIT' && (!isUrlLockedDeskMode && isAdmin ? <IntegrityAuditView /> : <IntakeDesk />)}
-            {activeTab === 'AUDIT_TRAIL' && <AuditTrail />}
-            {activeTab === 'SETTINGS' && (!isUrlLockedDeskMode && isAdmin ? <SystemSettingsView /> : <IntakeDesk />)}
+            <ErrorBoundary fallbackTitle="Workspace Desk Encountered an Issue">
+              {activeTab === 'INTAKE_DESK' && <IntakeDesk />}
+              {activeTab === 'SUBMISSIONS_TRACKER' && <CourseSubmissionsTracker />}
+              {activeTab === 'INTAKE_REGISTER' && <IntakeRegister />}
+              {activeTab === 'EVALUATION_MASTER' && <CourseEvaluationMaster />}
+              {activeTab === 'SED_AWARD_SHEETS' && <RegionalCentreSEDAwardSheet />}
+              {activeTab === 'MARKS_ENTRY' && <MarksEntry />}
+              {activeTab === 'COURSE_LEDGER' && <CourseLedgerView />}
+              {activeTab === 'EVALUATORS' && <EvaluatorDirectory />}
+              {activeTab === 'REMUNERATION' && (!isUrlLockedDeskMode && isAdmin ? <RemunerationBilling /> : <IntakeDesk />)}
+              {activeTab === 'INTEGRITY_AUDIT' && (!isUrlLockedDeskMode && isAdmin ? <IntegrityAuditView /> : <IntakeDesk />)}
+              {activeTab === 'AUDIT_TRAIL' && <AuditTrail />}
+              {activeTab === 'SETTINGS' && (!isUrlLockedDeskMode && isAdmin ? <SystemSettingsView /> : <IntakeDesk />)}
+            </ErrorBoundary>
           </main>
 
           {/* Institutional Footer */}
@@ -198,8 +201,10 @@ const MainApp: React.FC = () => {
 
 export default function App() {
   return (
-    <AppProvider>
-      <MainApp />
-    </AppProvider>
+    <ErrorBoundary fallbackTitle="IGNOU Study Centre Portal Encountered an Issue">
+      <AppProvider>
+        <MainApp />
+      </AppProvider>
+    </ErrorBoundary>
   );
 }
