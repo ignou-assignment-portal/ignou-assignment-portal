@@ -43,6 +43,26 @@ export interface IntakeRecord {
   remarks?: string;
   status: IntakeStatus;
   marks: Record<string, number | null>; // courseCode -> marks (0-100) or null
+  practicalCourses?: string[]; // course codes recorded as Practical submissions
+  assignmentCourses?: string[]; // course codes recorded as Theory Assignment submissions
+  courseDetails?: Array<{
+    code: string;
+    type: 'Assignment' | 'Practical';
+    title?: string;
+    addedInPart?: number;
+    submissionDate?: string;
+  }>;
+  isIntegrated?: boolean; // True if this intake has been integrated part-by-part
+  integratedPartsCount?: number;
+  submissionParts?: Array<{
+    partNo: number;
+    submissionDate: string;
+    tokenNo?: string;
+    courseCodes: string[];
+    practicalCourses?: string[];
+    assignmentCourses?: string[];
+    receiptNumber?: string;
+  }>;
   createdAt: string;
   registeredBy: string;
 }
@@ -164,6 +184,8 @@ export interface AssignmentSubmission {
   submissionMode?: SubmissionMode | null;
   consignmentNo?: string | null;
   remarks?: string | null;
+  componentType?: 'Assignment' | 'Practical';
+  isPractical?: boolean;
   updatedAt: string;
   updatedBy: string;
 }
@@ -193,6 +215,16 @@ export interface RegistrationReceipt {
   programmeCode: string;
   session: string;
   registeredCourses: string[];
+  practicalCourses?: string[];
+  assignmentCourses?: string[];
+  courseDetails?: Array<{
+    code: string;
+    type: 'Assignment' | 'Practical';
+    title?: string;
+    addedInPart?: number;
+  }>;
+  isIntegrated?: boolean;
+  partNo?: number;
   issuedBy: string;
   issuedAt: string;
   submissionDate?: string; // YYYY-MM-DD
@@ -252,6 +284,8 @@ export interface CourseEvaluationRecord {
   lockedBy: string | null;
 
   status: EvaluationStatus;
+  componentType?: 'Assignment' | 'Practical';
+  isPractical?: boolean;
   updatedAt: string;
   remarks?: string;
 }

@@ -90,6 +90,16 @@ interface AppContextType {
   setIntakeRegister: React.Dispatch<React.SetStateAction<IntakeRecord[]>>;
   syncStatus: string;
   addIntakeRecord: (record: Omit<IntakeRecord, 'id' | 'session' | 'tokenNo' | 'createdAt' | 'marks'> & { marks?: Record<string, number | null> }) => IntakeRecord;
+  integrateIntakeWithPrevious: (params: {
+    targetIntakeId: string;
+    newCourseCodes: string[];
+    practicalCourses?: string[];
+    assignmentCourses?: string[];
+    submissionDate?: string;
+    submissionMode?: SubmissionMode;
+    consignmentNo?: string;
+    remarks?: string;
+  }) => { updatedRecord: IntakeRecord; receipt: RegistrationReceipt };
   updateIntakeRecord: (id: string, updates: Partial<IntakeRecord>) => void;
   editIntakeEntry: (params: {
     id: string;
@@ -1752,6 +1762,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       submissionMode?: SubmissionMode;
       consignmentNo?: string;
       remarks?: string;
+      practicalCourses?: string[];
+      assignmentCourses?: string[];
     }) => {
       const targetSession = data.session || currentSession;
       const now = new Date().toISOString();
@@ -1761,8 +1773,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setAssignmentSubmissions((prev) => {
         const nextList = [...prev];
         data.courseCodes.forEach((courseCode) => {
+          const isPrac = (data.practicalCourses || []).includes(courseCode) || isPracticalCourse(courseCode);
+          const compType: 'Assignment' | 'Practical' = isPrac ? 'Practical' : 'Assignment';
+
           const existingIdx = nextList.findIndex(
-            (s) => s.studentId === data.studentId && s.courseCode === courseCode && s.session === targetSession
+            (s) => s.studentId === data.studentId && s.courseCode === courseCode && s.session === targetSession && (s.componentType === compType || !s.componentType)
           );
 
           if (existingIdx >= 0) {
@@ -1771,6 +1786,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               studentName: data.studentName,
               programmeCode: data.programmeCode,
               status: initialStatus,
+              componentType: compType,
+              isPractical: isPrac,
               submissionDate: initialStatus === 'submitted' ? (data.submissionDate || now.split('T')[0]) : null,
               submissionMode: initialStatus === 'submitted' ? (data.submissionMode || 'In-Person (Desk)') : null,
               consignmentNo: data.consignmentNo,
@@ -1787,6 +1804,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               courseCode,
               session: targetSession,
               status: initialStatus,
+              componentType: compType,
+              isPractical: isPrac,
               submissionDate: initialStatus === 'submitted' ? (data.submissionDate || now.split('T')[0]) : null,
               submissionMode: initialStatus === 'submitted' ? (data.submissionMode || 'In-Person (Desk)') : null,
               consignmentNo: data.consignmentNo,
@@ -1900,8 +1919,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const intakeDate = data.submissionDate ? data.submissionDate.trim() : new Date().toISOString().split('T')[0];
 
+      const practicalList = (data.practicalCourses || []).map((c) => c.trim().toUpperCase());
+      const assignmentList = (data.assignmentCourses || []).map((c) => c.trim().toUpperCase());
+
+      const computedPracticalList = practicalList.length > 0
+        ? practicalList
+        : cleanCourses.filter((c) => isPracticalCourse(c));
+      const computedAssignmentList = assignmentList.length > 0
+        ? assignmentList
+        : cleanCourses.filter((c) => !computedPracticalList.includes(c));
+
       const newRecord: IntakeRecord = {
         ...data,
+        practicalCourses: computedPracticalList,
+        assignmentCourses: computedAssignmentList,
+        submissionParts: data.submissionParts || [
+          {
+            partNo: 1,
+            submissionDate: intakeDate,
+            tokenNo,
+            courseCodes: cleanCourses,
+            practicalCourses: computedPracticalList,
+            assignmentCourses: computedAssignmentList,
+          },
+        ],
         id: `intake-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         session: currentSession,
         tokenNo,
@@ -1918,7 +1959,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Deterministic Ledger Unpacking:
       // When a student registers with N courses, automatically split the entry into N individual ledger rows.
-      // Primary Key format: SUB_ENR_COURSE_TERM (e.g., SUB_2401928371_MEG01_JUL2026)
+      // Primary Key format: SUB_ENR_COURSE_TERM (or SUB_ENR_COURSE_PRAC_TERM for practicals)
       const cleanEnrollment = data.enrollmentNo.trim();
       const cleanName = data.studentName.trim();
       const cleanProgramme = data.programmeCode.trim().toUpperCase();
@@ -1936,11 +1977,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const unpackedRows: CourseEvaluationRecord[] = data.courseCodes.map((courseCode) => {
         const cleanCourse = courseCode.trim().toUpperCase();
-        const deterministicKey = generateDeterministicSubmissionKey(cleanEnrollment, cleanCourse, currentSession);
+        const resolvedTitle = getCourseTitle(cleanCourse, cleanProgramme);
+        const isPrac = computedPracticalList.includes(cleanCourse) || isPracticalCourse(cleanCourse, resolvedTitle);
+        const compType: 'Assignment' | 'Practical' = isPrac ? 'Practical' : 'Assignment';
+        const deterministicKey = generateDeterministicSubmissionKey(cleanEnrollment, cleanCourse, currentSession, compType);
         const markVal = data.marks?.[courseCode] ?? null;
         const gradeInfo = calculateIGNOUGrade(markVal);
         const statusVal: EvaluationStatus = markVal !== null ? 'Evaluated' : 'Pending Allotment';
-        const resolvedTitle = getCourseTitle(cleanCourse, cleanProgramme);
 
         return {
           // Clean Google Sheets Course_Ledger keys
@@ -1993,6 +2036,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           lockedAt: null,
           lockedBy: null,
           status: statusVal,
+          componentType: compType,
+          isPractical: isPrac,
           updatedAt: new Date().toISOString(),
           remarks: data.remarks,
         };
@@ -2054,6 +2099,245 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return newRecord;
     },
     [currentSession, intakes, courseEvaluations, currentRole, showToast, logAuditEvent, settings.coordinatorName]
+  );
+
+  const integrateIntakeWithPrevious = useCallback(
+    (params: {
+      targetIntakeId: string;
+      newCourseCodes: string[];
+      practicalCourses?: string[];
+      assignmentCourses?: string[];
+      submissionDate?: string;
+      submissionMode?: SubmissionMode;
+      consignmentNo?: string;
+      remarks?: string;
+    }) => {
+      const targetIntake = intakes.find(
+        (i) => i.id === params.targetIntakeId || i.tokenNo === params.targetIntakeId
+      );
+      if (!targetIntake) {
+        throw new Error('Previous intake record to integrate with was not found.');
+      }
+
+      const cleanNewCourses = Array.from(
+        new Set(params.newCourseCodes.map((c) => c.trim().toUpperCase()).filter(Boolean))
+      );
+      if (cleanNewCourses.length === 0) {
+        throw new Error('Please specify at least one differing course code to integrate.');
+      }
+
+      const activeSession = targetIntake.session || currentSession;
+      const cleanEnr = targetIntake.enrollmentNo.trim();
+      const cleanProg = targetIntake.programmeCode.trim().toUpperCase();
+      const intakeDate = params.submissionDate || new Date().toISOString().split('T')[0];
+      const registeredBy = currentRole === 'ADMIN' ? 'Coordinator Desk' : 'Desk Official - Counter 1';
+
+      const existingParts = targetIntake.submissionParts || [
+        {
+          partNo: 1,
+          submissionDate: targetIntake.submissionDate,
+          tokenNo: targetIntake.tokenNo,
+          courseCodes: [...targetIntake.courseCodes],
+          practicalCourses: targetIntake.practicalCourses || targetIntake.courseCodes.filter((c) => isPracticalCourse(c)),
+          assignmentCourses: targetIntake.assignmentCourses || targetIntake.courseCodes.filter((c) => !isPracticalCourse(c)),
+          receiptNumber: targetIntake.receiptNumber,
+        },
+      ];
+
+      const newPartNo = existingParts.length + 1;
+      const newPractical = (params.practicalCourses || []).map((c) => c.trim().toUpperCase());
+      const newAssignment = (params.assignmentCourses || []).map((c) => c.trim().toUpperCase());
+
+      const computedNewPractical = newPractical.length > 0
+        ? newPractical
+        : cleanNewCourses.filter((c) => isPracticalCourse(c));
+      const computedNewAssignment = newAssignment.length > 0
+        ? newAssignment
+        : cleanNewCourses.filter((c) => !computedNewPractical.includes(c));
+
+      const newPart = {
+        partNo: newPartNo,
+        submissionDate: intakeDate,
+        tokenNo: targetIntake.tokenNo,
+        courseCodes: cleanNewCourses,
+        practicalCourses: computedNewPractical,
+        assignmentCourses: computedNewAssignment,
+      };
+
+      const combinedCourses = Array.from(new Set([...targetIntake.courseCodes, ...cleanNewCourses]));
+      const combinedPracticals = Array.from(
+        new Set([...(targetIntake.practicalCourses || []), ...computedNewPractical])
+      );
+      const combinedAssignments = Array.from(
+        new Set([...(targetIntake.assignmentCourses || []), ...computedNewAssignment])
+      );
+
+      const updatedRecord: IntakeRecord = {
+        ...targetIntake,
+        courseCodes: combinedCourses,
+        practicalCourses: combinedPracticals,
+        assignmentCourses: combinedAssignments,
+        isIntegrated: true,
+        integratedPartsCount: newPartNo,
+        submissionParts: [...existingParts, newPart],
+        marks: {
+          ...targetIntake.marks,
+          ...cleanNewCourses.reduce((acc, code) => ({ ...acc, [code]: null }), {}),
+        },
+      };
+
+      // 1. Update intake in state
+      setIntakes((prev) =>
+        prev.map((i) => (i.id === targetIntake.id ? updatedRecord : i))
+      );
+
+      // 2. Unpack ONLY the new courses into Course Ledger
+      const unpackedNewRows: CourseEvaluationRecord[] = cleanNewCourses.map((courseCode) => {
+        const cleanCourse = courseCode.trim().toUpperCase();
+        const resolvedTitle = getCourseTitle(cleanCourse, cleanProg);
+        const isPrac = computedNewPractical.includes(cleanCourse) || isPracticalCourse(cleanCourse, resolvedTitle);
+        const compType: 'Assignment' | 'Practical' = isPrac ? 'Practical' : 'Assignment';
+        const deterministicKey = generateDeterministicSubmissionKey(
+          cleanEnr,
+          cleanCourse,
+          activeSession,
+          compType
+        );
+
+        return {
+          Sub_ID: deterministicKey,
+          subId: deterministicKey,
+          Session: activeSession,
+          Enrollment_No: cleanEnr,
+          Candidate_Name: targetIntake.studentName,
+          Contact_No: targetIntake.studentPhone || '',
+          Email_ID: targetIntake.studentEmail || '',
+          Programme_Code: cleanProg,
+          Course_Code: cleanCourse,
+          Course_Title: resolvedTitle,
+          courseTitle: resolvedTitle,
+          Programme: cleanProg,
+          Allotted_Evaluator: '',
+          Marks: null,
+          Grade: '—',
+          Status: 'Pending Allotment',
+
+          id: deterministicKey,
+          submissionKey: deterministicKey,
+          intakeId: targetIntake.id,
+          tokenNo: targetIntake.tokenNo,
+          enrollmentNo: cleanEnr,
+          studentName: targetIntake.studentName,
+          studentPhone: targetIntake.studentPhone || '',
+          studentEmail: targetIntake.studentEmail || '',
+          programmeCode: cleanProg,
+          courseCode: cleanCourse,
+          session: activeSession,
+          submissionDate: intakeDate,
+          receiptDate: intakeDate,
+          Submission_Date: intakeDate,
+          receivedDate: intakeDate,
+          intakeDate: intakeDate,
+          Timestamp: `${intakeDate}T10:00:00.000Z`,
+          submissionMode: params.submissionMode || targetIntake.submissionMode,
+          consignmentNo: params.consignmentNo || targetIntake.consignmentNo,
+          evaluatorId: null,
+          evaluatorCode: null,
+          evaluatorName: null,
+          allottedDate: null,
+          allottedBy: null,
+          marks: null,
+          grade: '—',
+          gradeLabel: 'Pending',
+          isLocked: false,
+          lockedAt: null,
+          lockedBy: null,
+          status: 'Pending Allotment',
+          componentType: compType,
+          isPractical: isPrac,
+          updatedAt: new Date().toISOString(),
+          remarks: params.remarks || targetIntake.remarks,
+        };
+      });
+
+      setCourseEvaluations((prev) => {
+        const map = new Map(prev.map((item) => [item.id, item]));
+        unpackedNewRows.forEach((row) => map.set(row.id, row));
+        const combined = Array.from(map.values());
+        try {
+          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(combined));
+          localStorage.setItem(
+            STORAGE_KEYS.INTAKES,
+            JSON.stringify(intakes.map((i) => (i.id === targetIntake.id ? updatedRecord : i)))
+          );
+        } catch {}
+        return combined;
+      });
+
+      // 3. Link each registered course in mock table AssignmentSubmissions
+      recordStudentAssignmentSubmissions({
+        studentId: cleanEnr,
+        studentName: targetIntake.studentName,
+        programmeCode: cleanProg,
+        courseCodes: cleanNewCourses,
+        practicalCourses: computedNewPractical,
+        assignmentCourses: computedNewAssignment,
+        session: activeSession,
+        initialStatus: 'submitted',
+        submissionDate: intakeDate,
+        submissionMode: params.submissionMode || targetIntake.submissionMode,
+        consignmentNo: params.consignmentNo || targetIntake.consignmentNo,
+        remarks: params.remarks || `Part ${newPartNo} supplementary submission`,
+      });
+
+      // 4. Create updated / supplementary RegistrationReceipt
+      const newReceipt = addRegistrationReceipt({
+        intakeId: targetIntake.id,
+        tokenNo: targetIntake.tokenNo,
+        studentId: cleanEnr,
+        studentName: targetIntake.studentName,
+        studentPhone: targetIntake.studentPhone,
+        studentEmail: targetIntake.studentEmail,
+        programmeCode: cleanProg,
+        session: activeSession,
+        registeredCourses: combinedCourses,
+        practicalCourses: combinedPracticals,
+        assignmentCourses: combinedAssignments,
+        isIntegrated: true,
+        partNo: newPartNo,
+        issuedBy: registeredBy,
+        remarks: `Part-by-part integrated submission (Part ${newPartNo}): added ${cleanNewCourses.join(', ')}`,
+        submissionDate: intakeDate,
+        receiptDate: intakeDate,
+        issuedAt: `${intakeDate}T${new Date().toTimeString().split(' ')[0]}`,
+      });
+
+      logAuditEvent({
+        action: 'INTAKE_UPDATED',
+        category: 'ASSIGNMENT_INTAKE',
+        actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+        role: currentRole,
+        session: activeSession,
+        targetIdentifier: cleanEnr,
+        summary: `Integrated Part ${newPartNo} submission: added ${cleanNewCourses.length} differing courses (${cleanNewCourses.join(', ')}) into intake ${targetIntake.tokenNo}`,
+        details: {
+          tokenNo: targetIntake.tokenNo,
+          partNo: newPartNo,
+          newCourses: cleanNewCourses,
+          allCourses: combinedCourses,
+          practicals: combinedPracticals,
+        },
+        status: 'SUCCESS',
+      });
+
+      showToast(
+        `Successfully integrated Part ${newPartNo} (${cleanNewCourses.join(', ')}) into intake token ${targetIntake.tokenNo}!`,
+        'success'
+      );
+
+      return { updatedRecord, receipt: newReceipt };
+    },
+    [intakes, currentSession, currentRole, settings.coordinatorName, addRegistrationReceipt, recordStudentAssignmentSubmissions, showToast, logAuditEvent]
   );
 
   const updateIntakeRecord = useCallback((id: string, updates: Partial<IntakeRecord>) => {
@@ -3981,6 +4265,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         intakeRegister: intakes,
         setIntakeRegister: setIntakes,
         addIntakeRecord,
+        integrateIntakeWithPrevious,
         updateIntakeRecord,
         editIntakeEntry,
         updateIntakeDate,

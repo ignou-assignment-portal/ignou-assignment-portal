@@ -120,7 +120,8 @@ export const getIgnouGrade = calculateIGNOUGrade;
 export function generateDeterministicSubmissionKey(
   enrollmentNo: string,
   courseCode: string,
-  session?: string
+  session?: string,
+  componentType?: 'Assignment' | 'Practical' | string
 ): string {
   const cleanEnr = String(enrollmentNo || '').trim();
   const cleanCourse = String(courseCode || '').trim().replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
@@ -134,7 +135,8 @@ export function generateDeterministicSubmissionKey(
     const year = parts[1].length === 2 ? `20${parts[1]}` : parts[1];
     cleanTerm = `${month}${year}`;
   }
-  return `SUB_${cleanEnr}_${cleanCourse}_${cleanTerm}`;
+  const typeSuffix = componentType === 'Practical' ? '_PRAC' : '';
+  return `SUB_${cleanEnr}_${cleanCourse}${typeSuffix}_${cleanTerm}`;
 }
 
 export function generateSessionCode(session?: string): string {
