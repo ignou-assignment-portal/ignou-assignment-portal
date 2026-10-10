@@ -50,7 +50,15 @@ export const EnrollmentAuditModal: React.FC<EnrollmentAuditModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const hasDuplicates = duplicateGroups.length > 0;
+  const conflictGroups = duplicateGroups.filter(
+    (g) => g.isProgrammeConflict || g.duplicateCourses.length > 0
+  );
+  const supplementaryGroups = duplicateGroups.filter(
+    (g) => g.isSupplementaryMultiCourse
+  );
+  const hasConflicts = conflictGroups.length > 0;
+  const hasSupplementaryOnly = duplicateGroups.length > 0 && !hasConflicts;
+  const hasAnyGroups = duplicateGroups.length > 0;
   const duplicateRecordsCount = duplicateGroups.reduce(
     (sum, g) => sum + g.records.length,
     0
@@ -76,12 +84,14 @@ export const EnrollmentAuditModal: React.FC<EnrollmentAuditModalProps> = ({
           <div className="flex items-center gap-2.5">
             <div
               className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${
-                hasDuplicates
+                hasConflicts
                   ? 'bg-rose-100 text-rose-700 border border-rose-300'
+                  : hasSupplementaryOnly
+                  ? 'bg-blue-100 text-blue-700 border border-blue-300'
                   : 'bg-emerald-100 text-emerald-700 border border-emerald-300'
               }`}
             >
-              {hasDuplicates ? (
+              {hasConflicts ? (
                 <ShieldAlert className="w-5 h-5" />
               ) : (
                 <ShieldCheck className="w-5 h-5" />
@@ -93,14 +103,14 @@ export const EnrollmentAuditModal: React.FC<EnrollmentAuditModalProps> = ({
                   id="enrollment-audit-title"
                   className="font-bold text-zinc-900 text-sm sm:text-base leading-tight"
                 >
-                  Enrollment Uniqueness Audit
+                  Enrollment Uniqueness & Multi-Course Audit
                 </h3>
                 <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-full bg-zinc-200 text-zinc-800">
                   {sessionName}
                 </span>
               </div>
               <p className="text-xs text-zinc-500 mt-0.5">
-                Scanning all intake records in active session for duplicate enrollment numbers
+                Scanning all intake records in active session: Same enrollment & programme allowed when course codes differ
               </p>
             </div>
           </div>
@@ -133,29 +143,37 @@ export const EnrollmentAuditModal: React.FC<EnrollmentAuditModalProps> = ({
               </span>
             </div>
             <div className="p-3 bg-zinc-50 border border-zinc-200 rounded-xl">
-              <span className="text-[10px] text-zinc-400 font-medium block">Duplicate Numbers</span>
+              <span className="text-[10px] text-zinc-400 font-medium block">Rule Conflicts</span>
               <span
                 className={`text-base font-black font-mono ${
-                  hasDuplicates ? 'text-rose-600' : 'text-emerald-600'
+                  hasConflicts ? 'text-rose-600' : 'text-emerald-600'
                 }`}
               >
-                {duplicateGroups.length}
+                {conflictGroups.length}
               </span>
             </div>
             <div className="p-3 bg-zinc-50 border border-zinc-200 rounded-xl">
-              <span className="text-[10px] text-zinc-400 font-medium block">Audit Status</span>
+              <span className="text-[10px] text-zinc-400 font-medium block">Supplementary Intakes</span>
               <span
                 className={`text-xs font-bold block mt-1 ${
-                  hasDuplicates ? 'text-rose-700' : 'text-emerald-700'
+                  hasConflicts
+                    ? 'text-rose-700'
+                    : hasSupplementaryOnly
+                    ? 'text-blue-700'
+                    : 'text-emerald-700'
                 }`}
               >
-                {hasDuplicates ? 'Duplicates Detected' : '100% Unique'}
+                {hasConflicts
+                  ? `${conflictGroups.length} Conflict(s)`
+                  : hasSupplementaryOnly
+                  ? `${supplementaryGroups.length} Valid (Different Courses)`
+                  : '100% Unique'}
               </span>
             </div>
           </div>
 
           {/* Result Alert Banner */}
-          {!hasDuplicates ? (
+          {!hasAnyGroups ? (
             <div
               id="enrollment-audit-clean-banner"
               className="p-4 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-950 flex items-start gap-3"
@@ -172,6 +190,21 @@ export const EnrollmentAuditModal: React.FC<EnrollmentAuditModalProps> = ({
                 </p>
               </div>
             </div>
+          ) : hasSupplementaryOnly ? (
+            <div
+              id="enrollment-audit-supplementary-banner"
+              className="p-4 rounded-xl border border-blue-300 bg-blue-50 text-blue-950 flex items-start gap-3"
+            >
+              <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div className="font-bold text-sm text-blue-900">
+                  All Multi-Course Intakes Are Valid: Course Codes Differ
+                </div>
+                <p className="text-xs text-blue-800 leading-relaxed">
+                  Found <strong className="font-mono font-black">{supplementaryGroups.length}</strong> candidate(s) with multiple intake receipts ({duplicateRecordsCount} total receipts) under the same programme with differing course codes. Under IGNOU rules, adding an intake for the same student, name, and programme is <strong className="font-bold">fully allowed</strong> when course codes differ.
+                </p>
+              </div>
+            </div>
           ) : (
             <div
               id="enrollment-audit-conflict-banner"
@@ -180,17 +213,17 @@ export const EnrollmentAuditModal: React.FC<EnrollmentAuditModalProps> = ({
               <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <div className="font-bold text-sm text-rose-900">
-                  Duplicate Enrollment Numbers Found in {sessionName}
+                  Duplicate Enrollment Conflicts Found in {sessionName}
                 </div>
                 <p className="text-xs text-rose-800 leading-relaxed">
-                  Found <strong className="font-mono font-black">{duplicateGroups.length}</strong> enrollment number(s) associated with multiple intake records ({duplicateRecordsCount} total receipts). Review each group below for IGNOU integrity rules.
+                  Found <strong className="font-mono font-black">{conflictGroups.length}</strong> enrollment number conflict(s) with overlapping courses or programme mismatch. Review each group below for IGNOU integrity rules.
                 </p>
               </div>
             </div>
           )}
 
           {/* Duplicate Groups List */}
-          {hasDuplicates && (
+          {hasAnyGroups && (
             <div className="space-y-3">
               <div className="text-xs font-bold text-zinc-800 flex items-center justify-between">
                 <span>Detailed Duplicate Enrollment Breakdown:</span>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { formatDate, formatDateTime } from '../utils/helpers';
-import { Printer, X, CheckCircle2, AlertTriangle, Calendar } from 'lucide-react';
+import { formatDate, formatDateTime, isPracticalCourse } from '../utils/helpers';
+import { Printer, X, CheckCircle2, AlertTriangle, Calendar, FlaskConical } from 'lucide-react';
 
 export const ReceiptModal: React.FC = () => {
   const {
@@ -275,7 +275,14 @@ export const ReceiptModal: React.FC = () => {
                         {index + 1}.
                       </td>
                       <td className="py-1 print:py-0.5 px-2 print:px-1.5 font-bold text-indigo-950 font-mono border-r border-zinc-200">
-                        {code}
+                        <div className="flex items-center gap-1">
+                          <span>{code}</span>
+                          {isPracticalCourse(code, title) && (
+                            <span className="text-[8px] print:text-[6.5px] px-1 py-0 rounded bg-purple-100 text-purple-800 font-sans font-bold border border-purple-200">
+                              Practical
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-1 print:py-0.5 px-2 print:px-1.5 text-zinc-800 border-r border-zinc-200 truncate max-w-[240px]">
                         {title}

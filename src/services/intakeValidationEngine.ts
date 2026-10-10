@@ -263,7 +263,7 @@ export function validateIntakeRecord(params: ValidateIntakeParams): ValidationRe
     return {
       valid: false,
       rule: 'Rule 3: No Duplicate Course Selections',
-      reason: `Duplicate course selection detected: Student ${cleanEnr} is already enrolled in course(s): ${repeatedCourses.join(', ')}. A student cannot be enrolled in the exact same course more than once.`,
+      reason: `Duplicate course selection detected: Student ${cleanEnr} is already enrolled in course(s): ${repeatedCourses.join(', ')}. RULE: Additional intake of student is permitted if the course code is different.`,
     };
   }
 

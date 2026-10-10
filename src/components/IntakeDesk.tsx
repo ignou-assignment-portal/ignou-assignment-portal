@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp, norm } from '../context/AppContext';
 import { SubmissionMode, IntakeRecord } from '../types';
-import { formatDate, formatDateTime } from '../utils/helpers';
+import { formatDate, formatDateTime, isPracticalCourse } from '../utils/helpers';
 import { IntakeStatusMatrix } from './IntakeStatusMatrix';
 import {
   UserPlus,
+  FlaskConical,
   User,
   BookOpen,
   CheckCircle,
@@ -494,6 +495,14 @@ export const IntakeDesk: React.FC = () => {
     return dupes;
   }, [sessionIntakes, selectedSession, currentSession]);
 
+  const conflictEnrollmentGroups = useMemo(() => {
+    return duplicateEnrollmentGroups.filter((g) => g.isProgrammeConflict || g.duplicateCourses.length > 0);
+  }, [duplicateEnrollmentGroups]);
+
+  const supplementaryEnrollmentGroups = useMemo(() => {
+    return duplicateEnrollmentGroups.filter((g) => g.isSupplementaryMultiCourse);
+  }, [duplicateEnrollmentGroups]);
+
   const filteredReceipts = useMemo(() => {
     const list = (allRegistrationReceipts && allRegistrationReceipts.length > 0)
       ? allRegistrationReceipts
@@ -676,6 +685,7 @@ export const IntakeDesk: React.FC = () => {
   };
 
   // Course addition with dynamic multi-course support, duplicate check, and unlimited selection (up to 50)
+  // Course addition with dynamic multi-course support: allows intake if course code is different
   const handleAddCourse = (courseCode: string) => {
     if (!courseCode.trim()) return;
     const splitCourses = courseCode
@@ -692,22 +702,20 @@ export const IntakeDesk: React.FC = () => {
 
     const cleanEnrollment = enrollmentNo.trim();
     const newCoursesToAdd: string[] = [];
+    const skippedAlreadyEnrolled: string[] = [];
+    const skippedAlreadyInBatch: string[] = [];
 
     for (const clean of splitCourses) {
-      // Rule 3: No duplicate course selection across entries or unique student profile
-      if (cleanEnrollment) {
-        if (alreadyEnrolledCourses instanceof Set && alreadyEnrolledCourses.has(clean)) {
-          const msg = `Duplicate course selection detected: Student ${cleanEnrollment} is already enrolled in course "${clean}". A student cannot be enrolled in the exact same course more than once.`;
-          showToast(msg, 'error');
-          setErrorMsg(msg);
-          return;
-        }
+      // Rule 3 check: Cannot enroll in the exact same course more than once
+      if (cleanEnrollment && alreadyEnrolledCourses instanceof Set && alreadyEnrolledCourses.has(clean)) {
+        skippedAlreadyEnrolled.push(clean);
+        continue;
       }
 
-      // Rule 3: No duplicate within same intake entry
+      // Check duplicate within same intake entry
       if (selectedCourses.includes(clean) || newCoursesToAdd.includes(clean)) {
-        setErrorMsg(`Duplicate course selection detected: Course "${clean}" is already added to this intake entry.`);
-        return;
+        skippedAlreadyInBatch.push(clean);
+        continue;
       }
 
       newCoursesToAdd.push(clean);
@@ -724,13 +732,38 @@ export const IntakeDesk: React.FC = () => {
     if (newCoursesToAdd.length > 0) {
       setSelectedCourses([...selectedCourses, ...newCoursesToAdd]);
       setErrorMsg('');
+      if (skippedAlreadyEnrolled.length > 0) {
+        showToast(
+          `Added differing course(s): ${newCoursesToAdd.join(', ')}. (Skipped ${skippedAlreadyEnrolled.join(', ')}: already enrolled for student ${cleanEnrollment}).`,
+          'info'
+        );
+      }
+    } else {
+      if (skippedAlreadyEnrolled.length > 0) {
+        const msg = `Duplicate course selection detected: Student ${cleanEnrollment} is already enrolled in course(s): ${skippedAlreadyEnrolled.join(', ')}. RULE: Additional intake of student is permitted if the course code is different.`;
+        showToast(msg, 'error');
+        setErrorMsg(msg);
+      } else if (skippedAlreadyInBatch.length > 0) {
+        setErrorMsg(`Course(s) "${skippedAlreadyInBatch.join(', ')}" already added to this intake entry.`);
+      }
     }
     setCourseSearchInput('');
   };
 
   const handleSelectAllCourses = () => {
     if (!availableProgrammeCourses || availableProgrammeCourses.length === 0) return;
-    const codes = availableProgrammeCourses.map((c) => c.code);
+    // Rule: Filter to differing courses that are NOT already enrolled by this student
+    const differingCourses = availableProgrammeCourses.filter(
+      (c) => !(alreadyEnrolledCourses instanceof Set && alreadyEnrolledCourses.has(c.code))
+    );
+    if (differingCourses.length === 0) {
+      showToast(
+        `Student ${enrollmentNo || 'Candidate'} has already registered all courses for ${selectedProgramme}.`,
+        'info'
+      );
+      return;
+    }
+    const codes = differingCourses.map((c) => c.code);
     handleAddCourse(codes.join(','));
   };
 
@@ -1037,12 +1070,26 @@ export const IntakeDesk: React.FC = () => {
       });
 
       setJustSubmittedToken(newRecord.tokenNo);
-      setSuccessMsg(`Successfully registered candidate ${studentName.trim()} (${cleanEnrollment}) with Token: ${newRecord.tokenNo}.`);
+      if (alreadyEnrolledCourses instanceof Set && alreadyEnrolledCourses.size > 0) {
+        setSuccessMsg(
+          `Supplementary intake recorded! Candidate ${studentName.trim()} (${cleanEnrollment}) registered for differing course(s): ${coursesArray.join(', ')} under ${selectedProgramme.trim().toUpperCase()} with Token: ${newRecord.tokenNo}.`
+        );
+      } else {
+        setSuccessMsg(
+          `Successfully registered candidate ${studentName.trim()} (${cleanEnrollment}) with Token: ${newRecord.tokenNo}.`
+        );
+      }
 
       // Update Validation Summary with success confirmation & clean finalized object
       setValidationResult({
         status: 'Success',
         action: 'Create',
+        rule: (alreadyEnrolledCourses instanceof Set && alreadyEnrolledCourses.size > 0)
+          ? 'Rule: Supplementary Intake Recorded for Differing Course Codes'
+          : 'Rule: Candidate Intake Recorded',
+        reason: (alreadyEnrolledCourses instanceof Set && alreadyEnrolledCourses.size > 0)
+          ? `Candidate ${studentName.trim()} (${cleanEnrollment}) successfully registered for additional differing course(s): ${coursesArray.join(', ')} in Programme ${selectedProgramme.trim().toUpperCase()}.`
+          : `Candidate ${studentName.trim()} (${cleanEnrollment}) registered successfully.`,
         timestamp: new Date().toISOString(),
         cleanData: {
           ...newRecord,
@@ -1204,19 +1251,33 @@ export const IntakeDesk: React.FC = () => {
       setIsScanningDuplicates(false);
       setIsAuditModalOpen(true);
       const totalEnrCount = new Set(sessionIntakes.map((r) => String(r?.enrollmentNo || '').trim()).filter(Boolean)).size;
-      if (duplicateEnrollmentGroups.length > 0) {
+      if (conflictEnrollmentGroups.length > 0) {
         setValidationResult({
           status: 'Rejected',
           action: 'Validate',
-          rule: 'Integrity Scan: Duplicate Enrollment Numbers',
-          reason: `Integrity Scan Alert: Found ${duplicateEnrollmentGroups.length} duplicate enrollment number(s) across ${duplicateEnrollmentGroups.reduce((acc, g) => acc + g.records.length, 0)} intake records in active session ${targetSession}.`,
+          rule: 'Integrity Scan: Duplicate Enrollment Conflicts',
+          reason: `Integrity Scan Alert: Found ${conflictEnrollmentGroups.length} enrollment number conflict(s) across intake records in active session ${targetSession} (programme mismatch or repeated courses).`,
           timestamp: new Date().toISOString(),
+        });
+      } else if (supplementaryEnrollmentGroups.length > 0) {
+        setValidationResult({
+          status: 'Success',
+          action: 'Validate',
+          rule: 'Integrity Scan: Multi-Course Supplementary Intakes Valid',
+          reason: `Integrity Scan Verified: Found ${supplementaryEnrollmentGroups.length} candidate(s) with multiple intakes under the same programme having differing course codes. This is 100% permitted under IGNOU rules.`,
+          timestamp: new Date().toISOString(),
+          cleanData: {
+            session: targetSession,
+            totalRecords: sessionIntakes.length,
+            uniqueEnrollments: totalEnrCount,
+            supplementaryCandidateGroups: supplementaryEnrollmentGroups.length,
+          },
         });
       } else {
         setValidationResult({
           status: 'Success',
           action: 'Validate',
-          rule: 'Integrity Scan: Duplicate Enrollment Numbers',
+          rule: 'Integrity Scan: Enrollment Integrity Verified',
           reason: `Integrity Scan Passed: All ${totalEnrCount} student enrollment numbers across ${sessionIntakes.length} intake records in active session ${targetSession} are completely unique. No duplicates detected.`,
           timestamp: new Date().toISOString(),
           cleanData: {
@@ -1268,17 +1329,6 @@ export const IntakeDesk: React.FC = () => {
       });
       const coursesStr = allSubmittedCourses.join(', ');
 
-      const msg = `Enrollment ${cleanEnr} already has ${existingMatches.length} intake record(s) in active session (${targetSession}). Registered under Programme ${prog} with Token ${first.tokenNo} (Courses: ${coursesStr}).`;
-      setErrorMsg(msg);
-      setValidationResult({
-        status: 'Rejected',
-        action: 'Validate',
-        rule: 'Rule: Enrollment Number Uniqueness in Active Session',
-        reason: msg,
-        timestamp: new Date().toISOString(),
-        attemptedData: first,
-      });
-
       // Autofill candidate name and programme if currently empty
       const candName =
         first.studentName ||
@@ -1291,14 +1341,80 @@ export const IntakeDesk: React.FC = () => {
       if (!selectedProgramme && prog) {
         setSelectedProgramme(String(prog));
       }
+
+      // Check if user currently has courses entered or selected
+      const currentSelected = [...selectedCourses];
+      if (courseSearchInput.trim()) {
+        courseSearchInput
+          .split(',')
+          .map((c) => c.trim().toUpperCase())
+          .filter(Boolean)
+          .forEach((c) => {
+            if (!currentSelected.includes(c)) currentSelected.push(c);
+          });
+      }
+
+      const hasSelectedCourses = currentSelected.length > 0;
+      const overlapping = currentSelected.filter((c) => allSubmittedCourses.includes(c));
+      const differing = currentSelected.filter((c) => !allSubmittedCourses.includes(c));
+
+      if (hasSelectedCourses && differing.length > 0 && overlapping.length === 0) {
+        const msg = `RULE VERIFIED: Student ${cleanEnr} (${candName || studentName || 'Candidate'}) is registered under Programme ${prog}. The selected course code(s) [${differing.join(', ')}] DIFFER from previous intake course(s) [${coursesStr}]. Additional intake is FULLY ALLOWED and ready to be added!`;
+        setSuccessMsg(`Rule Verified: Additional intake allowed for differing course(s): ${differing.join(', ')}.`);
+        setErrorMsg('');
+        setValidationResult({
+          status: 'Success',
+          action: 'Validate',
+          rule: 'Rule: Supplementary Intake Allowed for Differing Course Codes',
+          reason: msg,
+          timestamp: new Date().toISOString(),
+          cleanData: {
+            enrollmentNo: cleanEnr,
+            programmeCode: prog,
+            studentName: candName || studentName,
+            differingCourses: differing.join(', '),
+            alreadyEnrolledCourses: coursesStr,
+            ruleNotice: 'Add intake of student is permitted since course codes differ',
+          },
+        });
+      } else if (hasSelectedCourses && overlapping.length > 0) {
+        const msg = `Duplicate course detected: Course(s) [${overlapping.join(', ')}] are already registered for student ${cleanEnr}. RULE: Intake of this student can only be added if course code is different.`;
+        setErrorMsg(msg);
+        setValidationResult({
+          status: 'Rejected',
+          action: 'Validate',
+          rule: 'Rule 3: No Duplicate Course Selections',
+          reason: msg,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        const msg = `Enrollment ${cleanEnr} (${candName || 'Candidate'}) has existing intake record(s) under Programme ${prog} in cycle (${targetSession}) for courses: [${coursesStr}]. RULE: Additional intake of this student is ALLOWED as long as the newly submitted course code(s) differ from previously enrolled courses.`;
+        setSuccessMsg(`Active student profile verified: Additional intake allowed for differing course codes.`);
+        setErrorMsg('');
+        setValidationResult({
+          status: 'Success',
+          action: 'Validate',
+          rule: 'Rule: Supplementary Intake Allowed for Differing Course Codes',
+          reason: msg,
+          timestamp: new Date().toISOString(),
+          attemptedData: first,
+          cleanData: {
+            enrollmentNo: cleanEnr,
+            programmeCode: prog,
+            studentName: candName,
+            alreadyEnrolledCourses: coursesStr,
+            ruleNotice: 'Add intake allowed if course code differs',
+          },
+        });
+      }
     } else {
       setErrorMsg('');
-      const msg = `Verified: Enrollment ${cleanEnr} has NO intake record in active session (${targetSession}). It is completely unique and ready for intake registration.`;
+      const msg = `Verified: Enrollment ${cleanEnr} has no previous intake in active session (${targetSession}). Ready for initial intake registration.`;
       setSuccessMsg(msg);
       setValidationResult({
         status: 'Success',
         action: 'Validate',
-        rule: 'Rule: Enrollment Number Uniqueness in Active Session',
+        rule: 'Rule: Enrollment Verified',
         reason: msg,
         timestamp: new Date().toISOString(),
         cleanData: {
@@ -1497,16 +1613,20 @@ export const IntakeDesk: React.FC = () => {
             onClick={handleTriggerIntegrityScan}
             disabled={isScanningDuplicates}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-2xs border ${
-              duplicateEnrollmentGroups.length > 0
+              conflictEnrollmentGroups.length > 0
                 ? 'bg-rose-50 border-rose-300 text-rose-950 hover:bg-rose-100'
+                : supplementaryEnrollmentGroups.length > 0
+                ? 'bg-blue-50 border-blue-300 text-blue-950 hover:bg-blue-100'
                 : 'bg-emerald-50 border-emerald-300 text-emerald-950 hover:bg-emerald-100'
             }`}
-            title={`Run integrity scan to detect duplicate enrollment numbers across all records in active session (${currentSession})`}
+            title={`Run integrity scan across records in active session (${currentSession})`}
           >
             {isScanningDuplicates ? (
               <Loader2 className="w-4 h-4 animate-spin text-indigo-600 shrink-0" />
-            ) : duplicateEnrollmentGroups.length > 0 ? (
+            ) : conflictEnrollmentGroups.length > 0 ? (
               <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+            ) : supplementaryEnrollmentGroups.length > 0 ? (
+              <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
             ) : (
               <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
             )}
@@ -1517,13 +1637,17 @@ export const IntakeDesk: React.FC = () => {
             </span>
             <span
               className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-                duplicateEnrollmentGroups.length > 0
+                conflictEnrollmentGroups.length > 0
                   ? 'bg-rose-600 text-white'
+                  : supplementaryEnrollmentGroups.length > 0
+                  ? 'bg-blue-600 text-white'
                   : 'bg-emerald-600 text-white'
               }`}
             >
-              {duplicateEnrollmentGroups.length > 0
-                ? `${duplicateEnrollmentGroups.length} Duplicate${duplicateEnrollmentGroups.length === 1 ? '' : 's'}`
+              {conflictEnrollmentGroups.length > 0
+                ? `${conflictEnrollmentGroups.length} Conflict${conflictEnrollmentGroups.length === 1 ? '' : 's'}`
+                : supplementaryEnrollmentGroups.length > 0
+                ? `${supplementaryEnrollmentGroups.length} Supplementary Valid`
                 : '100% Unique'}
             </span>
           </button>
@@ -1631,7 +1755,7 @@ export const IntakeDesk: React.FC = () => {
                           onClick={handleCheckSingleEnrollmentInActiveSession}
                           className="text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer font-semibold"
                         >
-                          Verify Uniqueness
+                          Check Profile & Courses
                         </button>
                       )}
                     </div>
@@ -1677,16 +1801,24 @@ export const IntakeDesk: React.FC = () => {
                 )}
 
                 {!isRule1Violated && (alreadyEnrolledCourses instanceof Set ? alreadyEnrolledCourses.size : 0) > 0 && (
-                  <div className="p-3 bg-indigo-50/90 border border-indigo-200 rounded-xl text-xs text-indigo-950 flex items-start gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-bold text-indigo-950">Rule 2 Multi-Course Intake Allowance Active</div>
-                      <div className="mt-0.5">
-                        Candidate has previously submitted courses:{' '}
-                        <span className="font-mono font-black text-indigo-950">
+                  <div className="p-3.5 bg-emerald-50/95 border-2 border-emerald-400 rounded-xl text-xs text-emerald-950 flex items-start gap-3 shadow-xs animate-in fade-in">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="font-extrabold text-emerald-950 text-sm flex flex-wrap items-center gap-2">
+                        <span>RULE: Additional Intake Permitted for Differing Course Codes</span>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-200/90 text-emerald-950 text-[10px] font-mono font-bold">
+                          Same Enr • Same Name • Same Programme
+                        </span>
+                      </div>
+                      <div className="mt-1 text-emerald-900 leading-relaxed">
+                        Student <strong className="font-mono font-bold text-zinc-950">{enrollmentNo}</strong> (<strong>{studentName || 'Candidate'}</strong>) is registered under Programme <strong className="font-mono text-zinc-950">{selectedProgramme || registeredProgForEnrollment}</strong> with previously registered course(s):{' '}
+                        <span className="font-mono font-black text-emerald-950 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300 inline-block">
                           {Array.from(alreadyEnrolledCourses || []).join(', ')}
-                        </span>{' '}
-                        under {selectedProgramme || registeredProgForEnrollment}. Intake can be taken further for any different courses.
+                        </span>.
+                      </div>
+                      <div className="mt-1.5 text-[11px] text-emerald-800 font-semibold flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 inline shrink-0" />
+                        <span>Rule: Intake of student is added if course code is differ even though intake enrollment number, name and Programme enrolled is same. Each intake entry receives its own unique intake token and printable receipt slip.</span>
                       </div>
                     </div>
                   </div>
@@ -2167,23 +2299,37 @@ export const IntakeDesk: React.FC = () => {
                           <span>Quick Course Suggestions for {selectedProgramme} ({availableProgrammeCourses.length} Available):</span>
                         </span>
                         {availableProgrammeCourses.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={handleSelectAllCourses}
-                            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer"
-                          >
-                            Select All ({availableProgrammeCourses.length})
-                          </button>
+                          <div className="flex items-center gap-2">
+                            {(alreadyEnrolledCourses instanceof Set && alreadyEnrolledCourses.size > 0) && (
+                              <button
+                                type="button"
+                                onClick={handleSelectAllCourses}
+                                className="text-[10px] text-emerald-700 hover:text-emerald-900 font-bold cursor-pointer underline flex items-center gap-1"
+                                title="Add all differing courses that have not yet been enrolled by this candidate"
+                              >
+                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                <span>Add All Differing Courses ({availableProgrammeCourses.filter((c) => !(alreadyEnrolledCourses instanceof Set && alreadyEnrolledCourses.has(c.code))).length})</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={handleSelectAllCourses}
+                              className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer"
+                            >
+                              {(alreadyEnrolledCourses instanceof Set && alreadyEnrolledCourses.size > 0) ? 'Select Differing' : `Select All (${availableProgrammeCourses.length})`}
+                            </button>
+                          </div>
                         )}
                       </div>
 
                       {availableProgrammeCourses.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1 bg-white rounded border border-zinc-100 mb-2">
+                        <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1 bg-white rounded border border-zinc-100 mb-2">
                           {availableProgrammeCourses.map((c) => {
                             if (!c || !c.code) return null;
                             const isAlreadySelected = selectedCourses.includes(c.code);
                             const isAlreadyEnrolled = alreadyEnrolledCourses instanceof Set ? alreadyEnrolledCourses.has(c.code) : false;
                             const title = getCourseTitle(c.code, selectedProgramme);
+                            const isPractical = isPracticalCourse(c.code, title);
                             return (
                               <button
                                 type="button"
@@ -2195,13 +2341,33 @@ export const IntakeDesk: React.FC = () => {
                                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 opacity-60 cursor-not-allowed'
                                     : isAlreadyEnrolled
                                     ? 'bg-amber-100 text-amber-900 border border-amber-300 opacity-75 cursor-not-allowed'
+                                    : isPractical
+                                    ? 'bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 hover:border-purple-400'
                                     : 'bg-zinc-50 hover:bg-indigo-50 text-indigo-900 border border-zinc-200 hover:border-indigo-400'
                                 }`}
-                                title={isAlreadyEnrolled ? `Rule 3: Course ${c.code} is already enrolled by this student.` : `${c.code}: ${title}`}
+                                title={
+                                  isAlreadyEnrolled
+                                    ? `Already Registered: Course ${c.code} was previously enrolled for student ${enrollmentNo}. Rule: Additional intake is permitted for differing course codes.`
+                                    : `${c.code}: ${title}${isPractical ? ' (Practical / Lab Course)' : ' (Theory Course)'} - Click to add intake`
+                                }
                               >
+                                {isPractical && <FlaskConical className="w-2.5 h-2.5 text-purple-600 shrink-0" />}
                                 <span>{c.code}</span>
-                                {isAlreadySelected ? <Check className="w-2.5 h-2.5" /> : isAlreadyEnrolled ? <Lock className="w-2.5 h-2.5 text-amber-700" /> : <Plus className="w-2.5 h-2.5" />}
-                                {isAlreadyEnrolled && <span className="text-[9px] font-normal text-amber-800 font-sans">(Enrolled)</span>}
+                                {isPractical && (
+                                  <span className="text-[8.5px] px-1 py-0 rounded bg-purple-200 text-purple-900 font-sans font-semibold">
+                                    Practical
+                                  </span>
+                                )}
+                                {isAlreadySelected ? (
+                                  <Check className="w-2.5 h-2.5" />
+                                ) : isAlreadyEnrolled ? (
+                                  <Lock className="w-2.5 h-2.5 text-amber-700" />
+                                ) : (
+                                  <Plus className="w-2.5 h-2.5" />
+                                )}
+                                {isAlreadyEnrolled && (
+                                  <span className="text-[9px] font-normal text-amber-800 font-sans">(Enrolled)</span>
+                                )}
                               </button>
                             );
                           })}
@@ -2213,13 +2379,13 @@ export const IntakeDesk: React.FC = () => {
                       )}
 
                       {/* Quick Add New Course to this Programme */}
-                      <div className="flex items-center gap-1.5 pt-1 border-t border-zinc-200/60">
+                      <div className="flex items-center gap-1.5 pt-1 border-t border-zinc-200/60 flex-wrap">
                         <span className="text-[10px] text-zinc-500 font-semibold whitespace-nowrap">
                           + Add Course to {selectedProgramme}:
                         </span>
                         <input
                           type="text"
-                          placeholder="e.g. BEGC-102 or MCS-021"
+                          placeholder="e.g. BEGC-102 or MCSL-016 (Practical)"
                           value={newCourseForProgrammeInput}
                           onChange={(e) => setNewCourseForProgrammeInput(e.target.value.toUpperCase())}
                           onKeyDown={(e) => {
@@ -2228,15 +2394,20 @@ export const IntakeDesk: React.FC = () => {
                               handleAddCustomCourseToProgramme();
                             }
                           }}
-                          className="px-2 py-0.5 text-xs font-mono font-bold border border-zinc-300 rounded bg-white w-40"
+                          className="px-2 py-0.5 text-xs font-mono font-bold border border-zinc-300 rounded bg-white w-48"
                         />
                         <button
                           type="button"
                           onClick={handleAddCustomCourseToProgramme}
                           disabled={!newCourseForProgrammeInput.trim()}
-                          className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-zinc-300 text-white text-[11px] font-bold rounded cursor-pointer transition"
+                          className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-zinc-300 text-white text-[11px] font-bold rounded cursor-pointer transition flex items-center gap-1"
                         >
-                          Add & Include Next Time
+                          {isPracticalCourse(newCourseForProgrammeInput) && (
+                            <FlaskConical className="w-3 h-3 text-purple-200" />
+                          )}
+                          <span>
+                            {isPracticalCourse(newCourseForProgrammeInput) ? 'Add Practical Course' : 'Add Course'}
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -2249,7 +2420,7 @@ export const IntakeDesk: React.FC = () => {
                         <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-2.5" />
                         <input
                           type="text"
-                          placeholder="Type course code (e.g. BEGC-101, MCS-011) or comma-separated list (BEGC-101, BEGC-102, BEGC-103...) and press Enter or Add"
+                          placeholder="Type course code (e.g. BEGC-101, MCSL-016) or comma-separated list (BEGC-101, BLIE-227...) and press Enter or Add"
                           value={courseSearchInput}
                           onChange={(e) => setCourseSearchInput(e.target.value)}
                           onKeyDown={(e) => {
@@ -2271,33 +2442,47 @@ export const IntakeDesk: React.FC = () => {
                             handleAddCourse(courseSearchInput.trim());
                           }
                         }}
-                        className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-900 disabled:bg-zinc-300 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shrink-0 cursor-pointer"
+                        className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-900 disabled:bg-zinc-300 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shrink-0 cursor-pointer flex items-center gap-1"
                       >
-                        Add
+                        {isPracticalCourse(courseSearchInput) && (
+                          <FlaskConical className="w-3 h-3 text-purple-300" />
+                        )}
+                        <span>
+                          {isPracticalCourse(courseSearchInput) ? 'Add Practical' : 'Add'}
+                        </span>
                       </button>
                     </div>
 
                     {/* Autocomplete Dropdown List */}
                     {courseAutocompleteList.length > 0 && (
                       <div className="absolute left-0 right-0 mt-1 bg-white border border-zinc-200 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto divide-y divide-zinc-100">
-                        {courseAutocompleteList.map((match) => (
-                          <button
-                            type="button"
-                            key={`${match.programme}-${match.code}`}
-                            onClick={() => handleAddCourse(match.code)}
-                            className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 flex items-center justify-between group transition cursor-pointer"
-                          >
-                            <div>
-                              <span className="font-mono font-bold text-indigo-900 group-hover:text-indigo-700 mr-2">
-                                {match.code}
+                        {courseAutocompleteList.map((match) => {
+                          const matchIsPractical = isPracticalCourse(match.code, match.title);
+                          return (
+                            <button
+                              type="button"
+                              key={`${match.programme}-${match.code}`}
+                              onClick={() => handleAddCourse(match.code)}
+                              className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 flex items-center justify-between group transition cursor-pointer"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-indigo-900 group-hover:text-indigo-700">
+                                  {match.code}
+                                </span>
+                                {matchIsPractical && (
+                                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-800 border border-purple-200">
+                                    <FlaskConical className="w-2.5 h-2.5 text-purple-600" />
+                                    <span>Practical</span>
+                                  </span>
+                                )}
+                                <span className="text-zinc-600 text-[11px] truncate max-w-xs">{match.title}</span>
+                              </div>
+                              <span className="text-[10px] bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded font-semibold">
+                                {match.programme}
                               </span>
-                              <span className="text-zinc-600 text-[11px]">{match.title}</span>
-                            </div>
-                            <span className="text-[10px] bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded font-semibold">
-                              {match.programme}
-                            </span>
-                          </button>
-                        ))}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -2306,12 +2491,20 @@ export const IntakeDesk: React.FC = () => {
                   <div className="mt-2.5">
                     {selectedCourses.length === 0 ? (
                       <div className="text-xs text-zinc-400 italic p-2.5 border border-dashed border-zinc-200 rounded-lg text-center">
-                        No course codes added yet. Click above quick suggestions or type/paste comma-separated course codes to select (more than 8 courses fully supported).
+                        No course codes added yet. Click above quick suggestions or type/paste comma-separated course codes to select (both Theory and Practical courses supported).
                       </div>
                     ) : (
                       <div className="space-y-1.5 p-2.5 bg-indigo-50/40 border border-indigo-200 rounded-lg max-h-64 overflow-y-auto">
                         <div className="flex items-center justify-between text-[11px] font-bold text-indigo-950 pb-1 border-b border-indigo-100">
-                          <span>Selected Courses ({selectedCourses.length} courses):</span>
+                          <span className="flex items-center gap-2">
+                            <span>Selected Courses ({selectedCourses.length} courses):</span>
+                            {selectedCourses.some((c) => isPracticalCourse(c, getCourseTitle(c, selectedProgramme))) && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.2 rounded-full bg-purple-100 text-purple-800 font-bold border border-purple-200">
+                                <FlaskConical className="w-2.5 h-2.5 text-purple-700" />
+                                <span>Includes Practical Courses</span>
+                              </span>
+                            )}
+                          </span>
                           <span className="text-zinc-500 font-normal text-[10px]">
                             Titles auto-linked & updatable from IGNOU.ac.in
                           </span>
@@ -2320,16 +2513,31 @@ export const IntakeDesk: React.FC = () => {
                           {selectedCourses.map((code) => {
                             const title = getCourseTitle(code, selectedProgramme);
                             const isFetching = fetchingIgnouCodes[code];
+                            const isPractical = isPracticalCourse(code, title);
                             return (
                               <div
                                 key={code}
-                                className="flex items-center justify-between gap-2 bg-white border border-indigo-200 p-1.5 rounded-md shadow-2xs hover:border-indigo-300 transition"
+                                className={`flex items-center justify-between gap-2 bg-white p-1.5 rounded-md shadow-2xs transition border ${
+                                  isPractical
+                                    ? 'border-purple-200 hover:border-purple-300'
+                                    : 'border-indigo-200 hover:border-indigo-300'
+                                }`}
                               >
                                 <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-mono font-black text-indigo-950 text-xs">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-mono font-black text-indigo-950 text-xs flex items-center gap-1">
                                       {code}
                                     </span>
+                                    {isPractical ? (
+                                      <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-800 border border-purple-200">
+                                        <FlaskConical className="w-2.5 h-2.5 text-purple-600" />
+                                        <span>Practical</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-zinc-100 text-zinc-600">
+                                        Theory
+                                      </span>
+                                    )}
                                     <button
                                       type="button"
                                       onClick={() => handleFetchIgnouTitle(code)}

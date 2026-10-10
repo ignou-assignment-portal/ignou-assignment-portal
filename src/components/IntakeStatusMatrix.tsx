@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { IGNOU_PROGRAMMES } from '../data/ignouMasterData';
+import { isPracticalCourse } from '../utils/helpers';
 import {
   BarChart3,
   Users,
@@ -17,6 +18,7 @@ import {
   ArrowUpDown,
   ChevronRight,
   Sparkles,
+  FlaskConical,
 } from 'lucide-react';
 import { AssignmentIntakePrintModal } from './AssignmentIntakePrintModal';
 
@@ -720,18 +722,35 @@ export const IntakeStatusMatrix: React.FC = () => {
                         {row.enrolledCourses.length === 0 ? (
                           <span className="text-[10px] text-zinc-400 italic">None</span>
                         ) : (
-                          row.enrolledCourses.map((c) => (
-                            <span
-                              key={c.code}
-                              className="px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-800 font-mono text-[10px] font-bold border border-zinc-200"
-                              title={c.title || c.code}
-                            >
-                              {c.code}{' '}
-                              <span className="text-indigo-800 font-sans font-normal">
-                                ({c.count})
+                          row.enrolledCourses.map((c) => {
+                            const isPractical = isPracticalCourse(c.code, c.title);
+                            return (
+                              <span
+                                key={c.code}
+                                className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-bold border inline-flex items-center gap-0.5 ${
+                                  isPractical
+                                    ? 'bg-purple-50 text-purple-950 border-purple-200'
+                                    : 'bg-zinc-100 text-zinc-800 border-zinc-200'
+                                }`}
+                                title={
+                                  c.title
+                                    ? `${c.code}: ${c.title}${isPractical ? ' (Practical Course)' : ''}`
+                                    : `${c.code}${isPractical ? ' (Practical Course)' : ''}`
+                                }
+                              >
+                                {isPractical && <FlaskConical className="w-2.5 h-2.5 text-purple-600 shrink-0" />}
+                                <span>{c.code}</span>
+                                {isPractical && (
+                                  <span className="text-[7.5px] font-sans font-semibold text-purple-700">
+                                    (P)
+                                  </span>
+                                )}
+                                <span className="text-indigo-800 font-sans font-normal ml-0.5">
+                                  ({c.count})
+                                </span>
                               </span>
-                            </span>
-                          ))
+                            );
+                          })
                         )}
                       </div>
                     </td>

@@ -242,3 +242,48 @@ export function amountToIndianWords(amount: number): string {
 
   return `${rupeesStr} Only`;
 }
+
+/**
+ * Detects if an IGNOU course code or title represents a Practical / Lab / Project course
+ * Standard IGNOU conventions:
+ * - Code pattern: BCSL-*, MCSL-*, BBYCL-*, BCHCL-*, BPHCL-*, BZYCL-*, CITL-*, BPCL-*, MPCL-*, CHE-03(L), etc.
+ * - Suffix with 'P' (Practical / Project) or 'L' (Lab), e.g. BLIS-224P, DECE-4, etc.
+ * - Title containing "Lab", "Laboratory", "Practical", "Practicum", "Field Work", "Viva", "Project"
+ */
+export function isPracticalCourse(courseCode?: string, title?: string): boolean {
+  const c = String(courseCode || '').trim().toUpperCase();
+  const t = String(title || '').trim().toLowerCase();
+
+  if (!c && !t) return false;
+
+  // 1. Explicit IGNOU Lab / Practical code prefixes or suffixes
+  // e.g. BCSL-013, MCSL-016, BBYCL-132, BCHCL-132, CITL-001, BPCL-007, MPCL-007
+  if (/^[A-Z]{2,5}L[-_]?\d+/i.test(c)) return true;
+  // e.g. BLIS-224P, BLIE-227, BCSP-064, MCSP-232
+  if (/^[A-Z]{2,5}P[-_]?\d+/i.test(c)) return true;
+  if (/[-_]P$/i.test(c) || /\(L\)$/i.test(c) || /\(P\)$/i.test(c) || /[-_]LAB$/i.test(c) || /[-_]L$/i.test(c)) return true;
+  
+  // Specific common IGNOU practical codes
+  if (['BLIE-227', 'BLIE-229', 'MLII-101', 'MLII-102', 'MLII-103', 'MLII-104', 'DNHE-4', 'DECE-4'].includes(c)) {
+    return true;
+  }
+
+  // 2. Title based detection
+  if (
+    t.includes('lab') ||
+    t.includes('laboratory') ||
+    t.includes('practical') ||
+    t.includes('practicum') ||
+    t.includes('project work') ||
+    t.includes('field work') ||
+    t.includes('practice')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function getCourseType(courseCode?: string, title?: string): 'Practical' | 'Theory' {
+  return isPracticalCourse(courseCode, title) ? 'Practical' : 'Theory';
+}

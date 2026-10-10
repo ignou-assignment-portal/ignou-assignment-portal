@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { formatDate, formatDateTime } from '../utils/helpers';
+import { formatDate, formatDateTime, isPracticalCourse } from '../utils/helpers';
 import {
   Printer,
   X,
@@ -252,7 +252,16 @@ export const RegistrationReceiptModal: React.FC = () => {
                     return (
                       <tr key={code} className="hover:bg-zinc-50/50">
                         <td className="py-1 print:py-0.5 px-2 print:px-1.5 text-center text-zinc-500 font-mono font-medium">{idx + 1}</td>
-                        <td className="py-1 print:py-0.5 px-2 print:px-1.5 font-mono font-black text-indigo-950">{code}</td>
+                        <td className="py-1 print:py-0.5 px-2 print:px-1.5 font-mono font-black text-indigo-950">
+                          <div className="flex items-center gap-1">
+                            <span>{code}</span>
+                            {isPracticalCourse(code, title) && (
+                              <span className="text-[8px] print:text-[6.5px] px-1 py-0 rounded bg-purple-100 text-purple-800 font-sans font-bold border border-purple-200">
+                                Practical
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="py-1 print:py-0.5 px-2 print:px-1.5 text-zinc-800 font-medium truncate max-w-[240px]">
                           {title}
                         </td>

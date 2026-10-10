@@ -1,13 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { useApp, norm } from '../context/AppContext';
 import { IntakeStatus, SubmissionMode } from '../types';
-import { formatDate, calculateIGNOUGrade } from '../utils/helpers';
+import { formatDate, calculateIGNOUGrade, isPracticalCourse } from '../utils/helpers';
 import {
   Search,
   Filter,
   Download,
   Printer,
   Trash2,
+  FlaskConical,
   Edit2,
   Pencil,
   CheckCircle2,
@@ -344,7 +345,24 @@ export const IntakeRegister: React.FC = () => {
                   <span style={{ fontSize: '11px', background: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '4px' }}>{programme}</span>
                 </div>
                 <div style={{ fontSize: '13px', fontWeight: 600 }}>{candidateName}</div>
-                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Courses: {coursesStr}</div>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }} className="flex flex-wrap items-center gap-1">
+                  <span>Courses:</span>
+                  {(Array.isArray(rawCourses) ? rawCourses : String(rawCourses || '').split(',').map((c: string) => c.trim()).filter(Boolean)).map((c: string) => {
+                    const isPractical = isPracticalCourse(c);
+                    return (
+                      <span
+                        key={c}
+                        className={`font-mono text-[10px] font-bold px-1 py-0.2 rounded border inline-flex items-center gap-0.5 ${
+                          isPractical ? 'bg-purple-50 text-purple-900 border-purple-200' : 'bg-zinc-50 text-zinc-700 border-zinc-200'
+                        }`}
+                      >
+                        {isPractical && <FlaskConical className="w-2.5 h-2.5 text-purple-600" />}
+                        <span>{c}</span>
+                        {isPractical && <span className="text-[8px] text-purple-700 font-sans font-semibold">(P)</span>}
+                      </span>
+                    );
+                  })}
+                </div>
                 {contact && contact !== '-' && (
                   <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Ph: {contact}</div>
                 )}
@@ -477,17 +495,32 @@ export const IntakeRegister: React.FC = () => {
                         <div className="flex flex-wrap gap-1 max-w-xs">
                           {courseCodes.map((code: string) => {
                             const mark = marks[code];
+                            const isPractical = isPracticalCourse(code);
                             return (
                               <span
                                 key={code}
-                                className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                                className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border inline-flex items-center gap-0.5 ${
                                   mark !== null && mark !== undefined
                                     ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    : isPractical
+                                    ? 'bg-purple-50 text-purple-900 border-purple-200'
                                     : 'bg-zinc-50 text-zinc-700 border-zinc-200'
                                 }`}
-                                title={mark !== null ? `Marks: ${mark}/100` : 'Marks pending'}
+                                title={
+                                  mark !== null
+                                    ? `Marks: ${mark}/100${isPractical ? ' (Practical Course)' : ''}`
+                                    : isPractical
+                                    ? 'Practical / Lab Course (Marks pending)'
+                                    : 'Theory Course (Marks pending)'
+                                }
                               >
-                                {code}
+                                {isPractical && <FlaskConical className="w-2.5 h-2.5 text-purple-600 shrink-0" />}
+                                <span>{code}</span>
+                                {isPractical && (
+                                  <span className="text-[8px] font-sans font-semibold text-purple-700 ml-0.5">
+                                    (P)
+                                  </span>
+                                )}
                                 {mark !== null && (
                                   <span className="ml-1 text-emerald-700">({mark})</span>
                                 )}
