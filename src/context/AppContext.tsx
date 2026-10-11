@@ -38,7 +38,15 @@ import {
   lookupCatalogCourse,
   cleanIgnouTitle,
 } from '../data/ignouComprehensiveCatalog';
-import { generateSessionCode, generateDeterministicSubmissionKey, calculateIGNOUGrade, getIgnouGrade, formatDate } from '../utils/helpers';
+import {
+  generateSessionCode,
+  generateDeterministicSubmissionKey,
+  calculateIGNOUGrade,
+  getIgnouGrade,
+  formatDate,
+  isPracticalCourse,
+  isDualComponentCourse,
+} from '../utils/helpers';
 import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, SCRIPT_URL, normalizeSessionName, norm } from '../services/sheetsService';
 import {
   validateIntakeRecord,
@@ -123,11 +131,13 @@ interface AppContextType {
     session?: string;
     currentIntakeId?: string;
   }) => ValidationResult;
-  updateMarks: (intakeId: string, courseCode: string, marks: number | null) => void;
+  updateMarks: (intakeId: string, courseCode: string, marks: number | null, componentType?: 'Assignment' | 'Practical') => void;
+  updatePracticalMarks: (intakeId: string, courseCode: string, marks: number | null) => void;
   saveOrUpdateMarksAndLock: (
     row: any,
     marksValue: number | string | null | undefined,
-    isLockAction: boolean
+    isLockAction: boolean,
+    componentType?: 'Assignment' | 'Practical'
   ) => Promise<void>;
 
   // Module B: 2_Course_Evaluation_Master (Automated Ledger Unpacking & Marks Engine)
@@ -145,9 +155,20 @@ interface AppContextType {
   allAssignmentSubmissions: AssignmentSubmission[];
   updateSubmissionStatus: (submissionId: string, status: SubmissionStatusType, details?: { submissionDate?: string; submissionMode?: SubmissionMode; consignmentNo?: string; remarks?: string }) => void;
   batchUpdateSubmissionStatus: (submissionIds: string[], status: SubmissionStatusType) => void;
-  recordStudentAssignmentSubmissions: (data: { studentId: string; studentName: string; programmeCode: string; courseCodes: string[]; session?: string; initialStatus?: SubmissionStatusType; submissionDate?: string; submissionMode?: SubmissionMode; consignmentNo?: string; remarks?: string }) => void;
-
-  // Registration Receipts (Receipts table storing confirmed student intake registrations)
+  recordStudentAssignmentSubmissions: (data: {
+    studentId: string;
+    studentName: string;
+    programmeCode: string;
+    courseCodes: string[];
+    session?: string;
+    initialStatus?: SubmissionStatusType;
+    submissionDate?: string;
+    submissionMode?: SubmissionMode;
+    consignmentNo?: string;
+    remarks?: string;
+    practicalCourses?: string[];
+    assignmentCourses?: string[];
+  }) => void;
   sessionRegistrationReceipts: RegistrationReceipt[];
   allRegistrationReceipts: RegistrationReceipt[];
   addRegistrationReceipt: (receiptData: Omit<RegistrationReceipt, 'id' | 'receiptNumber' | 'issuedAt'> & { issuedAt?: string; submissionDate?: string; receiptDate?: string }) => RegistrationReceipt;
@@ -1773,47 +1794,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setAssignmentSubmissions((prev) => {
         const nextList = [...prev];
         data.courseCodes.forEach((courseCode) => {
-          const isPrac = (data.practicalCourses || []).includes(courseCode) || isPracticalCourse(courseCode);
-          const compType: 'Assignment' | 'Practical' = isPrac ? 'Practical' : 'Assignment';
+          const hasPractical = (data.practicalCourses || []).includes(courseCode) || isPracticalCourse(courseCode);
+          const hasAssignment = (data.assignmentCourses || []).includes(courseCode) || !isPracticalCourse(courseCode);
 
-          const existingIdx = nextList.findIndex(
-            (s) => s.studentId === data.studentId && s.courseCode === courseCode && s.session === targetSession && (s.componentType === compType || !s.componentType)
-          );
+          const recordSingleComponent = (compType: 'Assignment' | 'Practical') => {
+            const isPrac = compType === 'Practical';
+            const existingIdx = nextList.findIndex(
+              (s) =>
+                s.studentId === data.studentId &&
+                s.courseCode === courseCode &&
+                s.session === targetSession &&
+                s.componentType === compType
+            );
 
-          if (existingIdx >= 0) {
-            nextList[existingIdx] = {
-              ...nextList[existingIdx],
-              studentName: data.studentName,
-              programmeCode: data.programmeCode,
-              status: initialStatus,
-              componentType: compType,
-              isPractical: isPrac,
-              submissionDate: initialStatus === 'submitted' ? (data.submissionDate || now.split('T')[0]) : null,
-              submissionMode: initialStatus === 'submitted' ? (data.submissionMode || 'In-Person (Desk)') : null,
-              consignmentNo: data.consignmentNo,
-              remarks: data.remarks || nextList[existingIdx].remarks,
-              updatedAt: now,
-              updatedBy,
-            };
+            if (existingIdx >= 0) {
+              nextList[existingIdx] = {
+                ...nextList[existingIdx],
+                studentName: data.studentName,
+                programmeCode: data.programmeCode,
+                status: initialStatus,
+                componentType: compType,
+                isPractical: isPrac,
+                submissionDate: initialStatus === 'submitted' ? (data.submissionDate || now.split('T')[0]) : null,
+                submissionMode: initialStatus === 'submitted' ? (data.submissionMode || 'In-Person (Desk)') : null,
+                consignmentNo: data.consignmentNo,
+                remarks: data.remarks || nextList[existingIdx].remarks,
+                updatedAt: now,
+                updatedBy,
+              };
+            } else {
+              const newSub: AssignmentSubmission = {
+                id: `sub-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                studentId: data.studentId,
+                studentName: data.studentName,
+                programmeCode: data.programmeCode,
+                courseCode,
+                session: targetSession,
+                status: initialStatus,
+                componentType: compType,
+                isPractical: isPrac,
+                submissionDate: initialStatus === 'submitted' ? (data.submissionDate || now.split('T')[0]) : null,
+                submissionMode: initialStatus === 'submitted' ? (data.submissionMode || 'In-Person (Desk)') : null,
+                consignmentNo: data.consignmentNo,
+                remarks: data.remarks,
+                updatedAt: now,
+                updatedBy,
+              };
+              nextList.push(newSub);
+            }
+          };
+
+          if (hasAssignment && hasPractical) {
+            recordSingleComponent('Assignment');
+            recordSingleComponent('Practical');
+          } else if (hasPractical) {
+            recordSingleComponent('Practical');
           } else {
-            const newSub: AssignmentSubmission = {
-              id: `sub-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-              studentId: data.studentId,
-              studentName: data.studentName,
-              programmeCode: data.programmeCode,
-              courseCode,
-              session: targetSession,
-              status: initialStatus,
-              componentType: compType,
-              isPractical: isPrac,
-              submissionDate: initialStatus === 'submitted' ? (data.submissionDate || now.split('T')[0]) : null,
-              submissionMode: initialStatus === 'submitted' ? (data.submissionMode || 'In-Person (Desk)') : null,
-              consignmentNo: data.consignmentNo,
-              remarks: data.remarks,
-              updatedAt: now,
-              updatedBy,
-            };
-            nextList.push(newSub);
+            recordSingleComponent('Assignment');
           }
         });
         return nextList;
@@ -1929,10 +1966,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? assignmentList
         : cleanCourses.filter((c) => !computedPracticalList.includes(c));
 
+      const computedCourseDetails = cleanCourses.flatMap((courseCode) => {
+        const resolvedTitle = getCourseTitle(courseCode, cleanProgramme);
+        const hasAssignment = computedAssignmentList.includes(courseCode);
+        const hasPractical = computedPracticalList.includes(courseCode);
+        const details: Array<{ code: string; type: 'Assignment' | 'Practical'; title: string; addedInPart: number; submissionDate: string }> = [];
+        if (hasAssignment) {
+          details.push({ code: courseCode, type: 'Assignment', title: resolvedTitle, addedInPart: 1, submissionDate: intakeDate });
+        }
+        if (hasPractical) {
+          details.push({ code: courseCode, type: 'Practical', title: resolvedTitle, addedInPart: 1, submissionDate: intakeDate });
+        }
+        return details;
+      });
+
       const newRecord: IntakeRecord = {
         ...data,
         practicalCourses: computedPracticalList,
         assignmentCourses: computedAssignmentList,
+        courseDetails: computedCourseDetails,
         submissionParts: data.submissionParts || [
           {
             partNo: 1,
@@ -1958,7 +2010,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIntakes((prev) => [newRecord, ...prev]);
 
       // Deterministic Ledger Unpacking:
-      // When a student registers with N courses, automatically split the entry into N individual ledger rows.
+      // When a student registers with N courses, automatically split the entry into individual ledger rows.
+      // If a course has BOTH Assignment and Practical (like BAPI-003), split into TWO distinct rows.
       // Primary Key format: SUB_ENR_COURSE_TERM (or SUB_ENR_COURSE_PRAC_TERM for practicals)
       const cleanEnrollment = data.enrollmentNo.trim();
       const cleanName = data.studentName.trim();
@@ -1975,18 +2028,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.warn('Could not auto-save custom programme or course:', e);
       }
 
-      const unpackedRows: CourseEvaluationRecord[] = data.courseCodes.map((courseCode) => {
+      const unpackedRows: CourseEvaluationRecord[] = [];
+      const createRow = (courseCode: string, compType: 'Assignment' | 'Practical') => {
         const cleanCourse = courseCode.trim().toUpperCase();
         const resolvedTitle = getCourseTitle(cleanCourse, cleanProgramme);
-        const isPrac = computedPracticalList.includes(cleanCourse) || isPracticalCourse(cleanCourse, resolvedTitle);
-        const compType: 'Assignment' | 'Practical' = isPrac ? 'Practical' : 'Assignment';
+        const isPrac = compType === 'Practical';
         const deterministicKey = generateDeterministicSubmissionKey(cleanEnrollment, cleanCourse, currentSession, compType);
         const markVal = data.marks?.[courseCode] ?? null;
         const gradeInfo = calculateIGNOUGrade(markVal);
         const statusVal: EvaluationStatus = markVal !== null ? 'Evaluated' : 'Pending Allotment';
 
         return {
-          // Clean Google Sheets Course_Ledger keys
           Sub_ID: deterministicKey,
           subId: deterministicKey,
           Session: currentSession,
@@ -2004,7 +2056,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           Grade: gradeInfo.grade,
           Status: statusVal,
 
-          // Application properties
           id: deterministicKey,
           submissionKey: deterministicKey,
           intakeId: newRecord.id,
@@ -2041,6 +2092,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           updatedAt: new Date().toISOString(),
           remarks: data.remarks,
         };
+      };
+
+      cleanCourses.forEach((cc) => {
+        const hasAssignment = computedAssignmentList.includes(cc);
+        const hasPractical = computedPracticalList.includes(cc);
+        if (hasAssignment && hasPractical) {
+          unpackedRows.push(createRow(cc, 'Assignment'));
+          unpackedRows.push(createRow(cc, 'Practical'));
+        } else if (hasPractical) {
+          unpackedRows.push(createRow(cc, 'Practical'));
+        } else {
+          unpackedRows.push(createRow(cc, 'Assignment'));
+        }
       });
 
       setCourseEvaluations((prev) => {
@@ -2172,11 +2236,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         new Set([...(targetIntake.assignmentCourses || []), ...computedNewAssignment])
       );
 
+      const newPartDetails = cleanNewCourses.flatMap((courseCode) => {
+        const resolvedTitle = getCourseTitle(courseCode, cleanProg);
+        const hasAssignment = computedNewAssignment.includes(courseCode);
+        const hasPractical = computedNewPractical.includes(courseCode);
+        const details: Array<{ code: string; type: 'Assignment' | 'Practical'; title: string; addedInPart: number; submissionDate: string }> = [];
+        if (hasAssignment) {
+          details.push({ code: courseCode, type: 'Assignment', title: resolvedTitle, addedInPart: newPartNo, submissionDate: intakeDate });
+        }
+        if (hasPractical) {
+          details.push({ code: courseCode, type: 'Practical', title: resolvedTitle, addedInPart: newPartNo, submissionDate: intakeDate });
+        }
+        return details;
+      });
+
+      const combinedCourseDetails = [...(targetIntake.courseDetails || []), ...newPartDetails];
+
       const updatedRecord: IntakeRecord = {
         ...targetIntake,
         courseCodes: combinedCourses,
         practicalCourses: combinedPracticals,
         assignmentCourses: combinedAssignments,
+        courseDetails: combinedCourseDetails,
         isIntegrated: true,
         integratedPartsCount: newPartNo,
         submissionParts: [...existingParts, newPart],
@@ -2191,12 +2272,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         prev.map((i) => (i.id === targetIntake.id ? updatedRecord : i))
       );
 
-      // 2. Unpack ONLY the new courses into Course Ledger
-      const unpackedNewRows: CourseEvaluationRecord[] = cleanNewCourses.map((courseCode) => {
+      // 2. Unpack ONLY the new courses into Course Ledger (separating Practical and Assignment if dual)
+      const unpackedNewRows: CourseEvaluationRecord[] = [];
+      const createNewRow = (courseCode: string, compType: 'Assignment' | 'Practical'): CourseEvaluationRecord => {
         const cleanCourse = courseCode.trim().toUpperCase();
         const resolvedTitle = getCourseTitle(cleanCourse, cleanProg);
-        const isPrac = computedNewPractical.includes(cleanCourse) || isPracticalCourse(cleanCourse, resolvedTitle);
-        const compType: 'Assignment' | 'Practical' = isPrac ? 'Practical' : 'Assignment';
+        const isPrac = compType === 'Practical';
         const deterministicKey = generateDeterministicSubmissionKey(
           cleanEnr,
           cleanCourse,
@@ -2252,12 +2333,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           isLocked: false,
           lockedAt: null,
           lockedBy: null,
-          status: 'Pending Allotment',
+          status: 'Pending Allotment' as EvaluationStatus,
           componentType: compType,
           isPractical: isPrac,
           updatedAt: new Date().toISOString(),
           remarks: params.remarks || targetIntake.remarks,
         };
+      };
+
+      cleanNewCourses.forEach((cc) => {
+        const hasAssignment = computedNewAssignment.includes(cc);
+        const hasPractical = computedNewPractical.includes(cc);
+        if (hasAssignment && hasPractical) {
+          unpackedNewRows.push(createNewRow(cc, 'Assignment'));
+          unpackedNewRows.push(createNewRow(cc, 'Practical'));
+        } else if (hasPractical) {
+          unpackedNewRows.push(createNewRow(cc, 'Practical'));
+        } else {
+          unpackedNewRows.push(createNewRow(cc, 'Assignment'));
+        }
       });
 
       setCourseEvaluations((prev) => {
@@ -2303,6 +2397,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         registeredCourses: combinedCourses,
         practicalCourses: combinedPracticals,
         assignmentCourses: combinedAssignments,
+        courseDetails: combinedCourseDetails,
         isIntegrated: true,
         partNo: newPartNo,
         issuedBy: registeredBy,
@@ -2974,27 +3069,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     async (
       row: any,
       marksValue: number | string | null | undefined,
-      isLockAction: boolean = false
+      isLockAction: boolean = false,
+      componentType: 'Assignment' | 'Practical' = 'Assignment'
     ) => {
-      if (isLockAction && !row.isLocked) {
+      const isPrac = componentType === 'Practical' || row.componentType === 'Practical' || row.isPractical === true;
+      const targetComponent: 'Assignment' | 'Practical' = isPrac ? 'Practical' : 'Assignment';
+
+      if (isLockAction && !row.isLocked && !(isPrac && row.isPracticalLocked)) {
         if (marksValue === null || marksValue === undefined || marksValue === '' || isNaN(Number(marksValue))) {
-          alert('Cannot lock script: A valid numerical mark (0-100) must be recorded before locking.');
+          alert(`Cannot lock ${targetComponent.toLowerCase()} script: A valid numerical mark (0-100) must be recorded before locking.`);
           return;
         }
       }
-      if (!isLockAction && row.isLocked && (isUrlLockedDeskMode || currentRole !== 'ADMIN')) {
+      if (!isLockAction && (row.isLocked || (isPrac && row.isPracticalLocked)) && (isUrlLockedDeskMode || currentRole !== 'ADMIN')) {
         alert('Permission Denied: Only an Administrator (Coordinator) can unlock marks for verified scripts. Unlocking permissions are strictly disabled in Desk Official mode.');
         return;
       }
 
       const cleanEnrollment = (row.Enrollment_No || row.enrollmentNo || '').toString().replace(/^'/, '').trim();
       const cleanCourse = (row.Course_Code || row.courseCode || '').toString().trim().toUpperCase();
+      const subSuffix = isPrac ? '_PRAC' : '';
       const rawSubId = (
         row.Sub_ID ||
         row.subId ||
         row.submissionKey ||
         row.id ||
-        `SUB_${cleanEnrollment}_${cleanCourse}_${(row.session || currentSession || 'JUL2026').replace(/\s+/g, '')}`
+        `SUB_${cleanEnrollment}_${cleanCourse}${subSuffix}_${(row.session || currentSession || 'JUL2026').replace(/\s+/g, '')}`
       ).toString().trim();
 
       const numericMarks = marksValue !== null && marksValue !== undefined && marksValue !== ''
@@ -3009,6 +3109,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         enrollmentNo: cleanEnrollment,
         courseCode: cleanCourse,
         marks: Number(numericMarks ?? 0),
+        assignmentMarks: isPrac ? undefined : Number(numericMarks ?? 0),
+        practicalMarks: isPrac ? Number(numericMarks ?? 0) : undefined,
+        componentType: targetComponent,
         grade: calculatedGrade,
         isLocked: isLockAction,
       };
@@ -3026,16 +3129,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           (e) =>
             e.id === rawSubId ||
             e.submissionKey === rawSubId ||
-            (e.enrollmentNo.trim() === cleanEnrollment && e.courseCode.trim().toUpperCase() === cleanCourse)
+            (e.enrollmentNo.trim() === cleanEnrollment &&
+              e.courseCode.trim().toUpperCase() === cleanCourse &&
+              (isPrac ? (e.componentType === 'Practical' || e.isPractical) : (!e.componentType || e.componentType === 'Assignment' || !e.isPractical)))
         );
 
         let next: CourseEvaluationRecord[];
         if (index >= 0) {
           next = prev.map((rec, i) => {
-            if (i !== index) return rec;
+            if (i !== index) {
+              // Also update dual reference on the twin record if student is the same
+              if (
+                rec.enrollmentNo.trim() === cleanEnrollment &&
+                rec.courseCode.trim().toUpperCase() === cleanCourse
+              ) {
+                if (isPrac) {
+                  return {
+                    ...rec,
+                    practicalMarks: numericMarks,
+                    practicalGrade: calculatedGrade,
+                    practicalGradeLabel: gradeInfo.label,
+                    isPracticalLocked: isLockAction,
+                  };
+                } else {
+                  return {
+                    ...rec,
+                    assignmentMarks: numericMarks,
+                  };
+                }
+              }
+              return rec;
+            }
+
+            if (isPrac) {
+              return {
+                ...rec,
+                practicalMarks: numericMarks,
+                practicalGrade: calculatedGrade,
+                practicalGradeLabel: gradeInfo.label,
+                isPracticalLocked: isLockAction,
+                ...(rec.componentType === 'Practical' || rec.isPractical
+                  ? {
+                      marks: numericMarks,
+                      grade: calculatedGrade,
+                      gradeLabel: gradeInfo.label,
+                      isLocked: isLockAction,
+                      lockedAt: isLockAction ? now : null,
+                      lockedBy,
+                      status: isLockAction ? 'Marks Locked' : numericMarks !== null ? 'Evaluated' : rec.status,
+                    }
+                  : {}),
+                updatedAt: now,
+              };
+            }
+
             return {
               ...rec,
               marks: numericMarks,
+              assignmentMarks: numericMarks,
               grade: calculatedGrade,
               gradeLabel: gradeInfo.label,
               isLocked: isLockAction,
@@ -3062,15 +3213,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             studentEmail: row.studentEmail || '',
             programmeCode: row.programmeCode || row.Programme || 'BAG',
             courseCode: cleanCourse,
+            componentType: targetComponent,
+            isPractical: isPrac,
             session: row.session || currentSession,
             submissionDate: row.submissionDate || now.split('T')[0],
             submissionMode: row.submissionMode || 'In-Person (Desk)',
             evaluatorId: null,
             allottedDate: null,
             marks: numericMarks,
+            assignmentMarks: isPrac ? null : numericMarks,
+            practicalMarks: isPrac ? numericMarks : null,
             grade: calculatedGrade,
             gradeLabel: gradeInfo.label,
+            practicalGrade: isPrac ? calculatedGrade : null,
+            practicalGradeLabel: isPrac ? gradeInfo.label : null,
             isLocked: isLockAction,
+            isPracticalLocked: isPrac ? isLockAction : false,
             lockedAt: isLockAction ? now : null,
             lockedBy,
             status: isLockAction ? 'Marks Locked' : numericMarks !== null ? 'Evaluated' : 'Pending Allotment',
@@ -3085,18 +3243,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return next;
       });
 
-      // Optimistic UI update for intakes
+      // Optimistic UI update for intakes - store Assignment and Practical marks separately
       setIntakes((prev) => {
         const next = prev.map((item) => {
           if (item.enrollmentNo.trim() !== cleanEnrollment) return item;
-          const updatedMarks = { ...item.marks, [cleanCourse]: numericMarks };
-          const allEntered = item.courseCodes.every((c) => updatedMarks[c] !== null && updatedMarks[c] !== undefined);
-          const status = allEntered ? 'Evaluated' : item.status === 'Received' ? 'Under Evaluation' : item.status;
-          return {
-            ...item,
-            marks: updatedMarks,
-            status,
-          };
+
+          if (isPrac) {
+            const updatedPracticalMarks = { ...(item.practicalMarks || {}), [cleanCourse]: numericMarks };
+            return {
+              ...item,
+              practicalMarks: updatedPracticalMarks,
+            };
+          } else {
+            const updatedMarks = { ...item.marks, [cleanCourse]: numericMarks };
+            const allEntered = item.courseCodes.every((c) => updatedMarks[c] !== null && updatedMarks[c] !== undefined);
+            const status = allEntered ? 'Evaluated' : item.status === 'Received' ? 'Under Evaluation' : item.status;
+            return {
+              ...item,
+              marks: updatedMarks,
+              status,
+            };
+          }
         });
         try {
           localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(next));
@@ -3111,7 +3278,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           mode: "no-cors",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({
-            action: "UPDATE_MARKS",
+            action: isPrac ? "UPDATE_PRACTICAL_MARKS" : "UPDATE_MARKS",
             payload: payload,
           }),
         });
@@ -3123,53 +3290,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       postUpdateMarks(payload).catch(() => {});
 
       logAuditEvent({
-        action: isLockAction ? 'MARKS_LOCKED' : 'MARKS_UPDATED',
+        action: isLockAction ? (isPrac ? 'PRACTICAL_MARKS_LOCKED' : 'MARKS_LOCKED') : (isPrac ? 'PRACTICAL_MARKS_UPDATED' : 'MARKS_UPDATED'),
         category: 'MARKS_EVALUATION',
         actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
         role: currentRole,
         session: row.session || currentSession,
-        targetIdentifier: `${cleanEnrollment} (${cleanCourse})`,
+        targetIdentifier: `${cleanEnrollment} (${cleanCourse}${isPrac ? ' - Practical' : ' - Assignment'})`,
         summary: isLockAction
-          ? `Verified and locked marks for candidate ${cleanEnrollment} in course ${cleanCourse} at ${payload.marks} (Grade ${payload.grade})`
-          : `Updated marks draft for candidate ${cleanEnrollment} in course ${cleanCourse} to ${payload.marks} (Grade ${payload.grade})`,
-        details: { enrollmentNo: cleanEnrollment, courseCode: cleanCourse, marks: payload.marks, grade: payload.grade, isLocked: isLockAction },
+          ? `Verified and locked ${targetComponent} marks for candidate ${cleanEnrollment} in course ${cleanCourse} at ${payload.marks} (Grade ${payload.grade})`
+          : `Updated ${targetComponent} marks draft for candidate ${cleanEnrollment} in course ${cleanCourse} to ${payload.marks} (Grade ${payload.grade})`,
+        details: { enrollmentNo: cleanEnrollment, courseCode: cleanCourse, componentType: targetComponent, marks: payload.marks, grade: payload.grade, isLocked: isLockAction },
         status: 'SUCCESS',
       });
 
-      // 3. Show toast notification as requested
+      // 3. Show toast notification
       showToast(
-        `Marks for ${payload.courseCode} (${payload.marks}/100 - Grade ${payload.grade}) updated & synced to Google Sheets`,
+        `${targetComponent} marks for ${payload.courseCode} (${payload.marks}/100 - Grade ${payload.grade}) updated & stored separately`,
         'success'
       );
     },
     [currentRole, isUrlLockedDeskMode, settings.coordinatorName, currentSession, showToast, logAuditEvent]
   );
 
-  const updateMarks = useCallback((intakeId: string, courseCode: string, marksValue: number | null) => {
-    const intake = intakes.find((i) => i.id === intakeId);
-    const cleanCourse = courseCode.trim().toUpperCase();
-    const cleanEnrollment = (intake?.enrollmentNo || '').trim();
+  const updateMarks = useCallback(
+    (intakeId: string, courseCode: string, marksValue: number | null, componentType: 'Assignment' | 'Practical' = 'Assignment') => {
+      const intake = intakes.find((i) => i.id === intakeId);
+      const cleanCourse = courseCode.trim().toUpperCase();
+      const cleanEnrollment = (intake?.enrollmentNo || '').trim();
+      const isPrac = componentType === 'Practical';
 
-    const matchingEval = courseEvaluations.find(
-      (e) => (e.intakeId === intakeId || e.enrollmentNo === cleanEnrollment) && e.courseCode === cleanCourse
-    );
+      const matchingEval = courseEvaluations.find(
+        (e) =>
+          (e.intakeId === intakeId || e.enrollmentNo === cleanEnrollment) &&
+          e.courseCode === cleanCourse &&
+          (isPrac ? (e.componentType === 'Practical' || e.isPractical) : (!e.componentType || e.componentType === 'Assignment' || !e.isPractical))
+      ) || courseEvaluations.find(
+        (e) => (e.intakeId === intakeId || e.enrollmentNo === cleanEnrollment) && e.courseCode === cleanCourse
+      );
 
-    const row = matchingEval || {
-      subId: `SUB_${cleanEnrollment}_${cleanCourse}_${(intake?.session || currentSession).replace(/\s+/g, '')}`,
-      Sub_ID: `SUB_${cleanEnrollment}_${cleanCourse}_${(intake?.session || currentSession).replace(/\s+/g, '')}`,
-      enrollmentNo: cleanEnrollment,
-      Enrollment_No: cleanEnrollment,
-      courseCode: cleanCourse,
-      Course_Code: cleanCourse,
-      tokenNo: intake?.tokenNo,
-      studentName: intake?.studentName,
-      programmeCode: intake?.programmeCode,
-      session: intake?.session || currentSession,
-      isLocked: false,
-    };
+      const subSuffix = isPrac ? '_PRAC' : '';
+      const row = matchingEval || {
+        subId: `SUB_${cleanEnrollment}_${cleanCourse}${subSuffix}_${(intake?.session || currentSession).replace(/\s+/g, '')}`,
+        Sub_ID: `SUB_${cleanEnrollment}_${cleanCourse}${subSuffix}_${(intake?.session || currentSession).replace(/\s+/g, '')}`,
+        enrollmentNo: cleanEnrollment,
+        Enrollment_No: cleanEnrollment,
+        courseCode: cleanCourse,
+        Course_Code: cleanCourse,
+        tokenNo: intake?.tokenNo,
+        studentName: intake?.studentName,
+        programmeCode: intake?.programmeCode,
+        session: intake?.session || currentSession,
+        componentType,
+        isPractical: isPrac,
+        isLocked: false,
+      };
 
-    saveOrUpdateMarksAndLock(row, marksValue, false);
-  }, [intakes, courseEvaluations, currentSession, saveOrUpdateMarksAndLock]);
+      saveOrUpdateMarksAndLock(row, marksValue, false, componentType);
+    },
+    [intakes, courseEvaluations, currentSession, saveOrUpdateMarksAndLock]
+  );
+
+  const updatePracticalMarks = useCallback(
+    (intakeId: string, courseCode: string, marksValue: number | null) => {
+      updateMarks(intakeId, courseCode, marksValue, 'Practical');
+    },
+    [updateMarks]
+  );
 
   // Module B: 2_Course_Evaluation_Master Allotment & Marks Engine Operations
   const allotEvaluatorToEvaluations = useCallback(
@@ -4274,6 +4460,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         getEnrolledCoursesForStudent,
         validateIntake,
         updateMarks,
+        updatePracticalMarks,
         saveOrUpdateMarksAndLock,
         // Module B: Course Evaluations
         courseLedger: courseEvaluations,

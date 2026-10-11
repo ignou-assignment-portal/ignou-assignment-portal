@@ -246,13 +246,40 @@ export function amountToIndianWords(amount: number): string {
 }
 
 /**
+ * Detects if a course has BOTH Assignment and Practical components.
+ * e.g., BAPI-003 under BAG (and other programmes) has both theory assignment and practical submissions.
+ */
+export function isDualComponentCourse(courseCode?: string, title?: string): boolean {
+  const c = String(courseCode || '').trim().toUpperCase();
+  const t = String(title || '').trim().toLowerCase();
+
+  // Explicit courses with both Assignment and Practical:
+  // e.g. BAPI-003 (Organic Farming / Production), BAPI-001, BAPI-002, BPVI-001, etc.
+  if (['BAPI-003', 'BAPI-001', 'BAPI-002', 'BPVI-001', 'BPVI-002', 'BPVI-003', 'BPVI-004', 'BPVI-005'].includes(c)) {
+    return true;
+  }
+
+  if (t.includes('assignment & practical') || t.includes('assignment and practical') || (t.includes('practical') && t.includes('theory'))) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Detects if an IGNOU course code or title represents a Practical / Lab / Project course
  * Standard IGNOU conventions:
  * - Code pattern: BCSL-*, MCSL-*, BBYCL-*, BCHCL-*, BPHCL-*, BZYCL-*, CITL-*, BPCL-*, MPCL-*, CHE-03(L), etc.
  * - Suffix with 'P' (Practical / Project) or 'L' (Lab), e.g. BLIS-224P, DECE-4, etc.
  * - Title containing "Lab", "Laboratory", "Practical", "Practicum", "Field Work", "Viva", "Project"
  */
-export function isPracticalCourse(courseCode?: string, title?: string): boolean {
+export function isPracticalCourse(courseCode?: string, title?: string, componentType?: string): boolean {
+  if (componentType) {
+    const ct = String(componentType).trim().toLowerCase();
+    if (ct === 'practical') return true;
+    if (ct === 'assignment' || ct === 'theory') return false;
+  }
+
   const c = String(courseCode || '').trim().toUpperCase();
   const t = String(title || '').trim().toLowerCase();
 
@@ -286,6 +313,7 @@ export function isPracticalCourse(courseCode?: string, title?: string): boolean 
   return false;
 }
 
-export function getCourseType(courseCode?: string, title?: string): 'Practical' | 'Theory' {
-  return isPracticalCourse(courseCode, title) ? 'Practical' : 'Theory';
+export function getCourseType(courseCode?: string, title?: string, componentType?: string): 'Practical' | 'Theory' {
+  return isPracticalCourse(courseCode, title, componentType) ? 'Practical' : 'Theory';
 }
+

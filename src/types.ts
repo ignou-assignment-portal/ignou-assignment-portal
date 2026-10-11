@@ -42,7 +42,8 @@ export interface IntakeRecord {
   consignmentNo?: string; // For postal/speedpost
   remarks?: string;
   status: IntakeStatus;
-  marks: Record<string, number | null>; // courseCode -> marks (0-100) or null
+  marks: Record<string, number | null>; // courseCode -> Assignment marks (0-100) or null
+  practicalMarks?: Record<string, number | null>; // courseCode -> Practical marks (0-100) or null
   practicalCourses?: string[]; // course codes recorded as Practical submissions
   assignmentCourses?: string[]; // course codes recorded as Theory Assignment submissions
   courseDetails?: Array<{
@@ -186,6 +187,8 @@ export interface AssignmentSubmission {
   remarks?: string | null;
   componentType?: 'Assignment' | 'Practical';
   isPractical?: boolean;
+  marks?: number | null;
+  practicalMarks?: number | null;
   updatedAt: string;
   updatedBy: string;
 }
@@ -225,6 +228,13 @@ export interface RegistrationReceipt {
   }>;
   isIntegrated?: boolean;
   partNo?: number;
+  submissionParts?: Array<{
+    partNo: number;
+    submissionDate?: string;
+    courseCodes: string[];
+    practicalCourses?: string[];
+    assignmentCourses?: string[];
+  }>;
   issuedBy: string;
   issuedAt: string;
   submissionDate?: string; // YYYY-MM-DD
@@ -243,8 +253,12 @@ export interface CourseEvaluationRecord {
   Session?: string;
   Enrollment_No?: string;
   Candidate_Name?: string;
+  Contact_No?: string;
+  Email_ID?: string;
   Programme?: string;
+  Programme_Code?: string;
   Course_Code?: string;
+  Course_Title?: string;
   Allotted_Evaluator?: string | null;
   Marks?: number | null;
   Grade?: string | null;
@@ -263,6 +277,11 @@ export interface CourseEvaluationRecord {
   courseTitle?: string;
   session: string; // e.g. July 2026
   submissionDate: string; // YYYY-MM-DD
+  receiptDate?: string;
+  Submission_Date?: string;
+  Timestamp?: string;
+  receivedDate?: string;
+  intakeDate?: string;
   submissionMode: SubmissionMode;
   consignmentNo?: string | null;
 
@@ -274,12 +293,17 @@ export interface CourseEvaluationRecord {
   allottedBy?: string | null;
 
   // Marks Engine
-  marks: number | null; // Numeric 0 to 100
+  marks: number | null; // Numeric 0 to 100 (Primary/Assignment)
+  assignmentMarks?: number | null; // Dedicated Assignment marks (0-100)
+  practicalMarks?: number | null; // Dedicated Practical marks (0-100)
   grade: string | null; // 'A' | 'B' | 'C' | 'D' | 'E' | '—'
   gradeLabel: string | null; // 'Excellent' | 'Very Good' | 'Good' | 'Satisfactory' | 'Unsatisfactory / Failed' | 'Pending'
+  practicalGrade?: string | null; // 'A' | 'B' | 'C' | 'D' | 'E' | '—'
+  practicalGradeLabel?: string | null;
 
   // Marks Locking & Verification
   isLocked: boolean;
+  isPracticalLocked?: boolean;
   lockedAt: string | null;
   lockedBy: string | null;
 
@@ -349,6 +373,8 @@ export type AuditActionType =
   | 'MARKS_UPDATED'
   | 'MARKS_LOCKED'
   | 'MARKS_UNLOCKED'
+  | 'PRACTICAL_MARKS_UPDATED'
+  | 'PRACTICAL_MARKS_LOCKED'
   | 'EVALUATOR_ALLOTTED'
   | 'PACKET_CREATED'
   | 'PACKET_UPDATED'

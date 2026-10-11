@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp, norm } from '../context/AppContext';
 import { SubmissionMode, IntakeRecord } from '../types';
-import { formatDate, formatDateTime, isPracticalCourse } from '../utils/helpers';
+import { formatDate, formatDateTime, isPracticalCourse, isDualComponentCourse } from '../utils/helpers';
 import { IntakeStatusMatrix } from './IntakeStatusMatrix';
 import {
   UserPlus,
+  GitMerge,
   FlaskConical,
   User,
   BookOpen,
@@ -98,6 +99,7 @@ export const IntakeDesk: React.FC = () => {
     setSession,
     availableSessions,
     addIntakeRecord,
+    integrateIntakeWithPrevious,
     deleteIntakeRecord,
     sessionIntakes,
     allIntakes,
@@ -140,6 +142,10 @@ export const IntakeDesk: React.FC = () => {
   const [selectedSession, setSelectedSession] = useState(currentSession);
   const [courseSearchInput, setCourseSearchInput] = useState('');
   const [selectedCourses, setSelectedCourses] = useState<string[]>([]);
+  // Default intake component mode: Assignment (TMA) by default, or Practical (Lab/Viva)
+  const [defaultIntakeComponent, setDefaultIntakeComponent] = useState<'Assignment' | 'Practical'>('Assignment');
+  const [courseComponentTypes, setCourseComponentTypes] = useState<Record<string, 'Assignment' | 'Practical' | 'Both'>>({});
+  const [shouldIntegrateWithPrevious, setShouldIntegrateWithPrevious] = useState<boolean>(true);
   const [submissionDate, setSubmissionDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [submissionMode, setSubmissionMode] = useState<SubmissionMode>('In-Person (Desk)');
   const [consignmentNo, setConsignmentNo] = useState('');
@@ -332,6 +338,20 @@ export const IntakeDesk: React.FC = () => {
       return new Set<string>();
     }
   }, [enrollmentNo, getEnrolledCoursesForStudent]);
+
+  // Detect existing intake for this student in active session to enable Part-by-Part integration
+  const existingIntakeForStudent = useMemo<IntakeRecord | null>(() => {
+    const clean = String(enrollmentNo || '').replace(/\D/g, '').trim();
+    if (!clean) return null;
+    const targetSession = selectedSession || currentSession;
+    return (
+      (sessionIntakes || []).find((r) => {
+        const itEnr = String(r.enrollmentNo || (r as any).Enrollment_No || '').replace(/\D/g, '').trim();
+        const itSession = r.session || (r as any).Session;
+        return itEnr === clean && (!itSession || norm(itSession) === norm(targetSession));
+      }) || null
+    );
+  }, [enrollmentNo, selectedSession, currentSession, sessionIntakes]);
 
   const isRule1Violated = Boolean(
     registeredProgForEnrollment &&
@@ -685,8 +705,8 @@ export const IntakeDesk: React.FC = () => {
   };
 
   // Course addition with dynamic multi-course support, duplicate check, and unlimited selection (up to 50)
-  // Course addition with dynamic multi-course support: allows intake if course code is different
-  const handleAddCourse = (courseCode: string) => {
+  // Course addition with dynamic multi-course support: allows intake if course code or component is different
+  const handleAddCourse = (courseCode: string, initialType?: 'Assignment' | 'Practical' | 'Both') => {
     if (!courseCode.trim()) return;
     const splitCourses = courseCode
       .split(',')
@@ -706,8 +726,17 @@ export const IntakeDesk: React.FC = () => {
     const skippedAlreadyInBatch: string[] = [];
 
     for (const clean of splitCourses) {
-      // Rule 3 check: Cannot enroll in the exact same course more than once
-      if (cleanEnrollment && alreadyEnrolledCourses instanceof Set && alreadyEnrolledCourses.has(clean)) {
+      const isDual = isDualComponentCourse(clean);
+      const isPrac = isPracticalCourse(clean);
+      const defaultComp: 'Assignment' | 'Practical' | 'Both' =
+        initialType ||
+        (defaultIntakeComponent === 'Practical'
+          ? (isDual ? 'Practical' : 'Practical')
+          : (isDual ? 'Assignment' : isPrac ? 'Practical' : 'Assignment'));
+
+      // Rule 3 check: Cannot enroll in the exact same course component more than once
+      // Dual component courses (like BAPI-003) can be enrolled if practical hasn't been submitted yet
+      if (cleanEnrollment && alreadyEnrolledCourses instanceof Set && alreadyEnrolledCourses.has(clean) && !isDual) {
         skippedAlreadyEnrolled.push(clean);
         continue;
       }
@@ -719,6 +748,10 @@ export const IntakeDesk: React.FC = () => {
       }
 
       newCoursesToAdd.push(clean);
+      setCourseComponentTypes((prev) => ({
+        ...prev,
+        [clean]: prev[clean] || defaultComp,
+      }));
 
       // Save course to programme's custom courses so next time it is in quick suggestions!
       if (selectedProgramme) {
@@ -769,6 +802,11 @@ export const IntakeDesk: React.FC = () => {
 
   const handleRemoveCourse = (courseCode: string) => {
     setSelectedCourses(selectedCourses.filter((c) => c !== courseCode));
+    setCourseComponentTypes((prev) => {
+      const next = { ...prev };
+      delete next[courseCode];
+      return next;
+    });
     setErrorMsg('');
   };
 
@@ -1002,6 +1040,23 @@ export const IntakeDesk: React.FC = () => {
       return;
     }
 
+    // Compute separate practical and assignment course arrays based on user selection or course definition
+    const computedPracticals: string[] = [];
+    const computedAssignments: string[] = [];
+    coursesArray.forEach((c) => {
+      const isDual = isDualComponentCourse(c);
+      const isPrac = isPracticalCourse(c);
+      const ct = courseComponentTypes[c] || (isDual ? 'Both' : isPrac ? 'Practical' : 'Assignment');
+      if (ct === 'Both') {
+        computedAssignments.push(c);
+        computedPracticals.push(c);
+      } else if (ct === 'Practical') {
+        computedPracticals.push(c);
+      } else {
+        computedAssignments.push(c);
+      }
+    });
+
     setIsSubmitting(true);
     try {
       const registeredBy = currentRole === 'ADMIN' ? 'Coordinator Desk' : 'Desk Official - Counter 1';
@@ -1009,6 +1064,63 @@ export const IntakeDesk: React.FC = () => {
       // Ensure global session matches selected session if user switched it
       if (targetSession !== currentSession) {
         setSession(targetSession);
+      }
+
+      // If student already has an intake in this session and integration mode is active:
+      if (existingIntakeForStudent && shouldIntegrateWithPrevious) {
+        const result = integrateIntakeWithPrevious({
+          targetIntakeId: existingIntakeForStudent.id,
+          newCourseCodes: coursesArray,
+          practicalCourses: computedPracticals,
+          assignmentCourses: computedAssignments,
+          submissionDate,
+          submissionMode,
+          consignmentNo: consignmentNo.trim() || undefined,
+          remarks: remarks.trim() || undefined,
+        });
+
+        const progClean = selectedProgramme.trim().toUpperCase();
+        saveCustomProgramme({ code: progClean });
+        coursesArray.forEach((c) => {
+          saveCustomCourse(progClean, { code: c });
+          updateCourseTitleFromIgnou(c, progClean).catch(() => {});
+        });
+
+        setJustSubmittedToken(existingIntakeForStudent.tokenNo);
+        const partNum = (existingIntakeForStudent.submissionParts?.length || 1) + 1;
+        setSuccessMsg(
+          `Part-by-part intake integrated! Candidate ${studentName.trim()} (${cleanEnrollment}) added differing course(s): ${coursesArray.join(', ')} under ${progClean} into Token: ${existingIntakeForStudent.tokenNo} (Part ${partNum}). Practicals recorded separately.`
+        );
+
+        setValidationResult({
+          status: 'Success',
+          reason: `Integrated Part ${partNum} into Token ${existingIntakeForStudent.tokenNo}`,
+          action: 'Update',
+          timestamp: new Date().toLocaleTimeString(),
+          cleanData: {
+            tokenNo: existingIntakeForStudent.tokenNo,
+            enrollmentNo: cleanEnrollment,
+            studentName: studentName.trim(),
+            programmeCode: progClean,
+            courseCodes: coursesArray,
+            practicalCourses: computedPracticals,
+            assignmentCourses: computedAssignments,
+            partNo: partNum,
+            isIntegrated: true,
+          },
+        });
+
+        if (result?.receipt) {
+          openRegistrationReceiptModal(result.receipt);
+        }
+
+        setSelectedCourses([]);
+        setCourseComponentTypes({});
+        setCourseSearchInput('');
+        setRemarks('');
+        setConsignmentNo('');
+        setIsSubmitting(false);
+        return;
       }
 
       // 1. Create intake record in IntakeMaster and optimistically unpack to Course_Ledger
@@ -1019,6 +1131,8 @@ export const IntakeDesk: React.FC = () => {
         studentEmail: studentEmail.trim() || undefined,
         programmeCode: selectedProgramme.trim().toUpperCase(),
         courseCodes: coursesArray,
+        practicalCourses: computedPracticals,
+        assignmentCourses: computedAssignments,
         submissionDate,
         submissionMode,
         consignmentNo: consignmentNo.trim() || undefined,
@@ -1033,6 +1147,8 @@ export const IntakeDesk: React.FC = () => {
         studentName: studentName.trim(),
         programmeCode: selectedProgramme.trim().toUpperCase(),
         courseCodes: coursesArray,
+        practicalCourses: computedPracticals,
+        assignmentCourses: computedAssignments,
         session: targetSession,
         initialStatus: 'submitted',
         submissionDate,
@@ -1052,6 +1168,8 @@ export const IntakeDesk: React.FC = () => {
         programmeCode: selectedProgramme.trim().toUpperCase(),
         session: targetSession,
         registeredCourses: coursesArray,
+        practicalCourses: computedPracticals,
+        assignmentCourses: computedAssignments,
         issuedBy: registeredBy,
         remarks: remarks.trim() || undefined,
         submissionDate: submissionDate,
@@ -1706,6 +1824,86 @@ export const IntakeDesk: React.FC = () => {
               )}
 
               <form onSubmit={handleSubmitAndGenerateReceipt} className="space-y-4">
+                {/* Submission Category Selector: TMA (Assignment) vs Practical */}
+                <div className="p-3.5 bg-gradient-to-r from-indigo-50/90 via-purple-50/70 to-zinc-50 border border-indigo-200/80 rounded-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Intake Category:</span>
+                        </span>
+                        <span className="text-[10px] text-zinc-500 font-medium">
+                          (Most students submit TMA Assignment; select Practical for lab/project/practicals)
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-600 mt-0.5">
+                        Selected component will apply by default to all enrolled course codes.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-white/90 p-1 rounded-xl border border-zinc-200/90 shadow-2xs">
+                      <button
+                        type="button"
+                        id="intake-category-tma-btn"
+                        onClick={() => {
+                          setDefaultIntakeComponent('Assignment');
+                          // Update any currently selected courses to Assignment if not explicitly custom
+                          if (selectedCourses.length > 0) {
+                            setCourseComponentTypes((prev) => {
+                              const updated = { ...prev };
+                              selectedCourses.forEach((c) => {
+                                updated[c] = 'Assignment';
+                              });
+                              return updated;
+                            });
+                          }
+                        }}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                          defaultIntakeComponent === 'Assignment'
+                            ? 'bg-indigo-600 text-white shadow-xs font-black'
+                            : 'text-zinc-700 hover:text-zinc-950 hover:bg-zinc-100'
+                        }`}
+                      >
+                        <FileCheck2 className="w-3.5 h-3.5" />
+                        <span>Assignment (TMA)</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold bg-indigo-700/60 text-white">
+                          Standard
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        id="intake-category-practical-btn"
+                        onClick={() => {
+                          setDefaultIntakeComponent('Practical');
+                          // Update any currently selected courses to Practical
+                          if (selectedCourses.length > 0) {
+                            setCourseComponentTypes((prev) => {
+                              const updated = { ...prev };
+                              selectedCourses.forEach((c) => {
+                                updated[c] = 'Practical';
+                              });
+                              return updated;
+                            });
+                          }
+                        }}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                          defaultIntakeComponent === 'Practical'
+                            ? 'bg-purple-700 text-white shadow-xs font-black'
+                            : 'text-purple-900 hover:text-purple-950 hover:bg-purple-100/60'
+                        }`}
+                      >
+                        <FlaskConical className="w-3.5 h-3.5 text-purple-200" />
+                        <span>Practical (Lab / Viva)</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold bg-purple-800 text-white">
+                          Few Students
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 {/* 1. Student Enrollment Number (9-10 digits) & Candidate Name */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -1805,9 +2003,9 @@ export const IntakeDesk: React.FC = () => {
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                     <div className="flex-1">
                       <div className="font-extrabold text-emerald-950 text-sm flex flex-wrap items-center gap-2">
-                        <span>RULE: Additional Intake Permitted for Differing Course Codes</span>
+                        <span>RULE: Part-by-Part & Additional Intake Permitted for Differing Course Codes</span>
                         <span className="px-2 py-0.5 rounded-full bg-emerald-200/90 text-emerald-950 text-[10px] font-mono font-bold">
-                          Same Enr • Same Name • Same Programme
+                          Same Enr • Same Programme • Supplementary Submission
                         </span>
                       </div>
                       <div className="mt-1 text-emerald-900 leading-relaxed">
@@ -1816,9 +2014,36 @@ export const IntakeDesk: React.FC = () => {
                           {Array.from(alreadyEnrolledCourses || []).join(', ')}
                         </span>.
                       </div>
-                      <div className="mt-1.5 text-[11px] text-emerald-800 font-semibold flex items-center gap-1.5">
+
+                      {/* Part-by-Part Integration Option for returning students */}
+                      {existingIntakeForStudent && (
+                        <div className="mt-2.5 p-2.5 bg-white/95 border border-emerald-300 rounded-lg shadow-2xs">
+                          <label className="flex items-start gap-2.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={shouldIntegrateWithPrevious}
+                              onChange={(e) => setShouldIntegrateWithPrevious(e.target.checked)}
+                              className="mt-0.5 h-4 w-4 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                            />
+                            <div className="flex-1 text-[11.5px]">
+                              <span className="font-bold text-emerald-950 flex items-center gap-1.5 flex-wrap">
+                                <GitMerge className="w-3.5 h-3.5 text-emerald-700" />
+                                <span>Integrate with previous intake record (Token: {existingIntakeForStudent.tokenNo} • Part {(existingIntakeForStudent.submissionParts?.length || 1) + 1} Supplementary)</span>
+                                <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[10px] font-semibold border border-emerald-300">
+                                  Recommended for Part-by-Part
+                                </span>
+                              </span>
+                              <p className="text-zinc-600 mt-0.5 text-[11px] leading-relaxed">
+                                Merges newly submitted differing courses and practicals directly into the student’s existing token, keeping practical records distinct and generating an integrated supplementary receipt.
+                              </p>
+                            </div>
+                          </label>
+                        </div>
+                      )}
+
+                      <div className="mt-2 text-[11px] text-emerald-800 font-semibold flex items-center gap-1.5">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 inline shrink-0" />
-                        <span>Rule: Intake of student is added if course code is differ even though intake enrollment number, name and Programme enrolled is same. Each intake entry receives its own unique intake token and printable receipt slip.</span>
+                        <span>Rule: Intake of student is added if course code is differ even though enrollment number, name and Programme are same. Practicals (like BAPI-003) are recorded separately from theory assignments.</span>
                       </div>
                     </div>
                   </div>
@@ -2513,29 +2738,29 @@ export const IntakeDesk: React.FC = () => {
                           {selectedCourses.map((code) => {
                             const title = getCourseTitle(code, selectedProgramme);
                             const isFetching = fetchingIgnouCodes[code];
-                            const isPractical = isPracticalCourse(code, title);
+                            const isDual = isDualComponentCourse(code, title);
+                            const isPrac = isPracticalCourse(code, title);
+                            const currentComp = courseComponentTypes[code] || (isDual ? 'Both' : isPrac ? 'Practical' : 'Assignment');
+
                             return (
                               <div
                                 key={code}
-                                className={`flex items-center justify-between gap-2 bg-white p-1.5 rounded-md shadow-2xs transition border ${
-                                  isPractical
+                                className={`flex items-start justify-between gap-2 bg-white p-2 rounded-lg shadow-2xs transition border ${
+                                  currentComp === 'Both'
+                                    ? 'border-indigo-300 ring-1 ring-purple-200'
+                                    : currentComp === 'Practical'
                                     ? 'border-purple-200 hover:border-purple-300'
-                                    : 'border-indigo-200 hover:border-indigo-300'
+                                    : 'border-amber-200 hover:border-amber-300'
                                 }`}
                               >
-                                <div className="min-w-0 flex-1">
+                                <div className="min-w-0 flex-1 space-y-1">
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-mono font-black text-indigo-950 text-xs flex items-center gap-1">
                                       {code}
                                     </span>
-                                    {isPractical ? (
-                                      <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-800 border border-purple-200">
-                                        <FlaskConical className="w-2.5 h-2.5 text-purple-600" />
-                                        <span>Practical</span>
-                                      </span>
-                                    ) : (
-                                      <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-zinc-100 text-zinc-600">
-                                        Theory
+                                    {isDual && (
+                                      <span className="inline-flex items-center gap-0.5 text-[8.5px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                        Dual Component (Both Asgn & Prac)
                                       </span>
                                     )}
                                     <button
@@ -2553,14 +2778,72 @@ export const IntakeDesk: React.FC = () => {
                                       <span>IGNOU Title</span>
                                     </button>
                                   </div>
-                                  <div className="text-[10.5px] text-zinc-600 truncate font-medium mt-0.5" title={title}>
+
+                                  <div className="text-[10.5px] text-zinc-600 truncate font-medium" title={title}>
                                     {title}
                                   </div>
+
+                                  {/* Component Selector: Assignment, Practical, or Both */}
+                                  <div className="pt-1 flex items-center gap-1 flex-wrap">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 mr-0.5">
+                                      Component:
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setCourseComponentTypes((prev) => ({ ...prev, [code]: 'Assignment' }))}
+                                      className={`px-1.5 py-0.5 text-[9px] font-bold rounded cursor-pointer transition ${
+                                        currentComp === 'Assignment'
+                                          ? 'bg-amber-600 text-white shadow-2xs'
+                                          : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                                      }`}
+                                      title="Record as Theory Assignment (TMA) submission"
+                                    >
+                                      Assignment
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setCourseComponentTypes((prev) => ({ ...prev, [code]: 'Practical' }))}
+                                      className={`px-1.5 py-0.5 text-[9px] font-bold rounded cursor-pointer transition inline-flex items-center gap-0.5 ${
+                                        currentComp === 'Practical'
+                                          ? 'bg-purple-600 text-white shadow-2xs'
+                                          : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                                      }`}
+                                      title="Record separately as Practical / Lab submission"
+                                    >
+                                      <FlaskConical className="w-2.5 h-2.5" />
+                                      <span>Practical</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setCourseComponentTypes((prev) => ({ ...prev, [code]: 'Both' }))}
+                                      className={`px-1.5 py-0.5 text-[9px] font-bold rounded cursor-pointer transition inline-flex items-center gap-0.5 ${
+                                        currentComp === 'Both'
+                                          ? 'bg-gradient-to-r from-amber-600 to-purple-600 text-white shadow-2xs'
+                                          : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                                      }`}
+                                      title="Learner submits BOTH Assignment and Practical for this course (recorded separately)"
+                                    >
+                                      <span>Both (Asgn + Prac)</span>
+                                    </button>
+                                  </div>
+
+                                  {/* Component indicator note */}
+                                  {currentComp === 'Both' ? (
+                                    <div className="text-[9px] text-purple-900 bg-purple-50/80 px-1.5 py-0.5 rounded border border-purple-200 flex items-center gap-1 font-semibold">
+                                      <CheckCircle2 className="w-2.5 h-2.5 text-purple-600 shrink-0" />
+                                      <span>Records 2 distinct entries: 1 Theory TMA + 1 Practical (Separate keys & regional records)</span>
+                                    </div>
+                                  ) : currentComp === 'Practical' ? (
+                                    <div className="text-[9px] text-purple-900 bg-purple-50/60 px-1.5 py-0.2 rounded border border-purple-200 flex items-center gap-1">
+                                      <FlaskConical className="w-2.5 h-2.5 text-purple-600 shrink-0" />
+                                      <span>Recorded separately under Practical Register</span>
+                                    </div>
+                                  ) : null}
                                 </div>
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveCourse(code)}
-                                  className="text-zinc-400 hover:text-rose-600 p-1 transition cursor-pointer"
+                                  className="text-zinc-400 hover:text-rose-600 p-1 transition cursor-pointer mt-0.5"
                                   title={`Remove ${code}`}
                                 >
                                   <X className="w-3.5 h-3.5" />

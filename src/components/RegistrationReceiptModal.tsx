@@ -255,11 +255,31 @@ export const RegistrationReceiptModal: React.FC = () => {
                         <td className="py-1 print:py-0.5 px-2 print:px-1.5 font-mono font-black text-indigo-950">
                           <div className="flex items-center gap-1">
                             <span>{code}</span>
-                            {isPracticalCourse(code, title) && (
-                              <span className="text-[8px] print:text-[6.5px] px-1 py-0 rounded bg-purple-100 text-purple-800 font-sans font-bold border border-purple-200">
-                                Practical
-                              </span>
-                            )}
+                            {(() => {
+                              const isPracInReceipt = (selectedRegistrationReceipt.practicalCourses || []).includes(code);
+                              const isAsgnInReceipt = (selectedRegistrationReceipt.assignmentCourses || []).includes(code);
+                              const isPracByRule = isPracticalCourse(code, title);
+
+                              if ((isPracInReceipt && isAsgnInReceipt) || (isPracInReceipt && !isPracByRule)) {
+                                return (
+                                  <span className="text-[8px] print:text-[6.5px] px-1 py-0 rounded bg-indigo-100 text-indigo-900 font-sans font-bold border border-indigo-200">
+                                    TMA + Practical
+                                  </span>
+                                );
+                              }
+                              if (isPracInReceipt || isPracByRule) {
+                                return (
+                                  <span className="text-[8px] print:text-[6.5px] px-1 py-0 rounded bg-purple-100 text-purple-800 font-sans font-bold border border-purple-200">
+                                    Practical
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="text-[8px] print:text-[6.5px] px-1 py-0 rounded bg-zinc-100 text-zinc-700 font-sans font-medium border border-zinc-200">
+                                  TMA
+                                </span>
+                              );
+                            })()}
                           </div>
                         </td>
                         <td className="py-1 print:py-0.5 px-2 print:px-1.5 text-zinc-800 font-medium truncate max-w-[240px]">
@@ -270,7 +290,17 @@ export const RegistrationReceiptModal: React.FC = () => {
                         </td>
                         <td className="py-1 print:py-0.5 px-2 print:px-1.5 text-right">
                           <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] print:text-[7.5px] font-bold bg-emerald-100 text-emerald-800">
-                            Physical Script Received
+                            {(() => {
+                              const isPracInReceipt = (selectedRegistrationReceipt.practicalCourses || []).includes(code);
+                              const isAsgnInReceipt = (selectedRegistrationReceipt.assignmentCourses || []).includes(code);
+                              if (isPracInReceipt && isAsgnInReceipt) {
+                                return 'Script & Lab Record Received';
+                              }
+                              if (isPracInReceipt || isPracticalCourse(code, title)) {
+                                return 'Lab Record / Practical Received';
+                              }
+                              return 'Physical Script Received';
+                            })()}
                           </span>
                         </td>
                       </tr>

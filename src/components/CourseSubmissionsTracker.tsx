@@ -1083,7 +1083,18 @@ export const CourseSubmissionsTracker: React.FC = () => {
                             </span>
                           </td>
                           <td className="py-3 px-4 font-mono font-bold text-zinc-800">
-                            {sub.courseCode}
+                            <div className="flex items-center gap-1.5">
+                              <span>{sub.courseCode}</span>
+                              {sub.componentType === 'Practical' || sub.isPractical ? (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] bg-purple-100 text-purple-900 border border-purple-200 font-sans font-bold">
+                                  Practical
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] bg-zinc-100 text-zinc-700 border border-zinc-200 font-sans font-medium">
+                                  TMA
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="py-3 px-4 text-center">
                             {isSubmitted ? (

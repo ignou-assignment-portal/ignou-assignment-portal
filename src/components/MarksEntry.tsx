@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
-import { calculateIGNOUGrade, formatDate, getIgnouGrade } from '../utils/helpers';
-import { SCRIPT_URL } from '../services/sheetsService';
+import { calculateIGNOUGrade, formatDate, getIgnouGrade, isPracticalCourse, isDualComponentCourse } from '../utils/helpers';
 import {
   Award,
   BookOpen,
@@ -18,6 +17,9 @@ import {
   Stamp,
   ShieldCheck,
   ShieldAlert,
+  FlaskConical,
+  Layers,
+  Sparkles,
 } from 'lucide-react';
 
 export const MarksEntry: React.FC = () => {
@@ -25,6 +27,7 @@ export const MarksEntry: React.FC = () => {
     sessionIntakes,
     currentSession,
     updateMarks,
+    updatePracticalMarks,
     settings,
     sessionCourseEvaluations,
     toggleLockMarks,
@@ -70,29 +73,146 @@ export const MarksEntry: React.FC = () => {
     if (!selectedCourse) return [];
     return sessionIntakes.filter((r: any) => {
       const courses = r.courseCodes || r.courses || [];
-      return Array.isArray(courses) && courses.map((c: string) => c.toUpperCase()).includes(selectedCourse.toUpperCase());
+      return (
+        Array.isArray(courses) &&
+        courses.map((c: string) => c.toUpperCase()).includes(selectedCourse.toUpperCase())
+      );
     });
   }, [sessionIntakes, selectedCourse]);
 
-  // Helper to get mark from intake or course evaluation ledger
-  const getStudentMark = useCallback(
+  // Determine if course has Practical component
+  const courseHasPractical = useMemo(() => {
+    if (!selectedCourse) return false;
+    if (isDualComponentCourse(selectedCourse) || isPracticalCourse(selectedCourse)) return true;
+    return enrolledStudents.some((s: any) =>
+      (s.practicalCourses || []).some(
+        (c: string) => c.trim().toUpperCase() === selectedCourse.toUpperCase()
+      )
+    );
+  }, [selectedCourse, enrolledStudents]);
+
+  // Helper to get Assignment mark from intake or course evaluation ledger
+  const getStudentAssignmentMark = useCallback(
     (student: any, courseCode: string): number | null => {
-      const directMark = student.marks?.[courseCode];
+      const cleanCourse = courseCode.trim().toUpperCase();
+      const directMark = student.marks?.[cleanCourse];
       if (directMark !== null && directMark !== undefined && directMark !== '') {
         return Number(directMark);
       }
       const matchingEval = sessionCourseEvaluations.find(
         (e: any) =>
           (e.enrollmentNo === student.enrollmentNo || e.Enrollment_No === student.enrollmentNo) &&
-          (e.courseCode === courseCode || e.Course_Code === courseCode)
+          (e.courseCode === cleanCourse || e.Course_Code === cleanCourse) &&
+          (!e.componentType || e.componentType === 'Assignment' || !e.isPractical)
       );
       if (matchingEval) {
-        const m = (matchingEval.marks !== undefined && (matchingEval.marks as any) !== '') ? matchingEval.marks : (matchingEval as any).Marks;
+        if (matchingEval.assignmentMarks !== undefined && matchingEval.assignmentMarks !== null) {
+          return Number(matchingEval.assignmentMarks);
+        }
+        const m =
+          matchingEval.marks !== undefined && (matchingEval.marks as any) !== ''
+            ? matchingEval.marks
+            : (matchingEval as any).Marks;
         if (m !== undefined && m !== null && (m as any) !== '' && !isNaN(Number(m))) {
           return Number(m);
         }
       }
       return null;
+    },
+    [sessionCourseEvaluations]
+  );
+
+  // Helper to get Practical mark from intake or course evaluation ledger
+  const getStudentPracticalMark = useCallback(
+    (student: any, courseCode: string): number | null => {
+      const cleanCourse = courseCode.trim().toUpperCase();
+      const directPrac = student.practicalMarks?.[cleanCourse];
+      if (directPrac !== null && directPrac !== undefined && directPrac !== '') {
+        return Number(directPrac);
+      }
+
+      // Check evaluation record specifically marked as Practical
+      const matchingPracEval = sessionCourseEvaluations.find(
+        (e: any) =>
+          (e.enrollmentNo === student.enrollmentNo || e.Enrollment_No === student.enrollmentNo) &&
+          (e.courseCode === cleanCourse || e.Course_Code === cleanCourse) &&
+          (e.componentType === 'Practical' || e.isPractical)
+      );
+      if (
+        matchingPracEval &&
+        matchingPracEval.marks !== undefined &&
+        matchingPracEval.marks !== null &&
+        (matchingPracEval.marks as any) !== ''
+      ) {
+        return Number(matchingPracEval.marks);
+      }
+
+      // Check practicalMarks field on any matching evaluation
+      const anyMatchingEval = sessionCourseEvaluations.find(
+        (e: any) =>
+          (e.enrollmentNo === student.enrollmentNo || e.Enrollment_No === student.enrollmentNo) &&
+          (e.courseCode === cleanCourse || e.Course_Code === cleanCourse)
+      );
+      if (
+        anyMatchingEval &&
+        anyMatchingEval.practicalMarks !== undefined &&
+        anyMatchingEval.practicalMarks !== null &&
+        (anyMatchingEval.practicalMarks as any) !== ''
+      ) {
+        return Number(anyMatchingEval.practicalMarks);
+      }
+
+      return null;
+    },
+    [sessionCourseEvaluations]
+  );
+
+  // Check locking state for Assignment
+  const getAssignmentLockState = useCallback(
+    (student: any, courseCode: string): { isLocked: boolean; lockedBy?: string; lockedAt?: string } => {
+      const cleanCourse = courseCode.trim().toUpperCase();
+      const matchingEval = sessionCourseEvaluations.find(
+        (e: any) =>
+          (e.enrollmentNo === student.enrollmentNo || e.Enrollment_No === student.enrollmentNo) &&
+          (e.courseCode === cleanCourse || e.Course_Code === cleanCourse) &&
+          (!e.componentType || e.componentType === 'Assignment' || !e.isPractical)
+      );
+      return {
+        isLocked: !!matchingEval?.isLocked,
+        lockedBy: matchingEval?.lockedBy || undefined,
+        lockedAt: matchingEval?.lockedAt || undefined,
+      };
+    },
+    [sessionCourseEvaluations]
+  );
+
+  // Check locking state for Practical
+  const getPracticalLockState = useCallback(
+    (student: any, courseCode: string): { isLocked: boolean; lockedBy?: string; lockedAt?: string } => {
+      const cleanCourse = courseCode.trim().toUpperCase();
+      const matchingPracEval = sessionCourseEvaluations.find(
+        (e: any) =>
+          (e.enrollmentNo === student.enrollmentNo || e.Enrollment_No === student.enrollmentNo) &&
+          (e.courseCode === cleanCourse || e.Course_Code === cleanCourse) &&
+          (e.componentType === 'Practical' || e.isPractical)
+      );
+      if (matchingPracEval) {
+        return {
+          isLocked: !!matchingPracEval.isLocked,
+          lockedBy: matchingPracEval.lockedBy || undefined,
+          lockedAt: matchingPracEval.lockedAt || undefined,
+        };
+      }
+      const anyMatchingEval = sessionCourseEvaluations.find(
+        (e: any) =>
+          (e.enrollmentNo === student.enrollmentNo || e.Enrollment_No === student.enrollmentNo) &&
+          (e.courseCode === cleanCourse || e.Course_Code === cleanCourse)
+      );
+      return {
+        isLocked: !!anyMatchingEval?.isPracticalLocked,
+        lockedBy: anyMatchingEval?.lockedBy || undefined,
+        lockedAt: anyMatchingEval?.lockedAt || undefined,
+      };
     },
     [sessionCourseEvaluations]
   );
@@ -109,65 +229,126 @@ export const MarksEntry: React.FC = () => {
     );
   }, [enrolledStudents, searchFilter]);
 
-  // Analytics for the selected course
+  // Analytics for the selected course with separate Assignment and Practical metrics
   const stats = useMemo(() => {
     const total = enrolledStudents.length;
-    let evaluated = 0;
-    let totalMarks = 0;
-    let passed = 0;
+    let assignmentEvaluated = 0;
+    let assignmentTotalMarks = 0;
+    let assignmentPassed = 0;
+
+    let practicalEvaluated = 0;
+    let practicalTotalMarks = 0;
+    let practicalPassed = 0;
 
     enrolledStudents.forEach((s) => {
-      const mark = getStudentMark(s, selectedCourse);
-      if (mark !== null && mark !== undefined) {
-        evaluated++;
-        totalMarks += mark;
-        if (mark >= 40) passed++;
+      const asgnMark = getStudentAssignmentMark(s, selectedCourse);
+      if (asgnMark !== null && asgnMark !== undefined) {
+        assignmentEvaluated++;
+        assignmentTotalMarks += asgnMark;
+        if (asgnMark >= 40) assignmentPassed++;
+      }
+
+      const pracMark = getStudentPracticalMark(s, selectedCourse);
+      if (pracMark !== null && pracMark !== undefined) {
+        practicalEvaluated++;
+        practicalTotalMarks += pracMark;
+        if (pracMark >= 40) practicalPassed++;
       }
     });
 
-    const average = evaluated > 0 ? (totalMarks / evaluated).toFixed(1) : '—';
-    const passPercentage = evaluated > 0 ? Math.round((passed / evaluated) * 100) : 0;
+    const asgnAverage =
+      assignmentEvaluated > 0 ? (assignmentTotalMarks / assignmentEvaluated).toFixed(1) : '—';
+    const asgnPassPercentage =
+      assignmentEvaluated > 0 ? Math.round((assignmentPassed / assignmentEvaluated) * 100) : 0;
 
-    return { total, evaluated, pending: total - evaluated, average, passPercentage };
-  }, [enrolledStudents, selectedCourse, getStudentMark]);
+    const pracAverage =
+      practicalEvaluated > 0 ? (practicalTotalMarks / practicalEvaluated).toFixed(1) : '—';
+    const pracPassPercentage =
+      practicalEvaluated > 0 ? Math.round((practicalPassed / practicalEvaluated) * 100) : 0;
 
-  // Count of students with marks entered but not yet locked
-  const evaluatedNotLockedCount = useMemo(() => {
+    return {
+      total,
+      assignmentEvaluated,
+      assignmentPending: total - assignmentEvaluated,
+      assignmentAverage: asgnAverage,
+      assignmentPassPercentage: asgnPassPercentage,
+      practicalEvaluated,
+      practicalPending: total - practicalEvaluated,
+      practicalAverage: pracAverage,
+      practicalPassPercentage: pracPassPercentage,
+    };
+  }, [enrolledStudents, selectedCourse, getStudentAssignmentMark, getStudentPracticalMark]);
+
+  // Count of students with Assignment marks entered but not yet locked
+  const asgnEvaluatedNotLockedCount = useMemo(() => {
     return enrolledStudents.filter((s) => {
-      const mark = getStudentMark(s, selectedCourse);
-      const matchingEval = sessionCourseEvaluations.find(
-        (e) => e.enrollmentNo === s.enrollmentNo && e.courseCode === selectedCourse
-      );
-      return mark !== null && mark !== undefined && !matchingEval?.isLocked;
+      const mark = getStudentAssignmentMark(s, selectedCourse);
+      const lock = getAssignmentLockState(s, selectedCourse);
+      return mark !== null && mark !== undefined && !lock.isLocked;
     }).length;
-  }, [enrolledStudents, sessionCourseEvaluations, selectedCourse, getStudentMark]);
+  }, [enrolledStudents, selectedCourse, getStudentAssignmentMark, getAssignmentLockState]);
 
-  const handleMarkChange = (intakeId: string, valueStr: string) => {
+  // Count of students with Practical marks entered but not yet locked
+  const pracEvaluatedNotLockedCount = useMemo(() => {
+    return enrolledStudents.filter((s) => {
+      const mark = getStudentPracticalMark(s, selectedCourse);
+      const lock = getPracticalLockState(s, selectedCourse);
+      return mark !== null && mark !== undefined && !lock.isLocked;
+    }).length;
+  }, [enrolledStudents, selectedCourse, getStudentPracticalMark, getPracticalLockState]);
+
+  // Handlers for Input Changes
+  const handleAssignmentMarkChange = (intakeId: string, valueStr: string) => {
     if (valueStr === '') {
-      updateMarks(intakeId, selectedCourse, null);
+      updateMarks(intakeId, selectedCourse, null, 'Assignment');
       return;
     }
     const val = parseInt(valueStr, 10);
     if (isNaN(val) || val < 0 || val > 100) return;
-    updateMarks(intakeId, selectedCourse, val);
+    updateMarks(intakeId, selectedCourse, val, 'Assignment');
   };
 
-  const handleSaveAndLock = async (
+  const handlePracticalMarkChange = (intakeId: string, valueStr: string) => {
+    if (valueStr === '') {
+      updatePracticalMarks(intakeId, selectedCourse, null);
+      return;
+    }
+    const val = parseInt(valueStr, 10);
+    if (isNaN(val) || val < 0 || val > 100) return;
+    updatePracticalMarks(intakeId, selectedCourse, val);
+  };
+
+  // Save & Lock action for specific component
+  const handleSaveAndLockComponent = async (
     student: (typeof enrolledStudents)[0],
-    matchingEval: any,
+    componentType: 'Assignment' | 'Practical',
     isLockAction: boolean
   ) => {
-    const currentMark = getStudentMark(student, selectedCourse);
+    const isPrac = componentType === 'Practical';
+    const currentMark = isPrac
+      ? getStudentPracticalMark(student, selectedCourse)
+      : getStudentAssignmentMark(student, selectedCourse);
+
     if (currentMark === null || currentMark === undefined) {
       if (isLockAction) {
-        alert('Cannot lock script: A valid numerical mark (0-100) must be recorded before locking.');
+        alert(
+          `Cannot lock ${componentType.toLowerCase()} mark: A valid numerical mark (0-100) must be recorded before locking.`
+        );
         return;
       }
     }
 
+    const matchingEval = sessionCourseEvaluations.find(
+      (e: any) =>
+        (e.enrollmentNo === student.enrollmentNo || e.Enrollment_No === student.enrollmentNo) &&
+        (e.courseCode === selectedCourse || e.Course_Code === selectedCourse) &&
+        (isPrac ? (e.componentType === 'Practical' || e.isPractical) : (!e.componentType || e.componentType === 'Assignment' || !e.isPractical))
+    );
+
+    const subSuffix = isPrac ? '_PRAC' : '';
     const row = matchingEval || {
-      Sub_ID: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}_${currentSession.replace(/\s+/g, '')}`,
-      subId: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}_${currentSession.replace(/\s+/g, '')}`,
+      Sub_ID: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}${subSuffix}_${currentSession.replace(/\s+/g, '')}`,
+      subId: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}${subSuffix}_${currentSession.replace(/\s+/g, '')}`,
       Enrollment_No: student.enrollmentNo,
       enrollmentNo: student.enrollmentNo,
       Course_Code: selectedCourse,
@@ -176,24 +357,42 @@ export const MarksEntry: React.FC = () => {
       studentName: student.studentName,
       programmeCode: student.programmeCode,
       session: currentSession,
+      componentType,
+      isPractical: isPrac,
       isLocked: isLockAction,
       intakeId: student.id,
     };
 
-    await saveOrUpdateMarksAndLock(row, currentMark, isLockAction);
+    await saveOrUpdateMarksAndLock(row, currentMark, isLockAction, componentType);
   };
 
-  const handleUnlockMarks = async (
+  // Administrator Unlock action
+  const handleUnlockComponent = async (
     student: (typeof enrolledStudents)[0],
-    matchingEval: any
+    componentType: 'Assignment' | 'Practical'
   ) => {
     if (!isAdmin) {
-      alert('Permission Denied: Only an Administrator (Coordinator) can unlock marks for verified scripts.');
+      alert(
+        'Permission Denied: Only an Administrator (Coordinator) can unlock marks for verified scripts.'
+      );
       return;
     }
+    const isPrac = componentType === 'Practical';
+    const currentMark = isPrac
+      ? getStudentPracticalMark(student, selectedCourse)
+      : getStudentAssignmentMark(student, selectedCourse);
+
+    const matchingEval = sessionCourseEvaluations.find(
+      (e: any) =>
+        (e.enrollmentNo === student.enrollmentNo || e.Enrollment_No === student.enrollmentNo) &&
+        (e.courseCode === selectedCourse || e.Course_Code === selectedCourse) &&
+        (isPrac ? (e.componentType === 'Practical' || e.isPractical) : (!e.componentType || e.componentType === 'Assignment' || !e.isPractical))
+    );
+
+    const subSuffix = isPrac ? '_PRAC' : '';
     const row = matchingEval || {
-      Sub_ID: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}_${currentSession.replace(/\s+/g, '')}`,
-      subId: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}_${currentSession.replace(/\s+/g, '')}`,
+      Sub_ID: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}${subSuffix}_${currentSession.replace(/\s+/g, '')}`,
+      subId: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}${subSuffix}_${currentSession.replace(/\s+/g, '')}`,
       Enrollment_No: student.enrollmentNo,
       enrollmentNo: student.enrollmentNo,
       Course_Code: selectedCourse,
@@ -202,31 +401,55 @@ export const MarksEntry: React.FC = () => {
       studentName: student.studentName,
       programmeCode: student.programmeCode,
       session: currentSession,
+      componentType,
+      isPractical: isPrac,
       isLocked: false,
       intakeId: student.id,
     };
-    await saveOrUpdateMarksAndLock(row, row.marks ?? student.marks[selectedCourse], false);
+
+    await saveOrUpdateMarksAndLock(row, currentMark, false, componentType);
   };
 
-  const handleBatchLockAllEvaluated = async () => {
+  // Batch lock actions
+  const handleBatchLockAssignments = async () => {
     const toLock = enrolledStudents.filter((s) => {
-      const mark = s.marks[selectedCourse];
-      const matchingEval = sessionCourseEvaluations.find(
-        (e) => e.enrollmentNo === s.enrollmentNo && e.courseCode === selectedCourse
-      );
-      return mark !== null && mark !== undefined && !matchingEval?.isLocked;
+      const mark = getStudentAssignmentMark(s, selectedCourse);
+      const lock = getAssignmentLockState(s, selectedCourse);
+      return mark !== null && mark !== undefined && !lock.isLocked;
     });
 
     if (toLock.length === 0) return;
-    if (!window.confirm(`Save & Lock marks for ${toLock.length} evaluated student(s) in course ${selectedCourse}?`)) {
+    if (
+      !window.confirm(
+        `Save & Lock Assignment (TMA) marks for ${toLock.length} student(s) in course ${selectedCourse}?`
+      )
+    ) {
       return;
     }
 
     for (const student of toLock) {
-      const matchingEval = sessionCourseEvaluations.find(
-        (e) => e.enrollmentNo === student.enrollmentNo && e.courseCode === selectedCourse
-      );
-      await handleSaveAndLock(student, matchingEval, true);
+      await handleSaveAndLockComponent(student, 'Assignment', true);
+    }
+  };
+
+  const handleBatchLockPracticals = async () => {
+    const toLock = enrolledStudents.filter((s) => {
+      const mark = getStudentPracticalMark(s, selectedCourse);
+      const lock = getPracticalLockState(s, selectedCourse);
+      return mark !== null && mark !== undefined && !lock.isLocked;
+    });
+
+    if (toLock.length === 0) return;
+    if (
+      !window.confirm(
+        `Save & Lock Practical (Lab) marks for ${toLock.length} student(s) in course ${selectedCourse}?`
+      )
+    ) {
+      return;
+    }
+
+    for (const student of toLock) {
+      await handleSaveAndLockComponent(student, 'Practical', true);
     }
   };
 
@@ -242,26 +465,39 @@ export const MarksEntry: React.FC = () => {
             </h2>
           </div>
           <p className="text-xs text-zinc-500 mt-1">
-            Enter marks (out of 100) from physical evaluator award lists for academic cycle{' '}
-            <strong className="text-zinc-800">{currentSession}</strong>. Computes IGNOU 5-point letter grade automatically.
+            Dedicated marks entry for{' '}
+            <strong className="text-zinc-800">Assignment (TMA)</strong> and{' '}
+            <strong className="text-purple-900">Practical (Lab)</strong> components. Both are stored
+            and reported separately in the data schema for academic cycle{' '}
+            <strong className="text-zinc-800">{currentSession}</strong>.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={handleBatchLockAllEvaluated}
-            disabled={!selectedCourse || evaluatedNotLockedCount === 0}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
-            title="Lock all evaluated marks for this course and sync to Google Sheets"
+            onClick={handleBatchLockAssignments}
+            disabled={!selectedCourse || asgnEvaluatedNotLockedCount === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+            title="Lock evaluated Assignment marks for this course"
           >
             <Lock className="w-3.5 h-3.5" />
-            <span>Save & Lock Evaluated ({evaluatedNotLockedCount})</span>
+            <span>Lock Assignments ({asgnEvaluatedNotLockedCount})</span>
+          </button>
+
+          <button
+            onClick={handleBatchLockPracticals}
+            disabled={!selectedCourse || pracEvaluatedNotLockedCount === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+            title="Lock evaluated Practical marks for this course"
+          >
+            <FlaskConical className="w-3.5 h-3.5" />
+            <span>Lock Practicals ({pracEvaluatedNotLockedCount})</span>
           </button>
 
           <button
             onClick={() => setIsAwardListModalOpen(true)}
             disabled={!selectedCourse || enrolledStudents.length === 0}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
           >
             <Printer className="w-3.5 h-3.5" />
             <span>Generate Official TE-Award Sheet</span>
@@ -269,10 +505,18 @@ export const MarksEntry: React.FC = () => {
         </div>
       </div>
 
-      {/* Course Selector Tabs */}
+      {/* Course Selector Ribbon */}
       <div className="bg-white border border-zinc-200 rounded-2xl p-4 shadow-xs">
-        <div className="text-xs font-bold uppercase text-zinc-500 tracking-wider mb-2.5">
-          Select Course for Marks Entry ({currentSession})
+        <div className="flex items-center justify-between gap-2 mb-2.5">
+          <span className="text-xs font-bold uppercase text-zinc-500 tracking-wider">
+            Select Course Module for Marks Entry ({currentSession})
+          </span>
+          {courseHasPractical && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200">
+              <FlaskConical className="w-3 h-3 text-purple-700" />
+              <span>Course includes Practical Component</span>
+            </span>
+          )}
         </div>
 
         {activeCourseCodes.length === 0 ? (
@@ -284,20 +528,36 @@ export const MarksEntry: React.FC = () => {
             {activeCourseCodes.map((code) => {
               const count = sessionIntakes.filter((r: any) => {
                 const courses = r.courseCodes || r.courses || [];
-                return Array.isArray(courses) && courses.map((c: string) => c.toUpperCase()).includes(code.toUpperCase());
+                return (
+                  Array.isArray(courses) &&
+                  courses.map((c: string) => c.toUpperCase()).includes(code.toUpperCase())
+                );
               }).length;
               const isSelected = selectedCourse === code;
+              const isDual = isDualComponentCourse(code);
+              const isPrac = isPracticalCourse(code);
+
               return (
                 <button
                   key={code}
                   onClick={() => setSelectedCourse(code)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition flex items-center gap-2 ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition flex items-center gap-2 cursor-pointer ${
                     isSelected
                       ? 'bg-indigo-950 text-white shadow-xs'
                       : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border border-zinc-200'
                   }`}
                 >
                   <span>{code}</span>
+                  {isDual && (
+                    <span className="px-1 py-0.2 rounded text-[8px] bg-amber-400 text-amber-950 font-sans font-black">
+                      TMA+PRAC
+                    </span>
+                  )}
+                  {isPrac && !isDual && (
+                    <span className="px-1 py-0.2 rounded text-[8px] bg-purple-400 text-purple-950 font-sans font-black">
+                      PRAC
+                    </span>
+                  )}
                   <span
                     className={`text-[10px] px-1.5 py-0.2 rounded-full font-sans ${
                       isSelected ? 'bg-indigo-700 text-white' : 'bg-zinc-200 text-zinc-600'
@@ -314,56 +574,73 @@ export const MarksEntry: React.FC = () => {
 
       {selectedCourse && (
         <>
-          {/* Quick Metrics for this course */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-2xs">
+          {/* Quick Metrics for Selected Course */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+            <div className="bg-white p-3.5 rounded-xl border border-zinc-200 shadow-2xs">
               <span className="text-[10px] text-zinc-500 uppercase font-bold block">
-                Total Submissions
+                Total Enrolled Candidates
               </span>
               <span className="text-xl font-black text-zinc-900 mt-1 block">
                 {stats.total}
               </span>
+              <span className="text-[10px] text-zinc-400">Course: {selectedCourse}</span>
             </div>
 
-            <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-2xs">
-              <span className="text-[10px] text-zinc-500 uppercase font-bold block">
-                Evaluated / Pending
+            <div className="bg-amber-50/50 p-3.5 rounded-xl border border-amber-200 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-amber-800 uppercase font-bold block">
+                  Assignment (TMA) Evaluated
+                </span>
+                <BookOpen className="w-3.5 h-3.5 text-amber-600" />
+              </div>
+              <span className="text-xl font-black text-amber-950 mt-1 block">
+                {stats.assignmentEvaluated}{' '}
+                <span className="text-xs font-normal text-amber-700">/ {stats.assignmentPending} left</span>
               </span>
-              <span className="text-xl font-black text-indigo-600 mt-1 block">
-                {stats.evaluated}{' '}
-                <span className="text-xs font-normal text-zinc-400">/ {stats.pending} left</span>
-              </span>
-            </div>
-
-            <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-2xs">
-              <span className="text-[10px] text-zinc-500 uppercase font-bold block">
-                Class Average
-              </span>
-              <span className="text-xl font-black text-zinc-900 mt-1 block">
-                {stats.average}
-                <span className="text-xs font-normal text-zinc-400 ml-1">/ 100</span>
+              <span className="text-[10px] text-amber-800 font-semibold">
+                Class Avg: {stats.assignmentAverage} • Pass: {stats.assignmentPassPercentage}%
               </span>
             </div>
 
-            <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-2xs">
+            <div className="bg-purple-50/50 p-3.5 rounded-xl border border-purple-200 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-purple-800 uppercase font-bold block">
+                  Practical (Lab) Evaluated
+                </span>
+                <FlaskConical className="w-3.5 h-3.5 text-purple-600" />
+              </div>
+              <span className="text-xl font-black text-purple-950 mt-1 block">
+                {stats.practicalEvaluated}{' '}
+                <span className="text-xs font-normal text-purple-700">/ {stats.practicalPending} left</span>
+              </span>
+              <span className="text-[10px] text-purple-800 font-semibold">
+                Class Avg: {stats.practicalAverage} • Pass: {stats.practicalPassPercentage}%
+              </span>
+            </div>
+
+            <div className="bg-white p-3.5 rounded-xl border border-zinc-200 shadow-2xs">
               <span className="text-[10px] text-zinc-500 uppercase font-bold block">
-                Pass Percentage (≥40%)
+                Course Pass Standard
               </span>
               <span className="text-xl font-black text-emerald-700 mt-1 block">
-                {stats.passPercentage}%
+                ≥ 40%
               </span>
+              <span className="text-[10px] text-zinc-500">IGNOU Criterion for TMA & Lab</span>
             </div>
           </div>
 
-          {/* Student Marks Table */}
+          {/* Student Marks Table with Side-by-Side Assignment and Practical Fields */}
           <div className="bg-white border border-zinc-200 rounded-2xl shadow-xs overflow-hidden">
             <div className="p-4 border-b border-zinc-200 flex flex-wrap items-center justify-between gap-3 bg-zinc-50">
               <div className="flex items-center gap-2">
                 <span className="font-mono font-bold text-sm text-indigo-950 px-2 py-0.5 bg-indigo-100 rounded">
                   {selectedCourse}
                 </span>
-                <span className="text-xs text-zinc-600 font-medium">
-                  Enrollment Award Register ({filteredStudents.length} Students)
+                <span className="text-xs text-zinc-700 font-semibold">
+                  Marks Award Register ({filteredStudents.length} Students)
+                </span>
+                <span className="text-[11px] text-zinc-500 hidden sm:inline">
+                  • Separate TMA & Practical storage
                 </span>
               </div>
 
@@ -380,158 +657,286 @@ export const MarksEntry: React.FC = () => {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
+              <table className="w-full text-xs text-left min-w-[900px]">
                 <thead className="bg-zinc-100 text-zinc-700 font-semibold border-b border-zinc-200">
                   <tr>
-                    <th className="py-2.5 px-4 w-12">S.No</th>
-                    <th className="py-2.5 px-4">Enrollment Number</th>
-                    <th className="py-2.5 px-4">Student Name</th>
-                    <th className="py-2.5 px-4">Token & Date</th>
-                    <th className="py-2.5 px-4 w-36">Marks (0-100)</th>
-                    <th className="py-2.5 px-4">IGNOU Grade</th>
-                    <th className="py-2.5 px-4">Status & Verification Seal</th>
-                    <th className="py-2.5 px-4 text-center w-40">Lock Engine & Action</th>
+                    <th className="py-2.5 px-3 w-10 text-center">#</th>
+                    <th className="py-2.5 px-3 w-32">Enrollment</th>
+                    <th className="py-2.5 px-3 min-w-[140px]">Student Name</th>
+                    <th className="py-2.5 px-3 w-28">Token & Date</th>
+                    {/* Dedicated Assignment (TMA) Marks Column */}
+                    <th className="py-2.5 px-3 w-48 bg-amber-50/70 border-x border-amber-200 text-amber-950 font-bold">
+                      <div className="flex items-center gap-1">
+                        <BookOpen className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Assignment (TMA)</span>
+                      </div>
+                      <span className="text-[9px] font-normal text-amber-800 block">
+                        Marks (0-100) & Grade
+                      </span>
+                    </th>
+                    {/* Dedicated Practical (Lab) Marks Column */}
+                    <th className="py-2.5 px-3 w-48 bg-purple-50/70 border-r border-purple-200 text-purple-950 font-bold">
+                      <div className="flex items-center gap-1">
+                        <FlaskConical className="w-3.5 h-3.5 text-purple-700" />
+                        <span>Practical (Lab)</span>
+                      </div>
+                      <span className="text-[9px] font-normal text-purple-800 block">
+                        Marks (0-100) & Grade
+                      </span>
+                    </th>
+                    <th className="py-2.5 px-3 text-center w-36">Status & Verification</th>
+                    <th className="py-2.5 px-3 text-center w-32">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200">
                   {filteredStudents.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-8 text-center text-zinc-400">
-                        No students found for this course.
+                        No students found for course {selectedCourse}.
                       </td>
                     </tr>
                   ) : (
                     filteredStudents.map((student, idx) => {
-                      const currentMark = getStudentMark(student, selectedCourse);
-                      const gradeInfo = calculateIGNOUGrade(currentMark);
-                      const matchingEval = sessionCourseEvaluations.find(
-                        (e) => e.enrollmentNo === student.enrollmentNo && e.courseCode === selectedCourse
-                      );
-                      const isLocked = !!matchingEval?.isLocked;
+                      const asgnMark = getStudentAssignmentMark(student, selectedCourse);
+                      const pracMark = getStudentPracticalMark(student, selectedCourse);
+
+                      const asgnGradeInfo = calculateIGNOUGrade(asgnMark);
+                      const pracGradeInfo = calculateIGNOUGrade(pracMark);
+
+                      const asgnLock = getAssignmentLockState(student, selectedCourse);
+                      const pracLock = getPracticalLockState(student, selectedCourse);
+
+                      const hasStudentEnrolledPrac =
+                        (student.practicalCourses || []).includes(selectedCourse) ||
+                        courseHasPractical;
 
                       return (
                         <tr
                           key={student.id}
-                          className={`hover:bg-zinc-50 transition ${
-                            isLocked ? 'bg-purple-50/20' : ''
+                          className={`hover:bg-zinc-50/80 transition ${
+                            asgnLock.isLocked && pracLock.isLocked
+                              ? 'bg-purple-50/20'
+                              : asgnLock.isLocked
+                              ? 'bg-amber-50/15'
+                              : ''
                           }`}
                         >
-                          <td className="py-3 px-4 font-mono text-zinc-400">{idx + 1}</td>
-                          <td className="py-3 px-4 font-mono font-bold text-zinc-900 text-xs">
+                          <td className="py-3 px-3 font-mono text-zinc-400 text-center">
+                            {idx + 1}
+                          </td>
+                          <td className="py-3 px-3 font-mono font-bold text-zinc-900 text-xs">
                             <div>{student.enrollmentNo}</div>
-                            {matchingEval?.submissionKey && (
-                              <div className="text-[10px] text-indigo-700 font-mono font-normal mt-0.5">
-                                {matchingEval.submissionKey}
-                              </div>
-                            )}
+                            <span className="px-1 py-0.2 rounded text-[9px] font-sans font-bold bg-zinc-100 text-zinc-600 border border-zinc-200">
+                              {student.programmeCode}
+                            </span>
                           </td>
-                          <td className="py-3 px-4 font-medium text-zinc-900">
-                            {student.studentName}
+                          <td className="py-3 px-3 font-medium text-zinc-900">
+                            <div>{student.studentName}</div>
+                            <div className="text-[10px] text-zinc-400 truncate max-w-[150px]">
+                              {student.studentPhone || student.studentEmail || 'Registered Learner'}
+                            </div>
                           </td>
-                          <td className="py-3 px-4 text-zinc-500 font-mono text-[11px]">
-                            {student.tokenNo}
+                          <td className="py-3 px-3 text-zinc-600 font-mono text-[11px]">
+                            <div className="font-bold text-zinc-800">{student.tokenNo}</div>
                             <div className="text-[10px] text-zinc-400">
                               {formatDate(student.submissionDate)}
                             </div>
                           </td>
-                          <td className="py-3 px-4">
-                            {isLocked ? (
-                              <div className="flex items-center gap-1.5 font-mono font-bold text-zinc-900 bg-zinc-100 border border-zinc-200 px-3 py-1.5 rounded-lg w-fit">
-                                <Lock className="w-3 h-3 text-purple-700" />
-                                <span>{currentMark !== null && currentMark !== undefined ? currentMark : '—'}</span>
-                                <span className="text-[10px] text-zinc-400 font-normal">/ 100</span>
+
+                          {/* DEDICATED ASSIGNMENT (TMA) MARKS FIELD */}
+                          <td className="py-3 px-3 bg-amber-50/30 border-x border-amber-200">
+                            {asgnLock.isLocked ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5 font-mono font-bold text-zinc-900 bg-white border border-amber-300 px-2.5 py-1 rounded-lg w-fit shadow-2xs">
+                                  <Lock className="w-3 h-3 text-amber-700" />
+                                  <span>{asgnMark !== null ? asgnMark : '—'}</span>
+                                  <span className="text-[9px] text-zinc-400 font-normal">/100</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span
+                                    className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${asgnGradeInfo.badgeClass}`}
+                                  >
+                                    Grade {asgnGradeInfo.grade}
+                                  </span>
+                                  <span className="text-[9px] text-emerald-800 font-bold">
+                                    Locked
+                                  </span>
+                                </div>
                               </div>
                             ) : (
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  max={100}
-                                  placeholder="0-100"
-                                  value={currentMark !== null && currentMark !== undefined ? currentMark : ''}
-                                  onChange={(e) => handleMarkChange(student.id, e.target.value)}
-                                  onBlur={() => handleSaveAndLock(student, matchingEval, false)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      handleSaveAndLock(student, matchingEval, false);
-                                    }
-                                  }}
-                                  className="w-20 px-2.5 py-1.5 font-mono text-xs font-bold border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden bg-white"
-                                  title="Press Enter or click away to save marks draft"
-                                />
-                                <span className="text-[10px] text-zinc-400 font-mono">/100</span>
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    placeholder="0-100"
+                                    value={asgnMark !== null && asgnMark !== undefined ? asgnMark : ''}
+                                    onChange={(e) => handleAssignmentMarkChange(student.id, e.target.value)}
+                                    onBlur={() => handleSaveAndLockComponent(student, 'Assignment', false)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        handleSaveAndLockComponent(student, 'Assignment', false);
+                                      }
+                                    }}
+                                    className="w-18 px-2 py-1 font-mono text-xs font-bold border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-hidden bg-white text-zinc-900 shadow-2xs"
+                                    title="Assignment (TMA) mark (0-100)"
+                                  />
+                                  <span className="text-[10px] text-zinc-400 font-mono">/100</span>
+                                </div>
+                                {asgnMark !== null && asgnMark !== undefined && (
+                                  <span
+                                    className={`inline-block text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${asgnGradeInfo.badgeClass}`}
+                                  >
+                                    Grade {asgnGradeInfo.grade} ({asgnGradeInfo.label})
+                                  </span>
+                                )}
                               </div>
                             )}
                           </td>
-                          <td className="py-3 px-4">
-                            <span
-                              className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border ${gradeInfo.badgeClass}`}
-                            >
-                              Grade {gradeInfo.grade}
-                              <span className="font-normal text-[10px] opacity-75">
-                                ({gradeInfo.label})
-                              </span>
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            {isLocked ? (
-                              <div className="bg-purple-100/70 border border-purple-200 px-2.5 py-1 rounded-lg text-[11px] text-purple-900 font-medium space-y-0.5 w-fit">
-                                <div className="flex items-center gap-1 font-bold">
-                                  <Stamp className="w-3.5 h-3.5 text-purple-700" />
-                                  <span>LOCKED / VERIFIED</span>
+
+                          {/* DEDICATED PRACTICAL (LAB) MARKS FIELD */}
+                          <td className="py-3 px-3 bg-purple-50/30 border-r border-purple-200">
+                            {pracLock.isLocked ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5 font-mono font-bold text-purple-950 bg-white border border-purple-300 px-2.5 py-1 rounded-lg w-fit shadow-2xs">
+                                  <Lock className="w-3 h-3 text-purple-700" />
+                                  <span>{pracMark !== null ? pracMark : '—'}</span>
+                                  <span className="text-[9px] text-zinc-400 font-normal">/100</span>
                                 </div>
-                                <div className="text-[10px] text-purple-700 font-mono">
-                                  {matchingEval?.lockedBy || 'Coordinator'} • {matchingEval?.lockedAt ? formatDate(matchingEval.lockedAt) : 'Cycle Approved'}
+                                <div className="flex items-center gap-1">
+                                  <span
+                                    className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${pracGradeInfo.badgeClass}`}
+                                  >
+                                    Grade {pracGradeInfo.grade}
+                                  </span>
+                                  <span className="text-[9px] text-purple-800 font-bold">
+                                    Locked
+                                  </span>
                                 </div>
                               </div>
-                            ) : currentMark !== null && currentMark !== undefined ? (
-                              <span className="text-emerald-700 text-xs font-semibold flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                Marks Drafted (Unverified)
-                              </span>
                             ) : (
-                              <span className="text-zinc-400 text-xs italic">Awaiting marks</span>
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    placeholder={hasStudentEnrolledPrac ? '0-100' : 'N/A'}
+                                    value={pracMark !== null && pracMark !== undefined ? pracMark : ''}
+                                    onChange={(e) => handlePracticalMarkChange(student.id, e.target.value)}
+                                    onBlur={() => handleSaveAndLockComponent(student, 'Practical', false)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        handleSaveAndLockComponent(student, 'Practical', false);
+                                      }
+                                    }}
+                                    className="w-18 px-2 py-1 font-mono text-xs font-bold border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-hidden bg-white text-zinc-900 shadow-2xs"
+                                    title="Practical (Lab) mark (0-100)"
+                                  />
+                                  <span className="text-[10px] text-purple-700 font-mono">/100</span>
+                                </div>
+                                {pracMark !== null && pracMark !== undefined ? (
+                                  <span
+                                    className={`inline-block text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${pracGradeInfo.badgeClass}`}
+                                  >
+                                    Grade {pracGradeInfo.grade} ({pracGradeInfo.label})
+                                  </span>
+                                ) : hasStudentEnrolledPrac ? (
+                                  <span className="text-[9px] text-purple-600 font-medium italic block">
+                                    Lab Record Entry
+                                  </span>
+                                ) : null}
+                              </div>
                             )}
                           </td>
-                          <td className="py-3 px-4 text-center">
-                            {isLocked ? (
-                              isAdmin ? (
-                                <button
-                                  onClick={() => handleUnlockMarks(student, matchingEval)}
-                                  className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold transition flex items-center gap-1 mx-auto cursor-pointer"
-                                  title="Administrator Override: Click to Unlock"
-                                >
-                                  <Unlock className="w-3.5 h-3.5 text-rose-600" />
-                                  <span>Unlock</span>
-                                </button>
-                              ) : (
-                                <span
-                                  className="inline-flex items-center gap-1 text-[10px] text-zinc-400 bg-zinc-100 px-2.5 py-1 rounded-lg border border-zinc-200 cursor-not-allowed"
-                                  title="Locked by Coordinator. Administrative privileges required to unlock."
-                                >
-                                  <Lock className="w-3 h-3 text-zinc-400" />
-                                  <span>Sealed</span>
+
+                          {/* STATUS & VERIFICATION SEALS */}
+                          <td className="py-3 px-3 text-center">
+                            <div className="space-y-1">
+                              {asgnLock.isLocked && pracLock.isLocked ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200">
+                                  <Stamp className="w-3 h-3 text-purple-700" />
+                                  <span>Both Sealed</span>
                                 </span>
-                              )
-                            ) : (
-                              <button
-                                onClick={() => handleSaveAndLock(student, matchingEval, true)}
-                                disabled={currentMark === null || currentMark === undefined}
-                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 mx-auto cursor-pointer shadow-2xs ${
-                                  currentMark !== null && currentMark !== undefined
-                                    ? 'bg-purple-600 hover:bg-purple-700 text-white border border-purple-700 active:scale-95'
-                                    : 'bg-zinc-100 text-zinc-400 border border-zinc-200 cursor-not-allowed opacity-60'
-                                }`}
-                                title={
-                                  currentMark !== null
-                                    ? 'Save & Lock Marks (Dispatches UPDATE_MARKS to Google Sheets)'
-                                    : 'Enter marks (0-100) before locking'
-                                }
-                              >
-                                <Lock className="w-3.5 h-3.5" />
-                                <span>Save & Lock Marks</span>
-                              </button>
-                            )}
+                              ) : asgnLock.isLocked ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                                  <CheckCircle2 className="w-3 h-3 text-amber-700" />
+                                  <span>TMA Locked</span>
+                                </span>
+                              ) : pracLock.isLocked ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200">
+                                  <CheckCircle2 className="w-3 h-3 text-purple-700" />
+                                  <span>Prac Locked</span>
+                                </span>
+                              ) : asgnMark !== null || pracMark !== null ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  <span>Marks Drafted</span>
+                                </span>
+                              ) : (
+                                <span className="text-zinc-400 text-[10px] italic">
+                                  Awaiting Entry
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* ACTIONS COLUMN */}
+                          <td className="py-3 px-3 text-center">
+                            <div className="flex flex-col gap-1 items-center justify-center">
+                              {/* Assignment Lock Button */}
+                              {!asgnLock.isLocked ? (
+                                <button
+                                  onClick={() => handleSaveAndLockComponent(student, 'Assignment', true)}
+                                  disabled={asgnMark === null || asgnMark === undefined}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                                    asgnMark !== null
+                                      ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-2xs'
+                                      : 'bg-zinc-100 text-zinc-400 cursor-not-allowed opacity-60'
+                                  }`}
+                                  title="Lock Assignment (TMA) marks"
+                                >
+                                  <Lock className="w-2.5 h-2.5" />
+                                  <span>Lock TMA</span>
+                                </button>
+                              ) : isAdmin ? (
+                                <button
+                                  onClick={() => handleUnlockComponent(student, 'Assignment')}
+                                  className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition flex items-center gap-1 cursor-pointer"
+                                  title="Admin: Unlock TMA marks"
+                                >
+                                  <Unlock className="w-2.5 h-2.5 text-rose-600" />
+                                  <span>Unlock TMA</span>
+                                </button>
+                              ) : null}
+
+                              {/* Practical Lock Button */}
+                              {!pracLock.isLocked ? (
+                                <button
+                                  onClick={() => handleSaveAndLockComponent(student, 'Practical', true)}
+                                  disabled={pracMark === null || pracMark === undefined}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                                    pracMark !== null
+                                      ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-2xs'
+                                      : 'bg-zinc-100 text-zinc-400 cursor-not-allowed opacity-60'
+                                  }`}
+                                  title="Lock Practical (Lab) marks"
+                                >
+                                  <FlaskConical className="w-2.5 h-2.5" />
+                                  <span>Lock Prac</span>
+                                </button>
+                              ) : isAdmin ? (
+                                <button
+                                  onClick={() => handleUnlockComponent(student, 'Practical')}
+                                  className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition flex items-center gap-1 cursor-pointer"
+                                  title="Admin: Unlock Practical marks"
+                                >
+                                  <Unlock className="w-2.5 h-2.5 text-rose-600" />
+                                  <span>Unlock Prac</span>
+                                </button>
+                              ) : null}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -547,12 +952,15 @@ export const MarksEntry: React.FC = () => {
       {/* Official IGNOU TE-Award Sheet Printable Layout Modal */}
       {isAwardListModalOpen && (
         <div className="fixed inset-0 bg-zinc-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-zinc-300 overflow-hidden my-auto print:m-0 print:border-none print:shadow-none print:w-full">
+          <div className="bg-white rounded-2xl max-w-5xl w-full shadow-2xl border border-zinc-300 overflow-hidden my-auto print:m-0 print:border-none print:shadow-none print:w-full">
             {/* Modal Controls */}
             <div className="px-5 py-3 bg-zinc-900 text-white flex items-center justify-between print:hidden">
               <div className="font-semibold text-xs flex items-center gap-2">
                 <Printer className="w-4 h-4 text-emerald-400" />
-                <span>IGNOU TE-Award Sheet Preview ({selectedCourse})</span>
+                <span>
+                  IGNOU TE-Award Sheet Preview ({selectedCourse}) — Assignment & Practical Separate
+                  Format
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -564,7 +972,7 @@ export const MarksEntry: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setIsAwardListModalOpen(false)}
-                  className="px-2 py-1 text-zinc-400 hover:text-white text-xs font-bold"
+                  className="px-2 py-1 text-zinc-400 hover:text-white text-xs font-bold cursor-pointer"
                 >
                   ✕
                 </button>
@@ -579,61 +987,102 @@ export const MarksEntry: React.FC = () => {
                   Indira Gandhi National Open University (IGNOU)
                 </div>
                 <div className="text-sm font-black text-zinc-900 uppercase mt-0.5">
-                  Term-End Assignment Award List (TE-Format)
+                  Term-End Assignment & Practical Award List (TE-Format)
                 </div>
                 <div className="text-xs text-zinc-600 font-medium">
-                  Study Centre: {settings.centreCode} ({settings.institutionName}) • Regional Centre: {settings.regionalCentreCode}
+                  Study Centre: {settings.centreCode} ({settings.institutionName}) • Regional Centre:{' '}
+                  {settings.regionalCentreCode}
                 </div>
               </div>
 
               {/* Course & Session Info Bar */}
               <div className="grid grid-cols-4 gap-2 my-4 text-xs border border-zinc-300 p-2.5 rounded bg-zinc-50">
                 <div>
-                  <span className="text-zinc-500 font-bold block text-[10px] uppercase">Course Code:</span>
-                  <span className="font-mono font-black text-sm text-zinc-900">{selectedCourse}</span>
+                  <span className="text-zinc-500 font-bold block text-[10px] uppercase">
+                    Course Code:
+                  </span>
+                  <span className="font-mono font-black text-sm text-zinc-900">
+                    {selectedCourse}
+                  </span>
                 </div>
                 <div>
-                  <span className="text-zinc-500 font-bold block text-[10px] uppercase">Exam / Session:</span>
+                  <span className="text-zinc-500 font-bold block text-[10px] uppercase">
+                    Exam / Session:
+                  </span>
                   <span className="font-bold text-zinc-900">{currentSession}</span>
                 </div>
                 <div>
-                  <span className="text-zinc-500 font-bold block text-[10px] uppercase">Max Marks:</span>
-                  <span className="font-bold text-zinc-900">100 (Pass Marks: 40)</span>
+                  <span className="text-zinc-500 font-bold block text-[10px] uppercase">
+                    Max Marks:
+                  </span>
+                  <span className="font-bold text-zinc-900">
+                    100 per component (Pass: 40)
+                  </span>
                 </div>
                 <div>
-                  <span className="text-zinc-500 font-bold block text-[10px] uppercase">Total Candidates:</span>
+                  <span className="text-zinc-500 font-bold block text-[10px] uppercase">
+                    Total Candidates:
+                  </span>
                   <span className="font-bold text-zinc-900">{enrolledStudents.length}</span>
                 </div>
               </div>
 
-              {/* Award Table */}
+              {/* Award Table with Separate Assignment and Practical Columns */}
               <table className="w-full text-xs border border-zinc-400 text-left">
                 <thead className="bg-zinc-100 font-bold border-b border-zinc-400">
                   <tr>
                     <th className="py-2 px-2 border-r border-zinc-300 w-10 text-center">S.N.</th>
-                    <th className="py-2 px-3 border-r border-zinc-300">Enrollment Number</th>
-                    <th className="py-2 px-3 border-r border-zinc-300">Student Name</th>
-                    <th className="py-2 px-3 border-r border-zinc-300 text-center">Marks (In Figures)</th>
-                    <th className="py-2 px-3 border-r border-zinc-300">Grade</th>
-                    <th className="py-2 px-3 text-center">Signature of Evaluator</th>
+                    <th className="py-2 px-3 border-r border-zinc-300 w-28">Enrollment No.</th>
+                    <th className="py-2 px-3 border-r border-zinc-300">Learner Name</th>
+                    <th className="py-2 px-3 border-r border-zinc-300 text-center bg-amber-50/50 w-24">
+                      TMA Marks
+                    </th>
+                    <th className="py-2 px-2 border-r border-zinc-300 text-center w-16">
+                      TMA Grade
+                    </th>
+                    <th className="py-2 px-3 border-r border-zinc-300 text-center bg-purple-50/50 w-24">
+                      Practical Marks
+                    </th>
+                    <th className="py-2 px-2 border-r border-zinc-300 text-center w-16">
+                      Prac Grade
+                    </th>
+                    <th className="py-2 px-3 text-center w-32">Evaluator Sign</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-300">
                   {enrolledStudents.map((student, i) => {
-                    const mark = student.marks[selectedCourse];
-                    const grade = calculateIGNOUGrade(mark);
+                    const asgnM = getStudentAssignmentMark(student, selectedCourse);
+                    const pracM = getStudentPracticalMark(student, selectedCourse);
+
+                    const asgnG = asgnM !== null ? calculateIGNOUGrade(asgnM).grade : 'AB';
+                    const pracG = pracM !== null ? calculateIGNOUGrade(pracM).grade : '—';
+
                     return (
                       <tr key={student.id}>
-                        <td className="py-2 px-2 border-r border-zinc-300 text-center font-mono">{i + 1}</td>
-                        <td className="py-2 px-3 border-r border-zinc-300 font-mono font-bold">{student.enrollmentNo}</td>
-                        <td className="py-2 px-3 border-r border-zinc-300 font-medium">{student.studentName}</td>
-                        <td className="py-2 px-3 border-r border-zinc-300 text-center font-mono font-bold text-sm">
-                          {mark !== null && mark !== undefined ? mark : 'AB'}
+                        <td className="py-2 px-2 border-r border-zinc-300 text-center font-mono">
+                          {i + 1}
                         </td>
-                        <td className="py-2 px-3 border-r border-zinc-300 font-bold">
-                          {grade.grade}
+                        <td className="py-2 px-3 border-r border-zinc-300 font-mono font-bold">
+                          {student.enrollmentNo}
                         </td>
-                        <td className="py-2 px-3 border-zinc-300"></td>
+                        <td className="py-2 px-3 border-r border-zinc-300 font-medium">
+                          {student.studentName}
+                        </td>
+                        <td className="py-2 px-3 border-r border-zinc-300 text-center font-mono font-bold text-sm bg-amber-50/20">
+                          {asgnM !== null && asgnM !== undefined ? asgnM : 'AB'}
+                        </td>
+                        <td className="py-2 px-2 border-r border-zinc-300 text-center font-bold">
+                          {asgnG}
+                        </td>
+                        <td className="py-2 px-3 border-r border-zinc-300 text-center font-mono font-bold text-sm bg-purple-50/20">
+                          {pracM !== null && pracM !== undefined ? pracM : '—'}
+                        </td>
+                        <td className="py-2 px-2 border-r border-zinc-300 text-center font-bold">
+                          {pracG}
+                        </td>
+                        <td className="py-2 px-3 border-zinc-300 text-center text-zinc-400">
+                          ___________
+                        </td>
                       </tr>
                     );
                   })}
@@ -645,7 +1094,9 @@ export const MarksEntry: React.FC = () => {
                 <div>
                   <div className="font-bold text-zinc-800">Evaluator Certification:</div>
                   <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed">
-                    Certified that all the assignment scripts received under this course have been evaluated by me strictly according to IGNOU criteria. No marks have been erased or altered without signature.
+                    Certified that all Assignment (TMA) scripts and Practical / Lab records received
+                    under course {selectedCourse} have been evaluated by me strictly according to IGNOU
+                    criteria. Assignment and Practical marks have been awarded and recorded separately.
                   </p>
                   <div className="mt-6">
                     <div className="w-48 border-b border-zinc-800 mb-1"></div>
@@ -656,11 +1107,15 @@ export const MarksEntry: React.FC = () => {
                 <div className="text-right flex flex-col justify-between">
                   <div>
                     <div className="font-bold text-zinc-800">Study Centre Verification:</div>
-                    <div className="text-[10px] text-zinc-500 mt-1">Verified and checked against counter receipts.</div>
+                    <div className="text-[10px] text-zinc-500 mt-1">
+                      Verified and checked against counter receipts and primary intake register.
+                    </div>
                   </div>
                   <div className="mt-6">
                     <div className="w-48 border-b border-zinc-800 mb-1 ml-auto"></div>
-                    <span className="font-bold">Coordinator / PIC (SC-2033)</span>
+                    <span className="font-bold">
+                      {settings.coordinatorName || 'Coordinator / PIC (SC-2033)'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -669,7 +1124,7 @@ export const MarksEntry: React.FC = () => {
             <div className="bg-zinc-50 px-6 py-3 border-t border-zinc-200 text-right print:hidden">
               <button
                 onClick={() => setIsAwardListModalOpen(false)}
-                className="px-4 py-1.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-800 rounded-lg text-xs font-semibold"
+                className="px-4 py-1.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-800 rounded-lg text-xs font-semibold cursor-pointer"
               >
                 Close Preview
               </button>

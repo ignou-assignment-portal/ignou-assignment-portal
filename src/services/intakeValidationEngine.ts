@@ -44,6 +44,9 @@ export interface ValidateIntakeParams {
   existingIntakes: IntakeRecord[];
   existingEvaluations?: CourseEvaluationRecord[];
   existingReceipts?: RegistrationReceipt[];
+  practicalCourses?: string[];
+  assignmentCourses?: string[];
+  courseComponents?: Record<string, 'Assignment' | 'Practical' | 'Both'>;
 }
 
 /**
@@ -162,10 +165,62 @@ export function getEnrolledCoursesForStudent(
 }
 
 /**
+ * Gets map of courses and their specific enrolled components ('Assignment' | 'Practical')
+ * for a student (excluding currentIntakeId).
+ */
+export function getEnrolledCourseComponentsForStudent(
+  enrollmentNo: string,
+  existingIntakes: IntakeRecord[] = [],
+  existingEvaluations?: CourseEvaluationRecord[],
+  currentIntakeId?: string
+): Map<string, Set<'Assignment' | 'Practical'>> {
+  const cleanEnr = normEnrollment(enrollmentNo);
+  const map = new Map<string, Set<'Assignment' | 'Practical'>>();
+  if (!cleanEnr) return map;
+
+  const addComp = (code: string, type: 'Assignment' | 'Practical') => {
+    const cleanC = normCode(code);
+    if (!cleanC) return;
+    const current = map.get(cleanC) || new Set<'Assignment' | 'Practical'>();
+    current.add(type);
+    map.set(cleanC, current);
+  };
+
+  if (Array.isArray(existingEvaluations)) {
+    existingEvaluations.forEach((ce) => {
+      if (!ce) return;
+      if (currentIntakeId && (ce.intakeId === currentIntakeId || ce.id === currentIntakeId)) return;
+      const ceEnr = normEnrollment(ce.enrollmentNo || (ce as any).Enrollment_No || (ce as any)['Enrollment No']);
+      if (ceEnr === cleanEnr) {
+        const c = ce.courseCode || (ce as any).Course_Code;
+        if (c) {
+          const isPrac = Boolean(ce.isPractical || ce.componentType === 'Practical');
+          addComp(c, isPrac ? 'Practical' : 'Assignment');
+        }
+      }
+    });
+  }
+
+  if (Array.isArray(existingIntakes)) {
+    existingIntakes.forEach((it) => {
+      if (!it) return;
+      if (currentIntakeId && (it.id === currentIntakeId || it.tokenNo === currentIntakeId)) return;
+      const itEnr = normEnrollment(it.enrollmentNo || (it as any).Enrollment_No || (it as any).studentId || (it as any)['Enrollment No']);
+      if (itEnr === cleanEnr) {
+        (it.practicalCourses || []).forEach((c) => addComp(c, 'Practical'));
+        (it.assignmentCourses || []).forEach((c) => addComp(c, 'Assignment'));
+      }
+    });
+  }
+
+  return map;
+}
+
+/**
  * Core Validation Engine enforcing:
  * - Rule 1: Enrollment Number vs. Programme Scope (same enrollment cannot exist in different programmes)
- * - Rule 2: Multi-Course Intake Allowance (same enrollment & programme allowed if courses are completely different)
- * - Rule 3: No Duplicate Course Selections (no repeated courses within entry or across student's profile)
+ * - Rule 2: Multi-Course Intake Allowance (same enrollment & programme allowed if courses or components are different)
+ * - Rule 3: No Duplicate Course Selections (no repeated courses or components within entry or across student's profile)
  */
 export function validateIntakeRecord(params: ValidateIntakeParams): ValidationResult {
   const cleanEnr = normEnrollment(params.enrollmentNo);
@@ -244,7 +299,13 @@ export function validateIntakeRecord(params: ValidateIntakeParams): ValidationRe
 
   // --- Rule 2 & Rule 3: Multi-Course Intake Allowance & No Duplicate Course Selections Across Entries ---
   // A student can have multiple intake records using SAME Enrollment & SAME Programme,
-  // but ONLY if the Course Selection is completely different for each entry.
+  // but ONLY if the Course Selection (or Component Type: Assignment vs Practical) is completely different for each entry.
+  const enrolledComponents = getEnrolledCourseComponentsForStudent(
+    cleanEnr,
+    params.existingIntakes,
+    params.existingEvaluations,
+    params.currentIntakeId
+  );
   const alreadyEnrolledCourses = getEnrolledCoursesForStudent(
     cleanEnr,
     params.existingIntakes,
@@ -254,7 +315,22 @@ export function validateIntakeRecord(params: ValidateIntakeParams): ValidationRe
 
   const repeatedCourses: string[] = [];
   seenInBatch.forEach((c) => {
-    if (alreadyEnrolledCourses.has(c)) {
+    const desiredComp = params.courseComponents?.[c] ||
+      (params.practicalCourses?.includes(c) ? 'Practical' : params.assignmentCourses?.includes(c) ? 'Assignment' : undefined);
+    
+    const existingComps = enrolledComponents.get(c);
+    if (existingComps && existingComps.size > 0) {
+      if (!desiredComp) {
+        repeatedCourses.push(c);
+      } else if (desiredComp === 'Both') {
+        if (existingComps.has('Assignment') || existingComps.has('Practical')) {
+          const compsStr = Array.from(existingComps).join(' & ');
+          repeatedCourses.push(`${c} (${compsStr} already submitted)`);
+        }
+      } else if (existingComps.has(desiredComp as 'Assignment' | 'Practical')) {
+        repeatedCourses.push(`${c} (${desiredComp})`);
+      }
+    } else if (alreadyEnrolledCourses.has(c) && !desiredComp) {
       repeatedCourses.push(c);
     }
   });
@@ -263,7 +339,7 @@ export function validateIntakeRecord(params: ValidateIntakeParams): ValidationRe
     return {
       valid: false,
       rule: 'Rule 3: No Duplicate Course Selections',
-      reason: `Duplicate course selection detected: Student ${cleanEnr} is already enrolled in course(s): ${repeatedCourses.join(', ')}. RULE: Additional intake of student is permitted if the course code is different.`,
+      reason: `Duplicate course selection detected: Student ${cleanEnr} is already enrolled in course(s): ${repeatedCourses.join(', ')}. RULE: Additional intake of student is permitted if the course code or component (Assignment vs Practical) is different.`,
     };
   }
 

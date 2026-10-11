@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { CoursePacket } from '../types';
-import { formatDate } from '../utils/helpers';
+import { formatDate, isPracticalCourse, isDualComponentCourse } from '../utils/helpers';
 import {
   Layers,
   PackageCheck,
@@ -229,7 +229,18 @@ export const CourseLedgerView: React.FC = () => {
                   return (
                     <tr key={course.courseCode} className="hover:bg-zinc-50 transition">
                       <td className="py-3 px-4 font-mono font-bold text-sm text-indigo-950">
-                        {course.courseCode}
+                        <div className="flex items-center gap-1.5">
+                          <span>{course.courseCode}</span>
+                          {isDualComponentCourse(course.courseCode) ? (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-sans font-bold bg-indigo-100 text-indigo-900 border border-indigo-200">
+                              TMA + Practical
+                            </span>
+                          ) : isPracticalCourse(course.courseCode) ? (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-sans font-bold bg-purple-100 text-purple-900 border border-purple-200">
+                              Practical
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="py-3 px-4 font-bold text-zinc-700">
                         {course.programmeCode}
