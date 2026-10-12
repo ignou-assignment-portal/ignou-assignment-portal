@@ -41,6 +41,9 @@ interface MatrixRow {
   enrolledCourses: { code: string; count: number; title?: string }[];
 }
 
+// Component filter type for Status Matrix
+export type MatrixComponentFilter = 'TMA' | 'PRACTICAL' | 'ALL';
+
 // Helper to safely extract course code strings from any record representation
 const getRecordCourses = (r: any): string[] => {
   if (!r) return [];
@@ -54,9 +57,41 @@ const getRecordCourses = (r: any): string[] => {
   return [];
 };
 
+// Helper to filter courses by component type (TMA vs Practical vs All)
+const getRecordFilteredCourses = (r: any, filter: MatrixComponentFilter): string[] => {
+  const allCourses = getRecordCourses(r);
+  if (filter === 'ALL') return allCourses;
+
+  const pracCourses = new Set(
+    (r.practicalCourses || []).map((c: string) => String(c).trim().toUpperCase())
+  );
+  const assignCourses = new Set(
+    (r.assignmentCourses || []).map((c: string) => String(c).trim().toUpperCase())
+  );
+
+  return allCourses.filter((code) => {
+    const isExplicitPrac = pracCourses.has(code);
+    const isExplicitAssign = assignCourses.has(code);
+    const isPracCourse = isPracticalCourse(code);
+
+    if (filter === 'PRACTICAL') {
+      if (isExplicitPrac) return true;
+      if (!isExplicitAssign && isPracCourse) return true;
+      return false;
+    } else {
+      // TMA (Assignment) - default for all students
+      if (isExplicitAssign) return true;
+      if (isExplicitPrac) return false;
+      return !isPracCourse;
+    }
+  });
+};
+
 export const IntakeStatusMatrix: React.FC = () => {
   const { currentSession, sessionIntakes = [], sessionPackets = [] } = useApp();
 
+  // Option in the beginning: TMA (All students default) vs Practical (Few students) vs All Components
+  const [componentFilter, setComponentFilter] = useState<MatrixComponentFilter>('TMA');
   const [grouping, setGrouping] = useState<MatrixGrouping>('PROGRAMME');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('ALL');
@@ -67,53 +102,74 @@ export const IntakeStatusMatrix: React.FC = () => {
     return (sessionIntakes || []).filter((r): r is NonNullable<typeof r> => Boolean(r));
   }, [sessionIntakes]);
 
-  // Summary Metrics calculations
+  // Intake records filtered by component (TMA vs Practical)
+  const filteredSessionIntakes = useMemo(() => {
+    if (componentFilter === 'ALL') return safeSessionIntakes;
+    return safeSessionIntakes.filter((r) => getRecordFilteredCourses(r, componentFilter).length > 0);
+  }, [safeSessionIntakes, componentFilter]);
+
+  // Summary Metrics calculations based on selected component
   const totalCandidates = useMemo(() => {
     return new Set(
-      safeSessionIntakes.map((r) =>
+      filteredSessionIntakes.map((r) =>
         String(r?.enrollmentNo || (r as any)?.Enrollment_No || (r as any)?.studentId || '').trim()
       ).filter(Boolean)
     ).size;
-  }, [safeSessionIntakes]);
+  }, [filteredSessionIntakes]);
 
   const totalCourseScripts = useMemo(() => {
-    return safeSessionIntakes.reduce((acc, r) => acc + getRecordCourses(r).length, 0);
-  }, [safeSessionIntakes]);
+    return filteredSessionIntakes.reduce(
+      (acc, r) => acc + getRecordFilteredCourses(r, componentFilter).length,
+      0
+    );
+  }, [filteredSessionIntakes, componentFilter]);
 
   const totalAllotted = useMemo(() => {
     return (sessionPackets || [])
-      .filter((p) => p && p.evaluatorId !== null)
+      .filter((p) => {
+        if (!p || p.evaluatorId === null) return false;
+        if (componentFilter === 'ALL') return true;
+        const cCode = String(p.courseCode || '').trim().toUpperCase();
+        const isPrac = isPracticalCourse(cCode);
+        return componentFilter === 'PRACTICAL' ? isPrac : !isPrac;
+      })
       .reduce((acc, p) => acc + (p.scriptCount || 0), 0);
-  }, [sessionPackets]);
+  }, [sessionPackets, componentFilter]);
 
   const totalEvaluated = useMemo(() => {
     let evalCount = 0;
-    safeSessionIntakes.forEach((r) => {
+    filteredSessionIntakes.forEach((r) => {
       if (!r) return;
-      const courses = getRecordCourses(r);
+      const courses = getRecordFilteredCourses(r, componentFilter);
       courses.forEach((c) => {
-        if (r.marks && r.marks[c] !== null && r.marks[c] !== undefined) {
+        if (r.marks && r.marks[c] !== null && r.marks[c] !== undefined && !isNaN(Number(r.marks[c]))) {
           evalCount++;
         }
       });
     });
     // Check packets marked Evaluated as secondary check
     const packetEval = (sessionPackets || [])
-      .filter((p) => p && (p.status === 'Evaluated' || p.status === 'Archived'))
+      .filter((p) => {
+        if (!p || (p.status !== 'Evaluated' && p.status !== 'Archived')) return false;
+        if (componentFilter === 'ALL') return true;
+        const cCode = String(p.courseCode || '').trim().toUpperCase();
+        const isPrac = isPracticalCourse(cCode);
+        return componentFilter === 'PRACTICAL' ? isPrac : !isPrac;
+      })
       .reduce((acc, p) => acc + (p.scriptCount || 0), 0);
     return Math.max(evalCount, Math.min(packetEval, totalCourseScripts));
-  }, [safeSessionIntakes, sessionPackets, totalCourseScripts]);
+  }, [filteredSessionIntakes, sessionPackets, totalCourseScripts, componentFilter]);
 
   const totalLocked = useMemo(() => {
     let locked = 0;
-    safeSessionIntakes.forEach((r) => {
+    filteredSessionIntakes.forEach((r) => {
       if (!r) return;
       if (r.status === 'Marks Uploaded' || (r.status as any) === 'Locked' || (r as any).isLocked) {
-        locked += getRecordCourses(r).length;
+        locked += getRecordFilteredCourses(r, componentFilter).length;
       }
     });
     return locked;
-  }, [safeSessionIntakes]);
+  }, [filteredSessionIntakes, componentFilter]);
 
   const pendingAllotment = useMemo(() => {
     return Math.max(0, totalCourseScripts - totalAllotted);
@@ -124,14 +180,13 @@ export const IntakeStatusMatrix: React.FC = () => {
     return `${((totalEvaluated / totalCourseScripts) * 100).toFixed(1)}%`;
   }, [totalEvaluated, totalCourseScripts]);
 
-  // Build matrix rows according to active grouping
+  // Build matrix rows according to active grouping and componentFilter
   const matrixData = useMemo<MatrixRow[]>(() => {
     if (grouping === 'PROGRAMME') {
       // Group by Programme
-      // Gather all programmes that exist in IGNOU master data or sessionIntakes
       const progCodes = Array.from(
         new Set([
-          ...safeSessionIntakes.map((r) => String(r?.programmeCode || (r as any)?.Programme || '').trim().toUpperCase()).filter(Boolean),
+          ...filteredSessionIntakes.map((r) => String(r?.programmeCode || (r as any)?.Programme || '').trim().toUpperCase()).filter(Boolean),
           ...IGNOU_PROGRAMMES.map((p) => p.code.toUpperCase()),
         ])
       );
@@ -141,13 +196,16 @@ export const IntakeStatusMatrix: React.FC = () => {
 
       progCodes.forEach((pCode) => {
         const progMaster = IGNOU_PROGRAMMES.find((p) => p.code.toUpperCase() === pCode);
-        const progIntakes = safeSessionIntakes.filter(
+        const progIntakes = filteredSessionIntakes.filter(
           (r) => String(r?.programmeCode || (r as any)?.Programme || '').trim().toUpperCase() === pCode
         );
-        const totalIntake = progIntakes.reduce((acc, r) => acc + getRecordCourses(r).length, 0);
+        const totalIntake = progIntakes.reduce(
+          (acc, r) => acc + getRecordFilteredCourses(r, componentFilter).length,
+          0
+        );
 
         // Only show programmes with submissions or if no submissions at all, show master list
-        if (totalIntake === 0 && safeSessionIntakes.length > 0) return;
+        if (totalIntake === 0 && filteredSessionIntakes.length > 0) return;
 
         const candidates = new Set(
           progIntakes.map((r) => String(r?.enrollmentNo || (r as any)?.Enrollment_No || '').trim()).filter(Boolean)
@@ -155,16 +213,22 @@ export const IntakeStatusMatrix: React.FC = () => {
 
         // Allotted scripts
         const allotted = (sessionPackets || [])
-          .filter((p) => p && String(p.programmeCode || '').toUpperCase() === pCode && p.evaluatorId !== null)
+          .filter((p) => {
+            if (!p || String(p.programmeCode || '').toUpperCase() !== pCode || p.evaluatorId === null) return false;
+            if (componentFilter === 'ALL') return true;
+            const cCode = String(p.courseCode || '').trim().toUpperCase();
+            const isPrac = isPracticalCourse(cCode);
+            return componentFilter === 'PRACTICAL' ? isPrac : !isPrac;
+          })
           .reduce((acc, p) => acc + (p.scriptCount || 0), 0);
 
         // Evaluated scripts
         let evaluated = 0;
         progIntakes.forEach((r) => {
           if (!r) return;
-          const courses = getRecordCourses(r);
+          const courses = getRecordFilteredCourses(r, componentFilter);
           courses.forEach((c) => {
-            if (r.marks && r.marks[c] !== null && r.marks[c] !== undefined) {
+            if (r.marks && r.marks[c] !== null && r.marks[c] !== undefined && !isNaN(Number(r.marks[c]))) {
               evaluated++;
             }
           });
@@ -175,7 +239,7 @@ export const IntakeStatusMatrix: React.FC = () => {
         progIntakes.forEach((r) => {
           if (!r) return;
           if (r.status === 'Marks Uploaded' || (r.status as any) === 'Locked' || (r as any).isLocked) {
-            locked += getRecordCourses(r).length;
+            locked += getRecordFilteredCourses(r, componentFilter).length;
           }
         });
 
@@ -185,7 +249,7 @@ export const IntakeStatusMatrix: React.FC = () => {
         const courseCountMap: Record<string, number> = {};
         progIntakes.forEach((r) => {
           if (!r) return;
-          const courses = getRecordCourses(r);
+          const courses = getRecordFilteredCourses(r, componentFilter);
           courses.forEach((c) => {
             courseCountMap[c] = (courseCountMap[c] || 0) + 1;
           });
@@ -249,10 +313,10 @@ export const IntakeStatusMatrix: React.FC = () => {
         }
       > = {};
 
-      safeSessionIntakes.forEach((r) => {
+      filteredSessionIntakes.forEach((r) => {
         if (!r) return;
         const pCode = String(r?.programmeCode || (r as any)?.Programme || '').trim().toUpperCase();
-        const courses = getRecordCourses(r);
+        const courses = getRecordFilteredCourses(r, componentFilter);
         const enr = String(r?.enrollmentNo || (r as any)?.Enrollment_No || '').trim();
         courses.forEach((cCode) => {
           if (!courseMap[cCode]) {
@@ -266,7 +330,7 @@ export const IntakeStatusMatrix: React.FC = () => {
           }
           if (enr) courseMap[cCode].candidates.add(enr);
           courseMap[cCode].intakesCount++;
-          if (r.marks && r.marks[cCode] !== null && r.marks[cCode] !== undefined) {
+          if (r.marks && r.marks[cCode] !== null && r.marks[cCode] !== undefined && !isNaN(Number(r.marks[cCode]))) {
             courseMap[cCode].evaluatedCount++;
           }
           if (r.status === 'Marks Uploaded' || (r.status as any) === 'Locked' || (r as any).isLocked) {
@@ -304,10 +368,13 @@ export const IntakeStatusMatrix: React.FC = () => {
           statusColor = 'bg-indigo-100 text-indigo-800';
         }
 
+        const isPrac = isPracticalCourse(cCode);
+        const compTag = isPrac ? ' [Practical]' : ' [TMA]';
+
         rows.push({
           sNo: sNo++,
           key: cCode,
-          programmeOrTitle: `${cCode}: ${title || 'Curriculum Course'} (${stats.programmeCode})`,
+          programmeOrTitle: `${cCode}${compTag}: ${title || 'Curriculum Course'} (${stats.programmeCode})`,
           programmeCode: stats.programmeCode,
           candidatesCount: stats.candidates.size,
           totalIntake: stats.intakesCount,
@@ -325,9 +392,9 @@ export const IntakeStatusMatrix: React.FC = () => {
     } else {
       // Overall Total (Single consolidated summary row + programme distribution)
       const allDistinctCourses: Record<string, number> = {};
-      safeSessionIntakes.forEach((r) => {
+      filteredSessionIntakes.forEach((r) => {
         if (!r) return;
-        const courses = getRecordCourses(r);
+        const courses = getRecordFilteredCourses(r, componentFilter);
         courses.forEach((c) => {
           allDistinctCourses[c] = (allDistinctCourses[c] || 0) + 1;
         });
@@ -338,11 +405,18 @@ export const IntakeStatusMatrix: React.FC = () => {
         count,
       }));
 
+      const filterLabel =
+        componentFilter === 'TMA'
+          ? 'TMA (ASSIGNMENTS ONLY)'
+          : componentFilter === 'PRACTICAL'
+          ? 'PRACTICAL (LAB / VIVA ONLY)'
+          : 'ALL COMPONENTS (TMA + PRACTICAL)';
+
       return [
         {
           sNo: 1,
           key: 'ALL-OVERALL',
-          programmeOrTitle: `ALL PROGRAMMES CONSOLIDATED (Study Centre SC-2033 • ${currentSession})`,
+          programmeOrTitle: `ALL PROGRAMMES CONSOLIDATED • ${filterLabel} (Study Centre SC-2033 • ${currentSession})`,
           programmeCode: 'CENTRE-WIDE',
           department: 'Consolidated Academic Operations',
           candidatesCount: totalCandidates,
@@ -359,7 +433,8 @@ export const IntakeStatusMatrix: React.FC = () => {
     }
   }, [
     grouping,
-    safeSessionIntakes,
+    componentFilter,
+    filteredSessionIntakes,
     sessionPackets,
     totalCandidates,
     totalCourseScripts,
@@ -428,7 +503,7 @@ export const IntakeStatusMatrix: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `IGNOU_SC2033_Intake_Matrix_${currentSession.replace(/\s+/g, '_')}.csv`);
+    link.setAttribute('download', `IGNOU_SC2033_Intake_Matrix_${componentFilter}_${currentSession.replace(/\s+/g, '_')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -436,6 +511,104 @@ export const IntakeStatusMatrix: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      {/* Component Mode Selector in the beginning: TMA (Assignment) vs Practical vs All */}
+      <div className="bg-white rounded-2xl border border-zinc-200 p-3 sm:p-4 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className={`p-2 rounded-xl ${
+              componentFilter === 'TMA'
+                ? 'bg-indigo-50 text-indigo-700'
+                : componentFilter === 'PRACTICAL'
+                ? 'bg-purple-50 text-purple-700'
+                : 'bg-zinc-100 text-zinc-800'
+            }`}>
+              {componentFilter === 'PRACTICAL' ? (
+                <FlaskConical className="w-5 h-5 text-purple-700" />
+              ) : (
+                <FileCheck2 className="w-5 h-5 text-indigo-700" />
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-900">
+                  Select Component (In the Beginning):
+                </span>
+                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                  componentFilter === 'TMA'
+                    ? 'bg-indigo-100 text-indigo-900'
+                    : componentFilter === 'PRACTICAL'
+                    ? 'bg-purple-100 text-purple-900'
+                    : 'bg-zinc-200 text-zinc-900'
+                }`}>
+                  {componentFilter === 'TMA'
+                    ? 'Assignment (TMA) Active — All Students'
+                    : componentFilter === 'PRACTICAL'
+                    ? 'Practical (Lab/Viva) Active — Few Students'
+                    : 'All Components Active (TMA + Practical)'}
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-500 mt-0.5">
+                All students submit their Assignment (TMA) only, while few students submit Practical. Select option to filter matrix counts and course status.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-zinc-100 p-1 rounded-xl border border-zinc-200 self-start sm:self-auto shadow-2xs">
+            <button
+              type="button"
+              id="matrix-filter-tma-btn"
+              onClick={() => setComponentFilter('TMA')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                componentFilter === 'TMA'
+                  ? 'bg-indigo-600 text-white shadow-xs font-black'
+                  : 'text-zinc-700 hover:text-zinc-950 hover:bg-zinc-200/60'
+              }`}
+            >
+              <FileCheck2 className="w-3.5 h-3.5" />
+              <span>Assignment (TMA)</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                componentFilter === 'TMA' ? 'bg-indigo-700 text-white' : 'bg-zinc-200 text-zinc-700'
+              }`}>
+                All Students
+              </span>
+            </button>
+
+            <button
+              type="button"
+              id="matrix-filter-practical-btn"
+              onClick={() => setComponentFilter('PRACTICAL')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                componentFilter === 'PRACTICAL'
+                  ? 'bg-purple-700 text-white shadow-xs font-black'
+                  : 'text-purple-900 hover:text-purple-950 hover:bg-purple-100/60'
+              }`}
+            >
+              <FlaskConical className="w-3.5 h-3.5 text-purple-300" />
+              <span>Practical</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                componentFilter === 'PRACTICAL' ? 'bg-purple-800 text-white' : 'bg-purple-100 text-purple-800'
+              }`}>
+                Few Students
+              </span>
+            </button>
+
+            <button
+              type="button"
+              id="matrix-filter-all-btn"
+              onClick={() => setComponentFilter('ALL')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                componentFilter === 'ALL'
+                  ? 'bg-zinc-900 text-white shadow-xs font-black'
+                  : 'text-zinc-700 hover:text-zinc-950 hover:bg-zinc-200/60'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>All Components</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* 4 Summary Cards on Top */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Card 1: Total Candidates */}

@@ -358,6 +358,34 @@ export const parseEvaluatorsMaster = (rawList: any[]): Evaluator[] => {
   });
 };
 
+const DUMMY_SEED_ENROLLMENTS = new Set([
+  '2350198421', '2350198455', '2350198490', '2240981723', '2240981750',
+  '2109483721', '2401829103', '2391028374', '2401928371', '2450192831',
+  '2510294812', '2510294899', '2209182390', '2351829014', '2410982341'
+]);
+
+export const isDummySubmissionId = (id: string, studentId?: string): boolean => {
+  const sId = String(id || '').trim();
+  if (sId.startsWith('sub-jul26-') || sId.startsWith('sub-jan27-') || sId.startsWith('sub-jan26-')) return true;
+  if (sId.startsWith('sub-') && studentId && DUMMY_SEED_ENROLLMENTS.has(String(studentId).trim())) {
+    const numPart = sId.replace('sub-', '');
+    if (/^\d+$/.test(numPart) && Number(numPart) <= 50) return true;
+  }
+  return false;
+};
+
+export const isDummyIntakeId = (id: string): boolean => {
+  const sId = String(id || '').trim();
+  if (sId.startsWith('intake-jul26-') || sId.startsWith('intake-jan27-') || sId.startsWith('intake-jan26-')) return true;
+  return false;
+};
+
+export const isDummyEvaluationId = (id: string, intakeId?: string): boolean => {
+  const sIntakeId = String(intakeId || '').trim();
+  if (sIntakeId.startsWith('intake-jul26-') || sIntakeId.startsWith('intake-jan27-') || sIntakeId.startsWith('intake-jan26-')) return true;
+  return false;
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Settings & Sessions
   const [settings, setSettings] = useState<SystemSettings>(() => {
@@ -656,8 +684,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
+          const hasReal = parsed.some((item: any) => !isDummyIntakeId(item.id));
+          const list = hasReal ? parsed.filter((item: any) => !isDummyIntakeId(item.id)) : parsed;
           const seenIds = new Set<string>();
-          return parsed.map((item: any, idx: number) => {
+          return list.map((item: any, idx: number) => {
             let id = item.id;
             const enr = item.enrollmentNo || 'cand';
             const sess = (item.session || 'July2026').replace(/\s+/g, '');
@@ -717,7 +747,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const saved = localStorage.getItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const hasReal = parsed.some((s: any) => !isDummySubmissionId(s.id, s.studentId));
+          if (hasReal) {
+            const cleaned = parsed.filter((s: any) => !isDummySubmissionId(s.id, s.studentId));
+            try {
+              localStorage.setItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS, JSON.stringify(cleaned));
+            } catch {}
+            return cleaned;
+          }
+          return parsed;
+        }
       }
       return INITIAL_ASSIGNMENT_SUBMISSIONS;
     } catch {
@@ -749,7 +789,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (saved) {
         const data: CourseEvaluationRecord[] = JSON.parse(saved);
         if (Array.isArray(data) && data.length > 0) {
-          return data.map((rec) => ({
+          const hasReal = data.some((rec) => !isDummyEvaluationId(rec.id, rec.intakeId));
+          const list = hasReal ? data.filter((rec) => !isDummyEvaluationId(rec.id, rec.intakeId)) : data;
+          return list.map((rec) => ({
             ...rec,
             lockedBy: rec.lockedBy?.includes('Aggarwal') ? 'Dr. Sant K. Gupta (Coordinator)' : rec.lockedBy,
           }));
@@ -1701,11 +1743,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [bills, currentSession]);
 
   const sessionAssignmentSubmissions = useMemo(() => {
-    return (assignmentSubmissions || []).filter((s: any) => {
+    const list = (assignmentSubmissions || []).filter((s: any) => {
       if (!s) return false;
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
       return normalizeSession(s.Session || s.session) === normalizeSession(currentSession);
     });
+    // If real submissions exist in this session, filter out dummy seed submissions completely
+    const hasReal = list.some((s: any) => !isDummySubmissionId(s.id, s.studentId));
+    if (hasReal) {
+      return list.filter((s: any) => !isDummySubmissionId(s.id, s.studentId));
+    }
+    return list;
   }, [assignmentSubmissions, currentSession]);
 
   const sessionRegistrationReceipts = useMemo(() => {
@@ -2108,13 +2156,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       setCourseEvaluations((prev) => {
-        const map = new Map(prev.map((item) => [item.id, item]));
+        const cleanPrev = prev.filter((item) => !isDummyEvaluationId(item.id, item.intakeId));
+        const map = new Map(cleanPrev.map((item) => [item.id, item]));
         unpackedRows.forEach((row) => map.set(row.id, row));
         const combined = Array.from(map.values());
         // Immediate localStorage backup
         try {
           localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(combined));
-          localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify([newRecord, ...intakes]));
+          localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify([newRecord, ...intakes.filter((i) => !isDummyIntakeId(i.id))]));
+        } catch {}
+        return combined;
+      });
+
+      // Also ensure assignmentSubmissions is directly synced with newly recorded course scripts
+      setAssignmentSubmissions((prev) => {
+        const cleanPrev = prev.filter((s) => !isDummySubmissionId(s.id, s.studentId));
+        const map = new Map(cleanPrev.map((s) => [s.id, s]));
+        unpackedRows.forEach((row) => {
+          const id = row.subId || `sub-${row.enrollmentNo}-${row.courseCode}`;
+          map.set(id, {
+            id,
+            studentId: row.enrollmentNo,
+            studentName: row.studentName,
+            programmeCode: row.programmeCode,
+            courseCode: row.courseCode,
+            session: row.session,
+            status: 'submitted',
+            submissionDate: row.submissionDate,
+            submissionMode: (row.submissionMode as any) || 'In-Person (Desk)',
+            consignmentNo: row.consignmentNo,
+            remarks: row.remarks,
+            Session: row.session,
+            Course_Code: row.courseCode,
+            Enrollment_No: row.enrollmentNo,
+            componentType: row.componentType || (row.isPractical ? 'Practical' : 'Assignment'),
+            isPractical: Boolean(row.isPractical),
+          } as any);
+        });
+        const combined = Array.from(map.values());
+        try {
+          localStorage.setItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS, JSON.stringify(combined));
         } catch {}
         return combined;
       });
@@ -3923,8 +4004,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
 
         // Also update Assignment Submissions so Course Submissions Tracker is hydrated
-        setAssignmentSubmissions((prev) => {
-          const map = new Map(prev.map((s) => [s.id, s]));
+        // Build directly from cleanLedger so NO dummy mock entries persist!
+        setAssignmentSubmissions(() => {
+          const map = new Map<string, AssignmentSubmission>();
           cleanLedger.forEach((cl: any) => {
             const id = cl.subId || `sub-${cl.enrollmentNo}-${cl.courseCode}`;
             map.set(id, {
@@ -3940,9 +4022,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               Session: cl.session,
               Course_Code: cl.courseCode,
               Enrollment_No: cl.enrollmentNo,
+              componentType: cl.componentType || (cl.isPractical ? 'Practical' : 'Assignment'),
+              isPractical: Boolean(cl.isPractical),
             } as any);
           });
-          return Array.from(map.values());
+          const result = Array.from(map.values());
+          try {
+            localStorage.setItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS, JSON.stringify(result));
+          } catch {}
+          return result;
         });
 
         // 4. Update LocalStorage Cache immediately so data survives reloads & login

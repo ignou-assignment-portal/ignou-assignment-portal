@@ -22,6 +22,7 @@ import {
   Receipt,
   ShieldCheck,
   FileCheck,
+  FileCheck2,
   Eye,
   CheckCircle2,
   Phone,
@@ -1824,31 +1825,37 @@ export const IntakeDesk: React.FC = () => {
               )}
 
               <form onSubmit={handleSubmitAndGenerateReceipt} className="space-y-4">
-                {/* Submission Category Selector: TMA (Assignment) vs Practical */}
-                <div className="p-3.5 bg-gradient-to-r from-indigo-50/90 via-purple-50/70 to-zinc-50 border border-indigo-200/80 rounded-xl">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                {/* Submission Category Selector in the Beginning: TMA (Assignment) vs Practical */}
+                <div className="p-4 bg-gradient-to-r from-indigo-50/95 via-purple-50/80 to-zinc-50 border-2 border-indigo-200/90 rounded-2xl shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-black uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
-                          <Layers className="w-3.5 h-3.5 text-indigo-600" />
-                          <span>Intake Category:</span>
+                          <Layers className="w-4 h-4 text-indigo-600" />
+                          <span>Select Intake Category (In the Beginning):</span>
                         </span>
-                        <span className="text-[10px] text-zinc-500 font-medium">
-                          (Most students submit TMA Assignment; select Practical for lab/project/practicals)
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          defaultIntakeComponent === 'Assignment'
+                            ? 'bg-indigo-100 text-indigo-900 border border-indigo-200'
+                            : 'bg-purple-100 text-purple-900 border border-purple-200'
+                        }`}>
+                          {defaultIntakeComponent === 'Assignment'
+                            ? 'All Students Submit TMA Only (Default)'
+                            : 'Few Students Submit Practical'}
                         </span>
                       </div>
-                      <p className="text-[11px] text-zinc-600 mt-0.5">
-                        Selected component will apply by default to all enrolled course codes.
+                      <p className="text-[11px] text-zinc-600 mt-1">
+                        All the students submit their Assignment (TMA) only, but few students submit Practical. All added courses will automatically default to the selected component.
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2 bg-white/90 p-1 rounded-xl border border-zinc-200/90 shadow-2xs">
+                    <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-zinc-200 shadow-2xs self-start sm:self-auto">
                       <button
                         type="button"
                         id="intake-category-tma-btn"
                         onClick={() => {
                           setDefaultIntakeComponent('Assignment');
-                          // Update any currently selected courses to Assignment if not explicitly custom
+                          // Update any currently selected courses to Assignment
                           if (selectedCourses.length > 0) {
                             setCourseComponentTypes((prev) => {
                               const updated = { ...prev };
@@ -1859,16 +1866,18 @@ export const IntakeDesk: React.FC = () => {
                             });
                           }
                         }}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                        className={`px-3.5 py-2 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
                           defaultIntakeComponent === 'Assignment'
                             ? 'bg-indigo-600 text-white shadow-xs font-black'
                             : 'text-zinc-700 hover:text-zinc-950 hover:bg-zinc-100'
                         }`}
                       >
-                        <FileCheck2 className="w-3.5 h-3.5" />
+                        <FileCheck2 className="w-4 h-4" />
                         <span>Assignment (TMA)</span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold bg-indigo-700/60 text-white">
-                          Standard
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                          defaultIntakeComponent === 'Assignment' ? 'bg-indigo-700 text-white' : 'bg-zinc-200 text-zinc-700'
+                        }`}>
+                          All Students (Default)
                         </span>
                       </button>
 
@@ -1888,15 +1897,17 @@ export const IntakeDesk: React.FC = () => {
                             });
                           }
                         }}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                        className={`px-3.5 py-2 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
                           defaultIntakeComponent === 'Practical'
                             ? 'bg-purple-700 text-white shadow-xs font-black'
                             : 'text-purple-900 hover:text-purple-950 hover:bg-purple-100/60'
                         }`}
                       >
-                        <FlaskConical className="w-3.5 h-3.5 text-purple-200" />
-                        <span>Practical (Lab / Viva)</span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold bg-purple-800 text-white">
+                        <FlaskConical className="w-4 h-4 text-purple-300" />
+                        <span>Practical</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                          defaultIntakeComponent === 'Practical' ? 'bg-purple-800 text-white' : 'bg-purple-100 text-purple-800'
+                        }`}>
                           Few Students
                         </span>
                       </button>

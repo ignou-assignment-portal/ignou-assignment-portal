@@ -25,6 +25,8 @@ import {
   Sparkles,
   ChevronRight,
   RefreshCw,
+  FileCheck2,
+  FlaskConical,
 } from 'lucide-react';
 
 export const CourseSubmissionsTracker: React.FC = () => {
@@ -41,6 +43,9 @@ export const CourseSubmissionsTracker: React.FC = () => {
 
   // Mode: Track by Programme vs Track by Course
   const [trackerMode, setTrackerMode] = useState<'PROGRAMME' | 'COURSE'>('PROGRAMME');
+
+  // Component filter: ALL vs Assignment (TMA) vs Practical
+  const [componentFilter, setComponentFilter] = useState<'ALL' | 'Assignment' | 'Practical'>('ALL');
 
   // ==========================================
   // PROGRAMME-LEVEL TRACKING STATE & DATA
@@ -76,10 +81,19 @@ export const CourseSubmissionsTracker: React.FC = () => {
     };
   }, [selectedProgramme]);
 
-  // All submissions for this specific programme in current session
+  // All submissions for this specific programme in current session (respecting componentFilter)
   const programmeSubmissions = useMemo(() => {
-    return sessionAssignmentSubmissions.filter((s) => s.programmeCode === selectedProgramme);
-  }, [sessionAssignmentSubmissions, selectedProgramme]);
+    return sessionAssignmentSubmissions.filter((s) => {
+      if (s.programmeCode !== selectedProgramme) return false;
+      if (componentFilter === 'Assignment') {
+        return !s.isPractical && s.componentType !== 'Practical';
+      }
+      if (componentFilter === 'Practical') {
+        return Boolean(s.isPractical || s.componentType === 'Practical');
+      }
+      return true;
+    });
+  }, [sessionAssignmentSubmissions, selectedProgramme, componentFilter]);
 
   // Group programme submissions by student
   const programmeStudents = useMemo(() => {
@@ -247,10 +261,19 @@ export const CourseSubmissionsTracker: React.FC = () => {
     };
   }, [selectedCourse]);
 
-  // All submissions for this specific course in current session
+  // All submissions for this specific course in current session (respecting componentFilter)
   const courseSubmissions = useMemo(() => {
-    return sessionAssignmentSubmissions.filter((s) => s.courseCode === selectedCourse);
-  }, [sessionAssignmentSubmissions, selectedCourse]);
+    return sessionAssignmentSubmissions.filter((s) => {
+      if (s.courseCode !== selectedCourse) return false;
+      if (componentFilter === 'Assignment') {
+        return !s.isPractical && s.componentType !== 'Practical';
+      }
+      if (componentFilter === 'Practical') {
+        return Boolean(s.isPractical || s.componentType === 'Practical');
+      }
+      return true;
+    });
+  }, [sessionAssignmentSubmissions, selectedCourse, componentFilter]);
 
   // Filtered by search, status, and programme
   const filteredSubmissions = useMemo(() => {
@@ -506,42 +529,88 @@ export const CourseSubmissionsTracker: React.FC = () => {
         </div>
       </div>
 
-      {/* Primary Toggle: Track by Programme vs Track by Course */}
+      {/* Primary Toggle: Track by Programme vs Track by Course + Component Filter */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center bg-zinc-200/80 p-1 rounded-xl max-w-fit text-xs font-bold">
-          <button
-            type="button"
-            id="track-by-programme-btn"
-            onClick={() => setTrackerMode('PROGRAMME')}
-            className={`px-4 py-2 rounded-lg transition flex items-center gap-2 cursor-pointer ${
-              trackerMode === 'PROGRAMME'
-                ? 'bg-white text-zinc-950 shadow-xs font-bold'
-                : 'text-zinc-600 hover:text-zinc-900'
-            }`}
-          >
-            <GraduationCap className="w-4 h-4 text-indigo-600" />
-            <span>Track by Programme</span>
-            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-100 text-indigo-800 font-bold font-mono">
-              {activeProgrammeCodes.length}
-            </span>
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center bg-zinc-200/80 p-1 rounded-xl max-w-fit text-xs font-bold shadow-2xs">
+            <button
+              type="button"
+              id="track-by-programme-btn"
+              onClick={() => setTrackerMode('PROGRAMME')}
+              className={`px-4 py-2 rounded-lg transition flex items-center gap-2 cursor-pointer ${
+                trackerMode === 'PROGRAMME'
+                  ? 'bg-white text-zinc-950 shadow-xs font-bold'
+                  : 'text-zinc-600 hover:text-zinc-900'
+              }`}
+            >
+              <GraduationCap className="w-4 h-4 text-indigo-600" />
+              <span>Track by Programme</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-100 text-indigo-800 font-bold font-mono">
+                {activeProgrammeCodes.length}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            id="track-by-course-btn"
-            onClick={() => setTrackerMode('COURSE')}
-            className={`px-4 py-2 rounded-lg transition flex items-center gap-2 cursor-pointer ${
-              trackerMode === 'COURSE'
-                ? 'bg-white text-zinc-950 shadow-xs font-bold'
-                : 'text-zinc-600 hover:text-zinc-900'
-            }`}
-          >
-            <BookOpen className="w-4 h-4 text-teal-600" />
-            <span>Track by Course</span>
-            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-teal-100 text-teal-800 font-bold font-mono">
-              {activeCourseCodes.length}
-            </span>
-          </button>
+            <button
+              type="button"
+              id="track-by-course-btn"
+              onClick={() => setTrackerMode('COURSE')}
+              className={`px-4 py-2 rounded-lg transition flex items-center gap-2 cursor-pointer ${
+                trackerMode === 'COURSE'
+                  ? 'bg-white text-zinc-950 shadow-xs font-bold'
+                  : 'text-zinc-600 hover:text-zinc-900'
+              }`}
+            >
+              <BookOpen className="w-4 h-4 text-teal-600" />
+              <span>Track by Course</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-teal-100 text-teal-800 font-bold font-mono">
+                {activeCourseCodes.length}
+              </span>
+            </button>
+          </div>
+
+          {/* Component Filter Toggle: All vs TMA vs Practical */}
+          <div className="flex items-center bg-zinc-200/80 p-1 rounded-xl text-xs font-bold shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setComponentFilter('ALL')}
+              className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                componentFilter === 'ALL'
+                  ? 'bg-zinc-950 text-white shadow-xs font-black'
+                  : 'text-zinc-600 hover:text-zinc-950'
+              }`}
+              title="View all submissions (TMA + Practical)"
+            >
+              <span>All Submissions</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setComponentFilter('Assignment')}
+              className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                componentFilter === 'Assignment'
+                  ? 'bg-indigo-600 text-white shadow-xs font-black'
+                  : 'text-zinc-600 hover:text-zinc-950'
+              }`}
+              title="Filter by Theory Assignment (TMA) - Submitted by all students"
+            >
+              <FileCheck2 className="w-3.5 h-3.5" />
+              <span>TMA (Assignment)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setComponentFilter('Practical')}
+              className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                componentFilter === 'Practical'
+                  ? 'bg-purple-700 text-white shadow-xs font-black'
+                  : 'text-purple-900 hover:text-purple-950'
+              }`}
+              title="Filter by Practical (Lab / Viva / Project) - Submitted by few students"
+            >
+              <FlaskConical className="w-3.5 h-3.5" />
+              <span>Practical</span>
+            </button>
+          </div>
         </div>
 
         <div className="text-xs text-zinc-500 flex items-center gap-2">
