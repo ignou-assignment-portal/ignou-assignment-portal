@@ -41,6 +41,7 @@ export const IntakeRegister: React.FC = () => {
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedMode, setSelectedMode] = useState<string>('ALL');
   const [selectedProgramme, setSelectedProgramme] = useState<string>('ALL');
+  const [selectedComponentFilter, setSelectedComponentFilter] = useState<'ALL' | 'TMA' | 'PRACTICAL'>('ALL');
   const [editingRecord, setEditingRecord] = useState<any | null>(null);
 
   const handleEditClick = (record: any) => {
@@ -117,9 +118,37 @@ export const IntakeRegister: React.FC = () => {
       const matchesMode = selectedMode === 'ALL' || mode === selectedMode;
       const matchesProgramme = selectedProgramme === 'ALL' || programme === selectedProgramme;
 
-      return matchesQuery && matchesStatus && matchesMode && matchesProgramme;
+      let matchesComponent = true;
+      if (selectedComponentFilter !== 'ALL') {
+        const pracList: string[] = (row.practicalCourses || []).map((c: any) => String(c).trim().toUpperCase());
+        const asgnList: string[] = (row.assignmentCourses || []).map((c: any) => String(c).trim().toUpperCase());
+        const rowCourses: string[] = Array.isArray(rawCourses)
+          ? rawCourses.map((c: any) => String(c).replace(/\s*[\(\[](Practical|TMA|P|Asgn)[\)\]]\s*/gi, '').trim().toUpperCase())
+          : String(rawCourses || '').split(',').map((c) => c.replace(/\s*[\(\[](Practical|TMA|P|Asgn)[\)\]]\s*/gi, '').trim().toUpperCase()).filter(Boolean);
+
+        const hasPracticalCourse =
+          pracList.length > 0 ||
+          row.componentType === 'Practical' ||
+          row.Component === 'Practical' ||
+          row.isPractical === true ||
+          rowCourses.some((c) => pracList.includes(c) || isPracticalCourse(c));
+
+        const hasAssignmentCourse =
+          asgnList.length > 0 ||
+          row.componentType === 'Assignment' ||
+          row.Component === 'Assignment' ||
+          rowCourses.some((c) => asgnList.includes(c) || !isPracticalCourse(c));
+
+        if (selectedComponentFilter === 'PRACTICAL') {
+          matchesComponent = Boolean(hasPracticalCourse);
+        } else if (selectedComponentFilter === 'TMA') {
+          matchesComponent = Boolean(hasAssignmentCourse);
+        }
+      }
+
+      return matchesQuery && matchesStatus && matchesMode && matchesProgramme && matchesComponent;
     });
-  }, [sessionRecords, searchQuery, selectedStatus, selectedMode, selectedProgramme]);
+  }, [sessionRecords, searchQuery, selectedStatus, selectedMode, selectedProgramme, selectedComponentFilter]);
 
   // Unique programmes in this session
   const sessionProgrammes = useMemo(() => {
@@ -156,6 +185,7 @@ export const IntakeRegister: React.FC = () => {
       'Enrollment No',
       'Student Name',
       'Programme',
+      'Component',
       'Course Codes',
       'Submission Date',
       'Submission Mode',
@@ -164,19 +194,28 @@ export const IntakeRegister: React.FC = () => {
       'Registered By',
     ];
 
-    const rows = filteredRecords.map((r) => [
-      r.tokenNo,
-      r.session,
-      `'${r.enrollmentNo}`, // escape for excel
-      `"${r.studentName}"`,
-      r.programmeCode,
-      `"${r.courseCodes.join(', ')}"`,
-      r.submissionDate,
-      r.submissionMode,
-      r.status,
-      `"${Object.entries(r.marks).map(([c, m]) => `${c}:${m ?? 'NA'}`).join(', ')}"`,
-      r.registeredBy,
-    ]);
+    const rows = filteredRecords.map((r: any) => {
+      const isPrac = (r.practicalCourses || []).length > 0;
+      const isAsgn = (r.assignmentCourses || []).length > 0;
+      const compLabel = isPrac && isAsgn ? 'TMA + Practical' : isPrac ? 'Practical' : 'Assignment (TMA)';
+      const rawCourses = r.Courses || r.courses || r.courseCodes || [];
+      const coursesStr = Array.isArray(rawCourses) ? rawCourses.join(', ') : String(rawCourses);
+
+      return [
+        r.tokenNo || r.Token_No,
+        r.session || r.Session,
+        `'${r.enrollmentNo || r.Enrollment_No}`, // escape for excel
+        `"${r.studentName || r.Candidate_Name}"`,
+        r.programmeCode || r.Programme,
+        compLabel,
+        `"${coursesStr}"`,
+        r.submissionDate || r.receiptDate || r.Submission_Date,
+        r.submissionMode || r.mode || 'In-Person (Desk)',
+        r.status || r.Status || 'Received',
+        `"${Object.entries(r.marks || {}).map(([c, m]) => `${c}:${m ?? 'NA'}`).join(', ')}"`,
+        r.registeredBy || r.Official || 'Desk Official',
+      ];
+    });
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -288,24 +327,66 @@ export const IntakeRegister: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center justify-between text-xs text-zinc-500 pt-1 border-t border-zinc-100">
-          <span>
-            Showing <strong className="text-zinc-800">{filteredRecords.length}</strong> of{' '}
-            <strong className="text-zinc-800">{sessionRecords.length}</strong> submissions in {currentSession}
-          </span>
-          {(searchQuery || selectedStatus !== 'ALL' || selectedMode !== 'ALL' || selectedProgramme !== 'ALL') && (
+        {/* Component Category Selector: All vs TMA vs Practical */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-100">
+          <div className="flex items-center gap-1.5 bg-zinc-100 p-1 rounded-xl text-xs font-bold shadow-2xs">
+            <span className="text-[11px] text-zinc-500 font-semibold px-2">Component:</span>
             <button
-              onClick={() => {
-                setSearchQuery('');
-                setSelectedStatus('ALL');
-                setSelectedMode('ALL');
-                setSelectedProgramme('ALL');
-              }}
-              className="text-indigo-600 hover:text-indigo-800 font-medium"
+              type="button"
+              onClick={() => setSelectedComponentFilter('ALL')}
+              className={`px-3 py-1 rounded-lg transition cursor-pointer ${
+                selectedComponentFilter === 'ALL'
+                  ? 'bg-zinc-950 text-white shadow-xs font-black'
+                  : 'text-zinc-600 hover:text-zinc-950'
+              }`}
             >
-              Reset Filters
+              All Intake ({sessionRecords.length})
             </button>
-          )}
+            <button
+              type="button"
+              onClick={() => setSelectedComponentFilter('TMA')}
+              className={`px-3 py-1 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                selectedComponentFilter === 'TMA'
+                  ? 'bg-indigo-600 text-white shadow-xs font-black'
+                  : 'text-zinc-600 hover:text-zinc-950'
+              }`}
+            >
+              <span>Assignment (TMA)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedComponentFilter('PRACTICAL')}
+              className={`px-3 py-1 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                selectedComponentFilter === 'PRACTICAL'
+                  ? 'bg-purple-700 text-white shadow-xs font-black'
+                  : 'text-purple-900 hover:text-purple-950'
+              }`}
+            >
+              <FlaskConical className="w-3.5 h-3.5" />
+              <span>Practical (Lab)</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <span>
+              Showing <strong className="text-zinc-800">{filteredRecords.length}</strong> of{' '}
+              <strong className="text-zinc-800">{sessionRecords.length}</strong> in {currentSession}
+            </span>
+            {(searchQuery || selectedStatus !== 'ALL' || selectedMode !== 'ALL' || selectedProgramme !== 'ALL' || selectedComponentFilter !== 'ALL') && (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedStatus('ALL');
+                  setSelectedMode('ALL');
+                  setSelectedProgramme('ALL');
+                  setSelectedComponentFilter('ALL');
+                }}
+                className="text-indigo-600 hover:text-indigo-800 font-medium ml-2 cursor-pointer"
+              >
+                Reset
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -348,17 +429,27 @@ export const IntakeRegister: React.FC = () => {
                 <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }} className="flex flex-wrap items-center gap-1">
                   <span>Courses:</span>
                   {(Array.isArray(rawCourses) ? rawCourses : String(rawCourses || '').split(',').map((c: string) => c.trim()).filter(Boolean)).map((c: string) => {
-                    const isPractical = isPracticalCourse(c);
+                    const isPracInRec = ((row as any).practicalCourses || []).includes(c);
+                    const isAsgnInRec = ((row as any).assignmentCourses || []).includes(c);
+                    const isPractical = isPracInRec || (!isAsgnInRec && isPracticalCourse(c));
+                    const isDual = isPracInRec && isAsgnInRec;
+
                     return (
                       <span
                         key={c}
                         className={`font-mono text-[10px] font-bold px-1 py-0.2 rounded border inline-flex items-center gap-0.5 ${
-                          isPractical ? 'bg-purple-50 text-purple-900 border-purple-200' : 'bg-zinc-50 text-zinc-700 border-zinc-200'
+                          isDual ? 'bg-indigo-50 text-indigo-900 border-indigo-200' : isPractical ? 'bg-purple-50 text-purple-900 border-purple-200' : 'bg-zinc-50 text-zinc-700 border-zinc-200'
                         }`}
                       >
                         {isPractical && <FlaskConical className="w-2.5 h-2.5 text-purple-600" />}
                         <span>{c}</span>
-                        {isPractical && <span className="text-[8px] text-purple-700 font-sans font-semibold">(P)</span>}
+                        {isDual ? (
+                          <span className="text-[8px] text-indigo-700 font-sans font-bold">(TMA+P)</span>
+                        ) : isPractical ? (
+                          <span className="text-[8px] text-purple-700 font-sans font-semibold">(P)</span>
+                        ) : (
+                          <span className="text-[8px] text-zinc-400 font-sans">(TMA)</span>
+                        )}
                       </span>
                     );
                   })}
@@ -495,13 +586,19 @@ export const IntakeRegister: React.FC = () => {
                         <div className="flex flex-wrap gap-1 max-w-xs">
                           {courseCodes.map((code: string) => {
                             const mark = marks[code];
-                            const isPractical = isPracticalCourse(code);
+                            const isPracInRec = ((record as any).practicalCourses || []).includes(code);
+                            const isAsgnInRec = ((record as any).assignmentCourses || []).includes(code);
+                            const isPractical = isPracInRec || (!isAsgnInRec && isPracticalCourse(code));
+                            const isDual = isPracInRec && isAsgnInRec;
+
                             return (
                               <span
                                 key={code}
                                 className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border inline-flex items-center gap-0.5 ${
                                   mark !== null && mark !== undefined
                                     ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    : isDual
+                                    ? 'bg-indigo-50 text-indigo-900 border-indigo-200'
                                     : isPractical
                                     ? 'bg-purple-50 text-purple-900 border-purple-200'
                                     : 'bg-zinc-50 text-zinc-700 border-zinc-200'
@@ -509,16 +606,26 @@ export const IntakeRegister: React.FC = () => {
                                 title={
                                   mark !== null
                                     ? `Marks: ${mark}/100${isPractical ? ' (Practical Course)' : ''}`
+                                    : isDual
+                                    ? 'Dual Component: Assignment + Practical'
                                     : isPractical
-                                    ? 'Practical / Lab Course (Marks pending)'
-                                    : 'Theory Course (Marks pending)'
+                                    ? 'Practical / Lab Course'
+                                    : 'Theory Assignment Course'
                                 }
                               >
                                 {isPractical && <FlaskConical className="w-2.5 h-2.5 text-purple-600 shrink-0" />}
                                 <span>{code}</span>
-                                {isPractical && (
+                                {isDual ? (
+                                  <span className="text-[8px] font-sans font-bold text-indigo-700 ml-0.5">
+                                    (TMA+P)
+                                  </span>
+                                ) : isPractical ? (
                                   <span className="text-[8px] font-sans font-semibold text-purple-700 ml-0.5">
                                     (P)
+                                  </span>
+                                ) : (
+                                  <span className="text-[8px] font-sans font-normal text-zinc-400 ml-0.5">
+                                    (TMA)
                                   </span>
                                 )}
                                 {mark !== null && (

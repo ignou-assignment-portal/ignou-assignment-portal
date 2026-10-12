@@ -54,6 +54,7 @@ import {
   applyCascadingDeletion,
   getRegisteredProgrammeForEnrollment as getRegisteredProgHelper,
   getEnrolledCoursesForStudent as getEnrolledCoursesHelper,
+  getEnrolledCourseComponentsForStudent as getEnrolledCourseComponentsHelper,
   ValidationResult,
 } from '../services/intakeValidationEngine';
 
@@ -124,6 +125,7 @@ interface AppContextType {
   deleteIntakeRecord: (id: string) => boolean;
   getRegisteredProgrammeForEnrollment: (enrollmentNo: string, currentIntakeId?: string) => string | null;
   getEnrolledCoursesForStudent: (enrollmentNo: string, currentIntakeId?: string) => Set<string>;
+  getEnrolledCourseComponentsForStudent: (enrollmentNo: string, currentIntakeId?: string) => Map<string, Set<'Assignment' | 'Practical'>>;
   validateIntake: (params: {
     enrollmentNo: string;
     programmeCode: string;
@@ -2525,6 +2527,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         issuedAt: `${intakeDate}T${new Date().toTimeString().split(' ')[0]}`,
       });
 
+      // Sync updated intake with Google Sheets / backend
+      postAddIntake(
+        {
+          ...updatedRecord,
+          enrollmentNo: cleanEnr,
+          candidateName: targetIntake.studentName,
+          contact: targetIntake.studentPhone || '',
+          programme: cleanProg,
+          courses: combinedCourses,
+          practicalCourses: combinedPracticals,
+          assignmentCourses: combinedAssignments,
+          handledBy: registeredBy,
+          session: activeSession,
+          timestamp: `${intakeDate} 10:00:00 AM`,
+          submissionDate: intakeDate,
+          receiptDate: intakeDate,
+        },
+        unpackedNewRows
+      ).catch((err) => console.warn('[integrateIntakeWithPrevious Sheets sync warning]:', err));
+
       logAuditEvent({
         action: 'INTAKE_UPDATED',
         category: 'ASSIGNMENT_INTAKE',
@@ -2839,6 +2861,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const getEnrolledCoursesForStudent = useCallback(
     (enrollmentNo: string, currentIntakeId?: string) => {
       return getEnrolledCoursesHelper(
+        enrollmentNo,
+        intakes,
+        courseEvaluations,
+        currentIntakeId
+      );
+    },
+    [intakes, courseEvaluations]
+  );
+
+  const getEnrolledCourseComponentsForStudent = useCallback(
+    (enrollmentNo: string, currentIntakeId?: string) => {
+      return getEnrolledCourseComponentsHelper(
         enrollmentNo,
         intakes,
         courseEvaluations,
@@ -3879,11 +3913,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // 1. Universal Normalizer: Intake Register
         const seenIntakeIds = new Set<string>();
+        const intakePracticalCourseSet = new Set<string>();
+
         const cleanIntake = rawIntake.map((r: any, idx: number) => {
           const rawCourses = r.Courses || r.courses || r.courseCodes || "";
-          const courseArr = Array.isArray(rawCourses)
-            ? rawCourses
-            : rawCourses.toString().split(",").map((c: string) => c.trim()).filter(Boolean);
+          const rawCourseList: string[] = Array.isArray(rawCourses)
+            ? rawCourses.flatMap((c: any) => String(c).split(','))
+            : String(rawCourses).split(',');
 
           const enrollment = (r.Enrollment_No || r.enrollmentNo || r["Enrollment No"] || "").toString().replace(/^'/, '').trim();
           const candidate = (r.Candidate_Name || r.candidateName || r["Candidate Name"] || r.studentName || "").toString().trim();
@@ -3892,9 +3928,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const rawContact = r.Contact || r.contact || r.studentPhone || "";
           const contact = (rawContact).toString().replace(/^'/, '').trim();
 
+          const isRecordOverallPractical =
+            r.Component === 'Practical' ||
+            r.component === 'Practical' ||
+            r.componentType === 'Practical' ||
+            r.isPractical === true;
+
+          const practicalCourses: string[] = [];
+          const assignmentCourses: string[] = [];
+          const cleanCourseList: string[] = [];
+
+          rawCourseList.forEach((rawC: string) => {
+            const rawStr = String(rawC).trim();
+            if (!rawStr) return;
+            const clean = rawStr
+              .replace(/\s*[\(\[](Practical|TMA\s*\+\s*Practical|TMA|Both|P|Asgn|Assignment)[\)\]]\s*/gi, '')
+              .trim()
+              .toUpperCase();
+            if (!clean) return;
+
+            if (!cleanCourseList.includes(clean)) cleanCourseList.push(clean);
+
+            const hasPracTag = /\b(Practical|P)\b/i.test(rawStr);
+            const hasAsgnTag = /\b(TMA|Assignment|Asgn)\b/i.test(rawStr);
+
+            if (hasPracTag && hasAsgnTag) {
+              if (!practicalCourses.includes(clean)) practicalCourses.push(clean);
+              if (!assignmentCourses.includes(clean)) assignmentCourses.push(clean);
+              intakePracticalCourseSet.add(`${enrollment}_${clean}_${session}`);
+            } else if (
+              hasPracTag ||
+              (isRecordOverallPractical && !hasAsgnTag) ||
+              (Array.isArray(r.practicalCourses) && r.practicalCourses.includes(clean)) ||
+              isPracticalCourse(clean)
+            ) {
+              if (!practicalCourses.includes(clean)) practicalCourses.push(clean);
+              intakePracticalCourseSet.add(`${enrollment}_${clean}_${session}`);
+            } else {
+              if (!assignmentCourses.includes(clean)) assignmentCourses.push(clean);
+            }
+          });
+
+          // If explicit arrays already exist on r, preserve them
+          if (Array.isArray(r.practicalCourses)) {
+            r.practicalCourses.forEach((pc: string) => {
+              const cleanPc = String(pc).trim().toUpperCase();
+              if (cleanPc && !practicalCourses.includes(cleanPc)) practicalCourses.push(cleanPc);
+              intakePracticalCourseSet.add(`${enrollment}_${cleanPc}_${session}`);
+            });
+          }
+          if (Array.isArray(r.assignmentCourses)) {
+            r.assignmentCourses.forEach((ac: string) => {
+              const cleanAc = String(ac).trim().toUpperCase();
+              if (cleanAc && !assignmentCourses.includes(cleanAc)) assignmentCourses.push(cleanAc);
+            });
+          }
+
           const rawId = r.id || r.tokenNo || r.Token_No;
           const baseLegacyId = `intake-${enrollment}-${session.replace(/\s+/g, '')}`;
-          const courseSlug = courseArr.slice().sort().join('_') || `entry${idx}`;
+          const courseSlug = cleanCourseList.slice().sort().join('_') || `entry${idx}`;
           let id = rawId ? String(rawId).trim() : '';
           if (!id || seenIntakeIds.has(id) || id === baseLegacyId) {
             id = `intake-${enrollment || 'cand'}-${session.replace(/\s+/g, '')}-${courseSlug}-${idx}`;
@@ -3914,6 +4006,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const timestamp = overrideDate ? `${subDate}T10:00:00.000Z` : (rawTimestamp || `${subDate}T10:00:00.000Z`);
           const official = r.Official || r.handledBy || r.official || "Desk Official";
 
+          const isPurePractical = practicalCourses.length > 0 && assignmentCourses.length === 0;
+          const isPureAssignment = assignmentCourses.length > 0 && practicalCourses.length === 0;
+          const componentCategory: 'Assignment' | 'Practical' | 'Both' =
+            isPurePractical ? 'Practical' : isPureAssignment ? 'Assignment' : 'Both';
+
+          const courseDetails = cleanCourseList.flatMap((code) => {
+            const details: Array<{ code: string; type: 'Assignment' | 'Practical'; title: string; addedInPart: number; submissionDate: string }> = [];
+            if (practicalCourses.includes(code)) {
+              details.push({ code, type: 'Practical', title: getCourseTitle(code, programme), addedInPart: 1, submissionDate: subDate });
+            }
+            if (assignmentCourses.includes(code)) {
+              details.push({ code, type: 'Assignment', title: getCourseTitle(code, programme), addedInPart: 1, submissionDate: subDate });
+            }
+            return details;
+          });
+
           return {
             timestamp,
             session,
@@ -3921,9 +4029,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             candidateName: candidate,
             contact,
             programme,
-            courses: courseArr,
-            coursesStr: courseArr.join(", "),
+            courses: cleanCourseList,
+            coursesStr: cleanCourseList.join(", "),
             handledBy: official,
+            practicalCourses,
+            assignmentCourses,
+            courseDetails: r.courseDetails || courseDetails,
+            componentType: componentCategory,
+            isPractical: isPurePractical,
             // Dual-key fallbacks
             Timestamp: timestamp,
             Session: session,
@@ -3931,15 +4044,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             Candidate_Name: candidate,
             Contact: contact,
             Programme: programme,
-            Courses: courseArr.join(", "),
+            Courses: cleanCourseList.join(", "),
             Official: official,
+            Component: componentCategory,
             // Component compatibility keys
             id,
             tokenNo,
             studentName: candidate,
             studentPhone: contact,
             programmeCode: programme,
-            courseCodes: courseArr,
+            courseCodes: cleanCourseList,
             submissionDate: subDate,
             receiptDate: subDate,
             Submission_Date: subDate,
@@ -3954,9 +4068,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // 2. Universal Normalizer: Course Ledger
         const cleanLedger = rawLedger.map((r: any) => {
           const enrollment = (r.Enrollment_No || r.enrollmentNo || r["Enrollment No"] || "").toString().replace(/^'/, '').trim();
-          const course = (r.Course_Code || r.courseCode || r["Course Code"] || "").toString().trim().toUpperCase();
+          const rawCourse = (r.Course_Code || r.courseCode || r["Course Code"] || "").toString().trim();
+          const cleanCourse = rawCourse
+            .replace(/\s*[\(\[](Practical|TMA\s*\+\s*Practical|TMA|Both|P|Asgn|Assignment)[\)\]]\s*/gi, '')
+            .trim()
+            .toUpperCase();
           const session = normalizeSessionName(r.Session || r.session || "July 2026", r.Sub_ID || r.subId);
-          const subId = (r.Sub_ID || r.subId || r.id || `SUB_${enrollment}_${course}_${session.replace(/\s+/g, '')}`).toString().trim();
+          const subId = (r.Sub_ID || r.subId || r.id || `SUB_${enrollment}_${cleanCourse}_${session.replace(/\s+/g, '')}`).toString().trim();
           const candidate = (r.Candidate_Name || r.candidateName || r["Candidate Name"] || r.studentName || "").toString().trim();
           const programme = (r.Programme || r.programme || r.programmeCode || "MEG").toString().trim();
           const evaluator = r.Allotted_Evaluator || r.allottedEvaluator || r.evaluatorName || "Unallotted";
@@ -3969,24 +4087,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const ledgerOverrideDate = getLocalOverrideDate(enrollment, r.tokenNo || '', subId) || r.submissionDate || r.receiptDate || r.Submission_Date;
           const ledgerDate = ledgerOverrideDate ? String(ledgerOverrideDate).split('T')[0] : (r.submissionDate || new Date().toISOString().split('T')[0]);
 
+          const hasPracTag = /\b(Practical|P)\b/i.test(rawCourse) || subId.includes('_PRAC_');
+          const isPractical =
+            hasPracTag ||
+            r.isPractical === true ||
+            r.componentType === 'Practical' ||
+            r.Component === 'Practical' ||
+            intakePracticalCourseSet.has(`${enrollment}_${cleanCourse}_${session}`) ||
+            isPracticalCourse(cleanCourse);
+
+          const compType: 'Assignment' | 'Practical' = isPractical ? 'Practical' : 'Assignment';
+
           return {
             subId,
             session,
             enrollmentNo: enrollment,
             candidateName: candidate,
             programme,
-            courseCode: course,
+            courseCode: cleanCourse,
             allottedEvaluator: evaluator,
             marks,
             grade,
             status,
+            componentType: compType,
+            isPractical,
+            Component: compType,
             // Dual-key fallbacks
             Sub_ID: subId,
             Session: session,
             Enrollment_No: enrollment,
             Candidate_Name: candidate,
             Programme: programme,
-            Course_Code: course,
+            Course_Code: cleanCourse,
             Allotted_Evaluator: evaluator,
             Marks: marks,
             Grade: grade,
@@ -4586,6 +4718,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteIntakeRecord,
         getRegisteredProgrammeForEnrollment,
         getEnrolledCoursesForStudent,
+        getEnrolledCourseComponentsForStudent,
         validateIntake,
         updateMarks,
         updatePracticalMarks,

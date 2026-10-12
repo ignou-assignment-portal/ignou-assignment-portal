@@ -128,6 +128,7 @@ export const IntakeDesk: React.FC = () => {
     courseTitlesRegistry,
     getRegisteredProgrammeForEnrollment,
     getEnrolledCoursesForStudent,
+    getEnrolledCourseComponentsForStudent,
     validateIntake,
     updateIntakeDate,
     logAuditEvent,
@@ -339,6 +340,17 @@ export const IntakeDesk: React.FC = () => {
       return new Set<string>();
     }
   }, [enrollmentNo, getEnrolledCoursesForStudent]);
+
+  const alreadyEnrolledComponents = useMemo<Map<string, Set<'Assignment' | 'Practical'>>>(() => {
+    const clean = String(enrollmentNo || '').trim();
+    if (!clean) return new Map();
+    try {
+      const res = getEnrolledCourseComponentsForStudent(clean);
+      return res instanceof Map ? res : new Map();
+    } catch {
+      return new Map();
+    }
+  }, [enrollmentNo, getEnrolledCourseComponentsForStudent]);
 
   // Detect existing intake for this student in active session to enable Part-by-Part integration
   const existingIntakeForStudent = useMemo<IntakeRecord | null>(() => {
@@ -737,12 +749,12 @@ export const IntakeDesk: React.FC = () => {
 
       // Rule 3 check: Cannot enroll in the exact same course component more than once
       // Practical submissions are allowed if the student has not yet submitted practical for this course
+      const studentComps = cleanEnrollment ? alreadyEnrolledComponents.get(clean) : undefined;
       const alreadyHasSameComp =
-        cleanEnrollment &&
-        alreadyEnrolledCourses instanceof Set &&
-        alreadyEnrolledCourses.has(clean) &&
-        !isDual &&
-        defaultComp !== 'Practical';
+        studentComps &&
+        (defaultComp === 'Both'
+          ? (studentComps.has('Assignment') || studentComps.has('Practical'))
+          : studentComps.has(defaultComp as 'Assignment' | 'Practical'));
 
       if (alreadyHasSameComp) {
         skippedAlreadyEnrolled.push(clean);
@@ -1503,12 +1515,21 @@ export const IntakeDesk: React.FC = () => {
       }
 
       const hasSelectedCourses = currentSelected.length > 0;
-      const overlapping = currentSelected.filter((c) => allSubmittedCourses.includes(c));
-      const differing = currentSelected.filter((c) => !allSubmittedCourses.includes(c));
+      const enrolledComps = alreadyEnrolledComponents;
+      const overlapping = currentSelected.filter((c) => {
+        const comps = enrolledComps.get(c);
+        if (!comps || comps.size === 0) return false;
+        const desired = courseComponentTypes[c] || defaultIntakeComponent;
+        if (desired === 'Both') {
+          return comps.has('Assignment') || comps.has('Practical');
+        }
+        return comps.has(desired as 'Assignment' | 'Practical');
+      });
+      const differing = currentSelected.filter((c) => !overlapping.includes(c));
 
       if (hasSelectedCourses && differing.length > 0 && overlapping.length === 0) {
-        const msg = `RULE VERIFIED: Student ${cleanEnr} (${candName || studentName || 'Candidate'}) is registered under Programme ${prog}. The selected course code(s) [${differing.join(', ')}] DIFFER from previous intake course(s) [${coursesStr}]. Additional intake is FULLY ALLOWED and ready to be added!`;
-        setSuccessMsg(`Rule Verified: Additional intake allowed for differing course(s): ${differing.join(', ')}.`);
+        const msg = `RULE VERIFIED: Student ${cleanEnr} (${candName || studentName || 'Candidate'}) is registered under Programme ${prog}. The selected course code(s) or components [${differing.join(', ')}] DIFFER from previous intake course(s) [${coursesStr}]. Additional intake is FULLY ALLOWED and ready to be added!`;
+        setSuccessMsg(`Rule Verified: Additional intake allowed for differing course(s)/component(s): ${differing.join(', ')}.`);
         setErrorMsg('');
         setValidationResult({
           status: 'Success',
@@ -1522,11 +1543,11 @@ export const IntakeDesk: React.FC = () => {
             studentName: candName || studentName,
             differingCourses: differing.join(', '),
             alreadyEnrolledCourses: coursesStr,
-            ruleNotice: 'Add intake of student is permitted since course codes differ',
+            ruleNotice: 'Add intake of student is permitted since course codes or components differ',
           },
         });
       } else if (hasSelectedCourses && overlapping.length > 0) {
-        const msg = `Duplicate course detected: Course(s) [${overlapping.join(', ')}] are already registered for student ${cleanEnr}. RULE: Intake of this student can only be added if course code is different.`;
+        const msg = `Duplicate course/component detected: Course component(s) [${overlapping.join(', ')}] are already registered for student ${cleanEnr}. RULE: Intake of this student can only be added if course code or component (TMA vs Practical) is different.`;
         setErrorMsg(msg);
         setValidationResult({
           status: 'Rejected',

@@ -204,10 +204,31 @@ export async function postAddIntake(
   const programme = String(intakeRecord.programme || intakeRecord.programmeCode || '').trim().toUpperCase();
   const rawCourses = intakeRecord.courses || intakeRecord.courseCodes || [];
   const coursesArray: string[] = Array.isArray(rawCourses)
-    ? rawCourses.flatMap((c: any) => String(c).split(',')).map((c: string) => c.trim().toUpperCase()).filter(Boolean)
+    ? rawCourses.flatMap((c: any) => String(c).split(',')).map((c: string) => c.replace(/\s*[\(\[](Practical|TMA\s*\+\s*Practical|TMA|Both|P|Asgn|Assignment)[\)\]]\s*/gi, '').trim().toUpperCase()).filter(Boolean)
     : typeof rawCourses === 'string'
-    ? rawCourses.split(',').map((c: string) => c.trim().toUpperCase()).filter(Boolean)
+    ? rawCourses.split(',').map((c: string) => c.replace(/\s*[\(\[](Practical|TMA\s*\+\s*Practical|TMA|Both|P|Asgn|Assignment)[\)\]]\s*/gi, '').trim().toUpperCase()).filter(Boolean)
     : [];
+
+  const practicalList = (intakeRecord.practicalCourses || []).map((c: any) =>
+    String(c).replace(/\s*[\(\[](Practical|TMA\s*\+\s*Practical|TMA|Both|P|Asgn|Assignment)[\)\]]\s*/gi, '').trim().toUpperCase()
+  );
+  const assignmentList = (intakeRecord.assignmentCourses || []).map((c: any) =>
+    String(c).replace(/\s*[\(\[](Practical|TMA\s*\+\s*Practical|TMA|Both|P|Asgn|Assignment)[\)\]]\s*/gi, '').trim().toUpperCase()
+  );
+
+  // Distinctly tag each course in Google Sheets so operators inspecting the sheet instantly see Practical vs TMA
+  const formattedCourses = coursesArray.map((c) => {
+    const isPrac = practicalList.includes(c) || (practicalList.length > 0 && assignmentList.length === 0);
+    const isAsgn = assignmentList.includes(c) || (assignmentList.length > 0 && practicalList.length === 0);
+    if (isPrac && isAsgn) return `${c} (TMA + Practical)`;
+    if (isPrac) return `${c} (Practical)`;
+    return `${c} (TMA)`;
+  });
+
+  const isPurePractical = practicalList.length > 0 && assignmentList.length === 0;
+  const isPureAssignment = assignmentList.length > 0 && practicalList.length === 0;
+  const categoryLabel = isPurePractical ? 'Practical' : isPureAssignment ? 'Assignment (TMA)' : 'TMA + Practical';
+
   const handledBy =
     intakeRecord.handledBy ||
     (intakeRecord.registeredBy?.includes('Coordinator') || intakeRecord.role === 'admin'
@@ -227,20 +248,49 @@ export async function postAddIntake(
       candidateName,
       contact,
       programme,
-      courses: coursesArray,
+      courses: formattedCourses.join(", "),
+      rawCourses: coursesArray,
+      component: categoryLabel,
+      componentType: categoryLabel,
+      practicalCourses: practicalList,
+      assignmentCourses: assignmentList,
       handledBy,
     },
     // Top-level aliases for direct access by Google Apps Script
     enrollmentNo: cleanEnrollment,
     candidateName,
     programme,
-    courses: coursesArray,
+    courses: formattedCourses.join(", "),
+    rawCourses: coursesArray,
+    component: categoryLabel,
+    componentType: categoryLabel,
+    practicalCourses: practicalList,
+    assignmentCourses: assignmentList,
     session: activeSession,
     contact,
     handledBy,
     timestamp,
-    intake: intakeRecord,
-    unpackedCourses: unpackedCourses || [],
+    intake: {
+      ...intakeRecord,
+      courses: formattedCourses.join(", "),
+      rawCourses: coursesArray,
+      component: categoryLabel,
+      componentType: categoryLabel,
+      practicalCourses: practicalList,
+      assignmentCourses: assignmentList,
+    },
+    unpackedCourses: (unpackedCourses || []).map((row: any) => {
+      const isPrac = row.isPractical || row.componentType === 'Practical';
+      const cleanCode = String(row.courseCode || row.Course_Code || '').replace(/\s*[\(\[](Practical|TMA)[\)\]]\s*/gi, '').trim().toUpperCase();
+      return {
+        ...row,
+        Course_Code: isPrac ? `${cleanCode} (Practical)` : cleanCode,
+        courseCode: cleanCode,
+        Component: isPrac ? 'Practical' : 'Assignment',
+        componentType: isPrac ? 'Practical' : 'Assignment',
+        isPractical: isPrac,
+      };
+    }),
   };
 
   // Dispatch once to SCRIPT_URL with no-cors to prevent duplicate recordings in Intake_Register
@@ -257,6 +307,9 @@ export async function postAddIntake(
         studentPhone: contact,
         programmeCode: programme,
         courseCodes: coursesArray,
+        practicalCourses: practicalList,
+        assignmentCourses: assignmentList,
+        componentType: categoryLabel,
         session: activeSession,
         submissionDate: intakeRecord.submissionDate || intakeRecord.Submission_Date,
         submissionMode: intakeRecord.submissionMode,

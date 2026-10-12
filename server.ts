@@ -136,71 +136,106 @@ app.post("/api/intake/create", (req, res) => {
   const seq = (store.intakes || []).filter((i: any) => i.session === targetSession).length + 1;
   const tokenNo = `SC2033-${sessionCode}-${String(seq).padStart(4, "0")}`;
 
-  const newRecord = {
-    id: `intake-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-    session: targetSession,
-    tokenNo,
-    enrollmentNo: cleanEnrollment,
-    studentName: cleanName,
-    studentPhone: studentPhone ? String(studentPhone).trim() : "",
-    studentEmail: studentEmail ? String(studentEmail).trim() : "",
-    programmeCode: cleanProgramme,
-    courseCodes: cleanCourses,
-    submissionDate: resolvedDate,
-    receiptDate: resolvedDate,
-    Submission_Date: resolvedDate,
-    submissionMode: submissionMode || "In-Person (Desk)",
-    consignmentNo: consignmentNo || null,
-    remarks: remarks || null,
-    status: "Received",
-    marks: cleanCourses.reduce((acc: any, c: string) => ({ ...acc, [c]: null }), {}),
-    createdAt: `${resolvedDate}T10:00:00.000Z`,
-    timestamp: `${resolvedDate}T10:00:00.000Z`,
-  };
+    const practicalCourses = req.body?.practicalCourses || [];
+    const assignmentCourses = req.body?.assignmentCourses || [];
+    const practicalList = (Array.isArray(practicalCourses) ? practicalCourses : String(practicalCourses || '').split(','))
+      .map((c: string) => c.replace(/\s*[\(\[](Practical|TMA)[\)\]]\s*/gi, '').trim().toUpperCase())
+      .filter(Boolean);
+    const assignmentList = (Array.isArray(assignmentCourses) ? assignmentCourses : String(assignmentCourses || '').split(','))
+      .map((c: string) => c.replace(/\s*[\(\[](Practical|TMA)[\)\]]\s*/gi, '').trim().toUpperCase())
+      .filter(Boolean);
 
-  const newEvals = cleanCourses.map((c: string) => {
-    const subId = `SUB_${cleanEnrollment}_${c}_${targetSession.replace(/\s+/g, "").toUpperCase()}`;
-    return {
-      Sub_ID: subId,
-      subId,
-      submissionKey: subId,
-      Session: targetSession,
+    const isPurePractical = practicalList.length > 0 && assignmentList.length === 0;
+    const isPureAssignment = assignmentList.length > 0 && practicalList.length === 0;
+    const categoryLabel = isPurePractical ? 'Practical' : isPureAssignment ? 'Assignment (TMA)' : 'TMA + Practical';
+
+    const newRecord = {
+      id: `intake-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       session: targetSession,
-      Enrollment_No: cleanEnrollment,
-      enrollmentNo: cleanEnrollment,
-      Candidate_Name: cleanName,
-      studentName: cleanName,
-      Contact_No: studentPhone || "",
-      studentPhone: studentPhone || "",
-      Email_ID: studentEmail || "",
-      studentEmail: studentEmail || "",
-      Programme_Code: cleanProgramme,
-      programmeCode: cleanProgramme,
-      Programme: cleanProgramme,
-      Course_Code: c,
-      courseCode: c,
-      Course_Title: `${cleanProgramme} Course ${c}`,
-      courseTitle: `${cleanProgramme} Course ${c}`,
-      Allotted_Evaluator: "",
-      Marks: null,
-      Grade: "—",
-      Status: "Pending Allotment",
-      id: subId,
-      intakeId: newRecord.id,
       tokenNo,
+      enrollmentNo: cleanEnrollment,
+      studentName: cleanName,
+      studentPhone: studentPhone ? String(studentPhone).trim() : "",
+      studentEmail: studentEmail ? String(studentEmail).trim() : "",
+      programmeCode: cleanProgramme,
+      courseCodes: cleanCourses,
+      practicalCourses: practicalList,
+      assignmentCourses: assignmentList,
+      componentType: categoryLabel,
+      isPractical: isPurePractical,
       submissionDate: resolvedDate,
       receiptDate: resolvedDate,
       Submission_Date: resolvedDate,
       submissionMode: submissionMode || "In-Person (Desk)",
-      isLocked: false,
-      status: "Pending Allotment",
-      updatedAt: new Date().toISOString(),
+      consignmentNo: consignmentNo || null,
+      remarks: remarks || null,
+      status: "Received",
+      marks: cleanCourses.reduce((acc: any, c: string) => ({ ...acc, [c]: null }), {}),
+      createdAt: `${resolvedDate}T10:00:00.000Z`,
+      timestamp: `${resolvedDate}T10:00:00.000Z`,
     };
-  });
 
-  store.intakes = [newRecord, ...(store.intakes || [])];
-  store.courseLedger = [...(store.courseLedger || []), ...newEvals];
-  saveStore(store);
+    const newEvals: any[] = [];
+    cleanCourses.forEach((c: string) => {
+      const isPrac = practicalList.includes(c) || (practicalList.length > 0 && assignmentList.length === 0);
+      const isAsgn = assignmentList.includes(c) || (assignmentList.length > 0 && practicalList.length === 0) || !isPrac;
+
+      const createEvalRow = (comp: 'Assignment' | 'Practical') => {
+        const isPracRow = comp === 'Practical';
+        const subId = `SUB_${cleanEnrollment}_${c}${isPracRow ? '_PRAC' : ''}_${targetSession.replace(/\s+/g, "").toUpperCase()}`;
+        return {
+          Sub_ID: subId,
+          subId,
+          submissionKey: subId,
+          Session: targetSession,
+          session: targetSession,
+          Enrollment_No: cleanEnrollment,
+          enrollmentNo: cleanEnrollment,
+          Candidate_Name: cleanName,
+          studentName: cleanName,
+          Contact_No: studentPhone || "",
+          studentPhone: studentPhone || "",
+          Email_ID: studentEmail || "",
+          studentEmail: studentEmail || "",
+          Programme_Code: cleanProgramme,
+          programmeCode: cleanProgramme,
+          Programme: cleanProgramme,
+          Course_Code: isPracRow ? `${c} (Practical)` : c,
+          courseCode: c,
+          Course_Title: `${cleanProgramme} Course ${c}${isPracRow ? ' [Practical]' : ''}`,
+          courseTitle: `${cleanProgramme} Course ${c}${isPracRow ? ' [Practical]' : ''}`,
+          Allotted_Evaluator: "",
+          Marks: null,
+          Grade: "—",
+          Status: "Pending Allotment",
+          id: subId,
+          intakeId: newRecord.id,
+          tokenNo,
+          submissionDate: resolvedDate,
+          receiptDate: resolvedDate,
+          Submission_Date: resolvedDate,
+          submissionMode: submissionMode || "In-Person (Desk)",
+          isLocked: false,
+          status: "Pending Allotment",
+          componentType: comp,
+          isPractical: isPracRow,
+          updatedAt: new Date().toISOString(),
+        };
+      };
+
+      if (isPrac && isAsgn) {
+        newEvals.push(createEvalRow('Assignment'));
+        newEvals.push(createEvalRow('Practical'));
+      } else if (isPrac) {
+        newEvals.push(createEvalRow('Practical'));
+      } else {
+        newEvals.push(createEvalRow('Assignment'));
+      }
+    });
+
+    store.intakes = [newRecord, ...(store.intakes || [])];
+    store.courseLedger = [...(store.courseLedger || []), ...newEvals];
+    saveStore(store);
 
   return res.json({
     Status: "Success",

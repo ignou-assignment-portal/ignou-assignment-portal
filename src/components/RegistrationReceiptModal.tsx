@@ -145,7 +145,11 @@ export const RegistrationReceiptModal: React.FC = () => {
               {settings.institutionName} • Regional Centre: {settings.regionalCentreCode}
             </div>
             <div className="inline-block mt-1 print:mt-0.5 px-3 py-0.5 print:py-0 rounded-full border border-zinc-900 text-[10px] print:text-[8px] font-black tracking-wider uppercase bg-zinc-100">
-              STUDENT COURSE ASSIGNMENT INTAKE ACKNOWLEDGMENT RECEIPT
+              {((selectedRegistrationReceipt.practicalCourses || []).length > 0 && !(selectedRegistrationReceipt.assignmentCourses || []).length)
+                ? 'STUDENT COURSE PRACTICAL INTAKE ACKNOWLEDGMENT RECEIPT'
+                : ((selectedRegistrationReceipt.practicalCourses || []).length > 0)
+                ? 'STUDENT COURSE ASSIGNMENT & PRACTICAL INTAKE ACKNOWLEDGMENT RECEIPT'
+                : 'STUDENT COURSE ASSIGNMENT INTAKE ACKNOWLEDGMENT RECEIPT'}
             </div>
           </div>
 

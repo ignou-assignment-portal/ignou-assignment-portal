@@ -128,7 +128,11 @@ export const ReceiptModal: React.FC = () => {
               {settings.institutionName} • Regional Centre: {settings.regionalCentreCode}
             </div>
             <div className="inline-block mt-1 print:mt-0.5 px-3 py-0.5 print:py-0 rounded-full border border-zinc-900 text-[10px] print:text-[8px] font-black tracking-wider uppercase bg-zinc-100">
-              OFFICIAL STUDENT ASSIGNMENT SUBMISSION ACKNOWLEDGMENT RECEIPT
+              {((selectedReceiptRecord as any).practicalCourses?.length > 0 && !(selectedReceiptRecord as any).assignmentCourses?.length)
+                ? 'OFFICIAL STUDENT PRACTICAL SUBMISSION ACKNOWLEDGMENT RECEIPT'
+                : ((selectedReceiptRecord as any).practicalCourses?.length > 0)
+                ? 'OFFICIAL STUDENT ASSIGNMENT & PRACTICAL SUBMISSION ACKNOWLEDGMENT RECEIPT'
+                : 'OFFICIAL STUDENT ASSIGNMENT SUBMISSION ACKNOWLEDGMENT RECEIPT'}
             </div>
           </div>
 
@@ -249,7 +253,9 @@ export const ReceiptModal: React.FC = () => {
           {/* Bulleted / Structured Table of Registered Course Codes */}
           <div className="mt-1.5 print:mt-1">
             <div className="text-[11px] print:text-[8.5px] font-black text-zinc-900 mb-0.5 flex items-center justify-between uppercase tracking-wider">
-              <span>REGISTERED ASSIGNMENT COURSE CODES ({safeCourseCodes.length} Scripts)</span>
+              <span>
+                REGISTERED {((selectedReceiptRecord as any).practicalCourses?.length > 0 && !(selectedReceiptRecord as any).assignmentCourses?.length) ? 'PRACTICAL' : ((selectedReceiptRecord as any).practicalCourses?.length > 0) ? 'COURSE (TMA & PRACTICAL)' : 'ASSIGNMENT (TMA)'} CODES ({safeCourseCodes.length} Course{safeCourseCodes.length === 1 ? '' : 's'})
+              </span>
               <span className="text-[10px] print:text-[8px] font-semibold text-zinc-500 lowercase">
                 session: {selectedReceiptRecord.session}
               </span>
@@ -277,11 +283,31 @@ export const ReceiptModal: React.FC = () => {
                       <td className="py-1 print:py-0.5 px-2 print:px-1.5 font-bold text-indigo-950 font-mono border-r border-zinc-200">
                         <div className="flex items-center gap-1">
                           <span>{code}</span>
-                          {isPracticalCourse(code, title) && (
-                            <span className="text-[8px] print:text-[6.5px] px-1 py-0 rounded bg-purple-100 text-purple-800 font-sans font-bold border border-purple-200">
-                              Practical
-                            </span>
-                          )}
+                          {(() => {
+                            const isPracInRecord = ((selectedReceiptRecord as any).practicalCourses || []).includes(code);
+                            const isAsgnInRecord = ((selectedReceiptRecord as any).assignmentCourses || []).includes(code);
+                            const isPrac = isPracInRecord || (!isAsgnInRecord && isPracticalCourse(code, title));
+                            const isAsgn = isAsgnInRecord || (!isPracInRecord && !isPracticalCourse(code, title));
+                            if (isPrac && isAsgn) {
+                              return (
+                                <span className="text-[8px] print:text-[6.5px] px-1 py-0 rounded bg-indigo-100 text-indigo-900 font-sans font-bold border border-indigo-200">
+                                  TMA + Practical
+                                </span>
+                              );
+                            }
+                            if (isPrac) {
+                              return (
+                                <span className="text-[8px] print:text-[6.5px] px-1 py-0 rounded bg-purple-100 text-purple-800 font-sans font-bold border border-purple-200">
+                                  Practical
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="text-[8px] print:text-[6.5px] px-1 py-0 rounded bg-zinc-100 text-zinc-700 font-sans font-medium border border-zinc-200">
+                                TMA
+                              </span>
+                            );
+                          })()}
                         </div>
                       </td>
                       <td className="py-1 print:py-0.5 px-2 print:px-1.5 text-zinc-800 border-r border-zinc-200 truncate max-w-[240px]">
