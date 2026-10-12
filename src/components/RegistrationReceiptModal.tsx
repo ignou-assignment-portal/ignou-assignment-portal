@@ -260,14 +260,28 @@ export const RegistrationReceiptModal: React.FC = () => {
                               const isAsgnInReceipt = (selectedRegistrationReceipt.assignmentCourses || []).includes(code);
                               const isPracByRule = isPracticalCourse(code, title);
 
-                              if ((isPracInReceipt && isAsgnInReceipt) || (isPracInReceipt && !isPracByRule)) {
+                              if (isPracInReceipt && isAsgnInReceipt) {
                                 return (
                                   <span className="text-[8px] print:text-[6.5px] px-1 py-0 rounded bg-indigo-100 text-indigo-900 font-sans font-bold border border-indigo-200">
                                     TMA + Practical
                                   </span>
                                 );
                               }
-                              if (isPracInReceipt || isPracByRule) {
+                              if (isPracInReceipt) {
+                                return (
+                                  <span className="text-[8px] print:text-[6.5px] px-1 py-0 rounded bg-purple-100 text-purple-800 font-sans font-bold border border-purple-200">
+                                    Practical
+                                  </span>
+                                );
+                              }
+                              if (isAsgnInReceipt) {
+                                return (
+                                  <span className="text-[8px] print:text-[6.5px] px-1 py-0 rounded bg-zinc-100 text-zinc-700 font-sans font-medium border border-zinc-200">
+                                    TMA
+                                  </span>
+                                );
+                              }
+                              if (isPracByRule) {
                                 return (
                                   <span className="text-[8px] print:text-[6.5px] px-1 py-0 rounded bg-purple-100 text-purple-800 font-sans font-bold border border-purple-200">
                                     Practical
@@ -296,7 +310,13 @@ export const RegistrationReceiptModal: React.FC = () => {
                               if (isPracInReceipt && isAsgnInReceipt) {
                                 return 'Script & Lab Record Received';
                               }
-                              if (isPracInReceipt || isPracticalCourse(code, title)) {
+                              if (isPracInReceipt) {
+                                return 'Lab Record / Practical Received';
+                              }
+                              if (isAsgnInReceipt) {
+                                return 'Physical Script Received';
+                              }
+                              if (isPracticalCourse(code, title)) {
                                 return 'Lab Record / Practical Received';
                               }
                               return 'Physical Script Received';

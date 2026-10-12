@@ -128,6 +128,9 @@ interface AppContextType {
     enrollmentNo: string;
     programmeCode: string;
     courseCodes: string[];
+    practicalCourses?: string[];
+    assignmentCourses?: string[];
+    courseComponents?: Record<string, 'Assignment' | 'Practical' | 'Both'>;
     session?: string;
     currentIntakeId?: string;
   }) => ValidationResult;
@@ -380,9 +383,12 @@ export const isDummyIntakeId = (id: string): boolean => {
   return false;
 };
 
-export const isDummyEvaluationId = (id: string, intakeId?: string): boolean => {
+export const isDummyEvaluationId = (id: string, intakeId?: string, enrollmentNo?: string): boolean => {
   const sIntakeId = String(intakeId || '').trim();
   if (sIntakeId.startsWith('intake-jul26-') || sIntakeId.startsWith('intake-jan27-') || sIntakeId.startsWith('intake-jan26-')) return true;
+  if (enrollmentNo && DUMMY_SEED_ENROLLMENTS.has(String(enrollmentNo).trim())) return true;
+  const sId = String(id || '').trim();
+  if (sId.startsWith('eval-jul26-') || sId.startsWith('eval-jan27-') || sId.startsWith('eval-jan26-')) return true;
   return false;
 };
 
@@ -1702,19 +1708,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Flexible Session Isolation (Normalizes case and whitespace):
   // sessionIntakes, sessionPackets, sessionBills, sessionAssignmentSubmissions, sessionRegistrationReceipts
   const sessionIntakes = useMemo(() => {
-    return (intakes || []).filter((r: any) => {
+    const list = (intakes || []).filter((r: any) => {
       if (!r) return false;
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
       return normalizeSession(r.Session || r.session) === normalizeSession(currentSession);
     });
+    const hasReal = list.some((r: any) => !isDummyIntakeId(r.id));
+    if (hasReal) {
+      return list.filter((r: any) => !isDummyIntakeId(r.id));
+    }
+    return list;
   }, [intakes, currentSession]);
 
   const sessionCourseEvaluations = useMemo(() => {
-    return (courseEvaluations || []).filter((c: any) => {
+    const list = (courseEvaluations || []).filter((c: any) => {
       if (!c) return false;
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
       return normalizeSession(c.Session || c.session) === normalizeSession(currentSession);
     });
+    const hasReal = list.some((c: any) => !isDummyEvaluationId(c.id, c.intakeId, c.enrollmentNo || c.Enrollment_No));
+    if (hasReal) {
+      return list.filter((c: any) => !isDummyEvaluationId(c.id, c.intakeId, c.enrollmentNo || c.Enrollment_No));
+    }
+    return list;
   }, [courseEvaluations, currentSession]);
 
   const sessionPackets = useMemo(() => {
@@ -1842,8 +1858,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setAssignmentSubmissions((prev) => {
         const nextList = [...prev];
         data.courseCodes.forEach((courseCode) => {
-          const hasPractical = (data.practicalCourses || []).includes(courseCode) || isPracticalCourse(courseCode);
-          const hasAssignment = (data.assignmentCourses || []).includes(courseCode) || !isPracticalCourse(courseCode);
+          const practicalSpecified = Array.isArray(data.practicalCourses);
+          const assignmentSpecified = Array.isArray(data.assignmentCourses);
+          const isDual = isDualComponentCourse(courseCode);
+
+          let hasPractical = false;
+          let hasAssignment = false;
+
+          if (practicalSpecified || assignmentSpecified) {
+            hasPractical = (data.practicalCourses || []).includes(courseCode);
+            hasAssignment = (data.assignmentCourses || []).includes(courseCode);
+            // If neither was explicitly placed in practical or assignment array, fall back to course definition
+            if (!hasPractical && !hasAssignment) {
+              hasPractical = isPracticalCourse(courseCode);
+              hasAssignment = isDual || !isPracticalCourse(courseCode);
+            }
+          } else {
+            hasPractical = isPracticalCourse(courseCode);
+            hasAssignment = isDual || !isPracticalCourse(courseCode);
+          }
 
           const recordSingleComponent = (compType: 'Assignment' | 'Practical') => {
             const isPrac = compType === 'Practical';
@@ -1963,14 +1996,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addIntakeRecord = useCallback(
     (data: Omit<IntakeRecord, 'id' | 'session' | 'tokenNo' | 'createdAt' | 'marks'> & { marks?: Record<string, number | null> }) => {
       const cleanEnr = data.enrollmentNo.trim();
+      const cleanEnrollment = cleanEnr;
+      const cleanName = data.studentName.trim();
       const cleanProg = data.programmeCode.trim().toUpperCase();
+      const cleanProgramme = cleanProg;
       const cleanCourses = Array.from(new Set(data.courseCodes.map((c) => c.trim().toUpperCase()).filter(Boolean)));
+
+      const intakeDate = data.submissionDate ? data.submissionDate.trim() : new Date().toISOString().split('T')[0];
+
+      const practicalList = (data.practicalCourses || []).map((c) => c.trim().toUpperCase());
+      const assignmentList = (data.assignmentCourses || []).map((c) => c.trim().toUpperCase());
+
+      const practicalSpecified = Array.isArray(data.practicalCourses);
+      const assignmentSpecified = Array.isArray(data.assignmentCourses);
+
+      const computedPracticalList = practicalSpecified
+        ? practicalList
+        : cleanCourses.filter((c) => isPracticalCourse(c));
+      const computedAssignmentList = assignmentSpecified
+        ? assignmentList
+        : cleanCourses.filter((c) => !computedPracticalList.includes(c));
 
       // Strict Validation: Enforces Rule 1 (Scope), Rule 2 (Multi-course allowance), Rule 3 (No duplicates)
       const validation = validateIntakeRecord({
         enrollmentNo: cleanEnr,
         programmeCode: cleanProg,
         courseCodes: cleanCourses,
+        practicalCourses: computedPracticalList,
+        assignmentCourses: computedAssignmentList,
         session: currentSession,
         existingIntakes: intakes,
         existingEvaluations: courseEvaluations,
@@ -2001,18 +2054,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const nextSequence = existingInSession.length + 1;
       const paddedSeq = String(nextSequence).padStart(4, '0');
       const tokenNo = `SC2033-${sessionCode}-${paddedSeq}`;
-
-      const intakeDate = data.submissionDate ? data.submissionDate.trim() : new Date().toISOString().split('T')[0];
-
-      const practicalList = (data.practicalCourses || []).map((c) => c.trim().toUpperCase());
-      const assignmentList = (data.assignmentCourses || []).map((c) => c.trim().toUpperCase());
-
-      const computedPracticalList = practicalList.length > 0
-        ? practicalList
-        : cleanCourses.filter((c) => isPracticalCourse(c));
-      const computedAssignmentList = assignmentList.length > 0
-        ? assignmentList
-        : cleanCourses.filter((c) => !computedPracticalList.includes(c));
 
       const computedCourseDetails = cleanCourses.flatMap((courseCode) => {
         const resolvedTitle = getCourseTitle(courseCode, cleanProgramme);
@@ -2061,10 +2102,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // When a student registers with N courses, automatically split the entry into individual ledger rows.
       // If a course has BOTH Assignment and Practical (like BAPI-003), split into TWO distinct rows.
       // Primary Key format: SUB_ENR_COURSE_TERM (or SUB_ENR_COURSE_PRAC_TERM for practicals)
-      const cleanEnrollment = data.enrollmentNo.trim();
-      const cleanName = data.studentName.trim();
-      const cleanProgramme = data.programmeCode.trim().toUpperCase();
-
       // Save custom programme & courses so they appear in Quick Suggestions next time
       try {
         saveCustomProgramme({ code: cleanProgramme });
@@ -2816,6 +2853,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       enrollmentNo: string;
       programmeCode: string;
       courseCodes: string[];
+      practicalCourses?: string[];
+      assignmentCourses?: string[];
+      courseComponents?: Record<string, 'Assignment' | 'Practical' | 'Both'>;
       session?: string;
       currentIntakeId?: string;
     }) => {

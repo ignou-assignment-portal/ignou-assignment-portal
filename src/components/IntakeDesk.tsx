@@ -736,8 +736,15 @@ export const IntakeDesk: React.FC = () => {
           : (isDual ? 'Assignment' : isPrac ? 'Practical' : 'Assignment'));
 
       // Rule 3 check: Cannot enroll in the exact same course component more than once
-      // Dual component courses (like BAPI-003) can be enrolled if practical hasn't been submitted yet
-      if (cleanEnrollment && alreadyEnrolledCourses instanceof Set && alreadyEnrolledCourses.has(clean) && !isDual) {
+      // Practical submissions are allowed if the student has not yet submitted practical for this course
+      const alreadyHasSameComp =
+        cleanEnrollment &&
+        alreadyEnrolledCourses instanceof Set &&
+        alreadyEnrolledCourses.has(clean) &&
+        !isDual &&
+        defaultComp !== 'Practical';
+
+      if (alreadyHasSameComp) {
         skippedAlreadyEnrolled.push(clean);
         continue;
       }
@@ -1013,11 +1020,31 @@ export const IntakeDesk: React.FC = () => {
       return;
     }
 
+    // Compute separate practical and assignment course arrays based on user selection or course definition
+    const computedPracticals: string[] = [];
+    const computedAssignments: string[] = [];
+    coursesArray.forEach((c) => {
+      const isDual = isDualComponentCourse(c);
+      const isPrac = isPracticalCourse(c);
+      const ct = courseComponentTypes[c] || (defaultIntakeComponent === 'Practical' ? 'Practical' : (isDual ? 'Both' : isPrac ? 'Practical' : 'Assignment'));
+      if (ct === 'Both') {
+        computedAssignments.push(c);
+        computedPracticals.push(c);
+      } else if (ct === 'Practical') {
+        computedPracticals.push(c);
+      } else {
+        computedAssignments.push(c);
+      }
+    });
+
     // 2. Strict Validation Engine Check (Rule 1, Rule 2, Rule 3)
     const validation = validateIntake({
       enrollmentNo: cleanEnrollment,
       programmeCode: selectedProgramme.trim().toUpperCase(),
       courseCodes: coursesArray,
+      practicalCourses: computedPracticals,
+      assignmentCourses: computedAssignments,
+      courseComponents: courseComponentTypes,
       session: targetSession,
     });
 
@@ -1040,23 +1067,6 @@ export const IntakeDesk: React.FC = () => {
       setErrorMsg(validation.reason);
       return;
     }
-
-    // Compute separate practical and assignment course arrays based on user selection or course definition
-    const computedPracticals: string[] = [];
-    const computedAssignments: string[] = [];
-    coursesArray.forEach((c) => {
-      const isDual = isDualComponentCourse(c);
-      const isPrac = isPracticalCourse(c);
-      const ct = courseComponentTypes[c] || (isDual ? 'Both' : isPrac ? 'Practical' : 'Assignment');
-      if (ct === 'Both') {
-        computedAssignments.push(c);
-        computedPracticals.push(c);
-      } else if (ct === 'Practical') {
-        computedPracticals.push(c);
-      } else {
-        computedAssignments.push(c);
-      }
-    });
 
     setIsSubmitting(true);
     try {
@@ -1321,10 +1331,29 @@ export const IntakeDesk: React.FC = () => {
       return;
     }
 
+    const computedPracticals: string[] = [];
+    const computedAssignments: string[] = [];
+    coursesArray.forEach((c) => {
+      const isDual = isDualComponentCourse(c);
+      const isPrac = isPracticalCourse(c);
+      const ct = courseComponentTypes[c] || (defaultIntakeComponent === 'Practical' ? 'Practical' : (isDual ? 'Both' : isPrac ? 'Practical' : 'Assignment'));
+      if (ct === 'Both') {
+        computedAssignments.push(c);
+        computedPracticals.push(c);
+      } else if (ct === 'Practical') {
+        computedPracticals.push(c);
+      } else {
+        computedAssignments.push(c);
+      }
+    });
+
     const validation = validateIntake({
       enrollmentNo: cleanEnrollment,
       programmeCode: selectedProgramme.trim().toUpperCase(),
       courseCodes: coursesArray,
+      practicalCourses: computedPracticals,
+      assignmentCourses: computedAssignments,
+      courseComponents: courseComponentTypes,
       session: targetSession,
     });
 
