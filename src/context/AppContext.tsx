@@ -109,7 +109,7 @@ interface AppContextType {
     consignmentNo?: string;
     remarks?: string;
   }) => { updatedRecord: IntakeRecord; receipt: RegistrationReceipt };
-  updateIntakeRecord: (id: string, updates: Partial<IntakeRecord>) => void;
+  updateIntakeRecord: (id: string, updates: Partial<IntakeRecord>) => Promise<void> | void;
   editIntakeEntry: (params: {
     id: string;
     originalEnrollmentNo: string;
@@ -120,8 +120,8 @@ interface AppContextType {
     courses: string[];
     session?: string;
     submissionDate?: string;
-  }) => void;
-  updateIntakeDate: (idOrToken: string, newDate: string) => void;
+  }) => Promise<any> | void;
+  updateIntakeDate: (idOrToken: string, newDate: string) => Promise<void> | void;
   deleteIntakeRecord: (id: string) => boolean;
   getRegisteredProgrammeForEnrollment: (enrollmentNo: string, currentIntakeId?: string) => string | null;
   getEnrolledCoursesForStudent: (enrollmentNo: string, currentIntakeId?: string) => Set<string>;
@@ -2314,9 +2314,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           receiptDate: intakeDate,
         },
         unpackedRows
-      ).catch((err) => {
-        console.warn('Google Sheets ADD_INTAKE notification:', err);
-      });
+      )
+        .then(async () => {
+          // Always validate from Google Sheets immediately after intake entry
+          if (fetchAllDataRef.current) {
+            await fetchAllDataRef.current(true);
+          }
+        })
+        .catch((err) => {
+          console.warn('Google Sheets ADD_INTAKE notification:', err);
+        });
 
       logAuditEvent({
         action: 'INTAKE_CREATED',
@@ -2595,7 +2602,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           receiptDate: intakeDate,
         },
         unpackedNewRows
-      ).catch((err) => console.warn('[integrateIntakeWithPrevious Sheets sync warning]:', err));
+      )
+        .then(async () => {
+          if (fetchAllDataRef.current) {
+            await fetchAllDataRef.current(true);
+          }
+        })
+        .catch((err) => console.warn('[integrateIntakeWithPrevious Sheets sync warning]:', err));
 
       logAuditEvent({
         action: 'INTAKE_UPDATED',
@@ -2625,12 +2638,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [intakes, currentSession, currentRole, settings.coordinatorName, addRegistrationReceipt, recordStudentAssignmentSubmissions, showToast, logAuditEvent]
   );
 
-  const updateIntakeRecord = useCallback((id: string, updates: Partial<IntakeRecord>) => {
+  const updateIntakeRecord = useCallback(async (id: string, updates: Partial<IntakeRecord>) => {
     setIntakes((prev) => prev.map((item) => (item.id === id ? { ...item, ...updates } : item)));
-  }, []);
+    const target = intakes.find((i) => i.id === id);
+    if (target) {
+      const merged = { ...target, ...updates };
+      try {
+        await postEditIntake({
+          id: merged.id,
+          originalEnrollmentNo: target.enrollmentNo,
+          enrollmentNo: merged.enrollmentNo,
+          candidateName: merged.studentName,
+          contact: merged.studentPhone || '',
+          programme: merged.programmeCode,
+          courses: merged.courseCodes,
+          session: merged.session,
+          submissionDate: merged.submissionDate,
+          receiptDate: merged.receiptDate || merged.submissionDate,
+        });
+        if (fetchAllDataRef.current) {
+          await fetchAllDataRef.current(true);
+        }
+      } catch (e) {
+        console.warn('[updateIntakeRecord] Google Sheets sync error:', e);
+      }
+    }
+  }, [intakes]);
 
   const editIntakeEntry = useCallback(
-    (data: {
+    async (data: {
       id: string;
       originalEnrollmentNo: string;
       enrollmentNo: string;
@@ -2767,20 +2803,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return prev;
       });
 
-      // Dispatch to Google Apps Script / backend
-      postEditIntake({
-        id: data.id,
-        originalEnrollmentNo: cleanOrigEnr,
-        enrollmentNo: cleanNewEnr,
-        candidateName: data.candidateName.trim(),
-        contact: data.contact.trim(),
-        programme: cleanProg,
-        courses: cleanCourses,
-        session: activeSession,
-        submissionDate: data.submissionDate ? data.submissionDate.trim() : (targetIntake?.submissionDate || ''),
-      }).catch((err) => {
+      // Dispatch to Google Apps Script / backend and validate from Google Sheets
+      try {
+        await postEditIntake({
+          id: data.id,
+          originalEnrollmentNo: cleanOrigEnr,
+          enrollmentNo: cleanNewEnr,
+          candidateName: data.candidateName.trim(),
+          contact: data.contact.trim(),
+          programme: cleanProg,
+          courses: cleanCourses,
+          session: activeSession,
+          submissionDate: data.submissionDate ? data.submissionDate.trim() : (targetIntake?.submissionDate || ''),
+        });
+        // Immediately validate live data directly from Google Sheets!
+        if (fetchAllDataRef.current) {
+          await fetchAllDataRef.current(true);
+        }
+      } catch (err) {
         console.warn('Google Sheets EDIT_INTAKE notification warning:', err);
-      });
+      }
 
       logAuditEvent({
         action: 'INTAKE_UPDATED',
@@ -2794,7 +2836,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status: 'SUCCESS',
       });
 
-      showToast('Intake entry updated & cascaded across all records', 'success');
+      showToast('Intake entry updated & validated from Google Sheets', 'success');
       return {
         Status: 'Success' as const,
         Action: 'Update' as const,
@@ -2955,7 +2997,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const updateIntakeDate = useCallback(
-    (idOrToken: string, newDate: string) => {
+    async (idOrToken: string, newDate: string) => {
       if (!idOrToken || !newDate) return;
       const cleanDate = newDate.trim();
       const cleanTarget = idOrToken.trim();
@@ -3237,20 +3279,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }).catch((err) => console.warn('[updateIntakeDate] Backend sync warning:', err));
       } catch {}
 
-      // 8. Writeback to Google Sheets
-      if (primaryEnr && curIntake) {
-        postEditIntake({
-          id: curIntake.id,
-          originalEnrollmentNo: primaryEnr,
-          enrollmentNo: primaryEnr,
-          candidateName: curIntake.studentName,
-          contact: curIntake.studentPhone || '',
-          programme: curIntake.programmeCode,
-          courses: curIntake.courseCodes,
-          session: curIntake.session || targetSession,
-          submissionDate: cleanDate,
-          receiptDate: cleanDate,
-        }).catch((err) => console.warn('Google Sheets update date sync warning:', err));
+      // 8. Writeback to Google Sheets and validate immediately
+      const syncEnr = primaryEnr || (curIntake?.enrollmentNo ? curIntake.enrollmentNo.trim() : '') || (cleanTarget && /^\d{5,12}$/.test(cleanTarget) ? cleanTarget : '');
+      const syncName = curIntake?.studentName || targetReceipt?.studentName || (targetEval as any)?.candidateName || (targetEval as any)?.studentName || '';
+      const syncProg = curIntake?.programmeCode || targetReceipt?.programmeCode || (targetEval as any)?.programme || (targetEval as any)?.programmeCode || '';
+      const syncCourses = curIntake?.courseCodes || targetReceipt?.registeredCourses || (targetEval ? [targetEval.courseCode] : []);
+
+      if (syncEnr) {
+        try {
+          await postEditIntake({
+            id: curIntake?.id || targetIntakeId,
+            originalEnrollmentNo: syncEnr,
+            enrollmentNo: syncEnr,
+            candidateName: syncName,
+            contact: curIntake?.studentPhone || targetReceipt?.studentPhone || '',
+            programme: syncProg,
+            courses: syncCourses,
+            session: curIntake?.session || targetSession,
+            submissionDate: cleanDate,
+            receiptDate: cleanDate,
+          });
+          // Immediately validate from Google Sheets
+          if (fetchAllDataRef.current) {
+            await fetchAllDataRef.current(true);
+          }
+        } catch (err) {
+          console.warn('Google Sheets update date sync warning:', err);
+        }
       }
 
       logAuditEvent({
@@ -3265,7 +3320,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status: 'SUCCESS',
       });
 
-      showToast(`Receipt date updated to ${formatDate(cleanDate)} across all registers and evaluation trackers`, 'success');
+      showToast(`Receipt date updated to ${formatDate(cleanDate)} & validated with Google Sheets`, 'success');
     },
     [intakes, registrationReceipts, courseEvaluations, selectedReceiptRecord, selectedRegistrationReceipt, showToast, logAuditEvent, currentRole, settings.coordinatorName, currentSession]
   );
@@ -3891,9 +3946,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       let data: any = null;
 
-      // 1. Try direct fetch from SCRIPT_URL with redirect: "follow"
+      // 1. Try direct fetch from SCRIPT_URL with redirect: "follow" and cache-busting
+      const timestampParam = `_t=${Date.now()}`;
       try {
-        const res = await fetch(SCRIPT_URL, { method: "GET", redirect: "follow" });
+        const res = await fetch(`${SCRIPT_URL}?${timestampParam}`, {
+          method: "GET",
+          headers: {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            Pragma: "no-cache",
+          },
+          cache: "no-store",
+          redirect: "follow",
+        });
         if (res.ok) {
           const contentType = res.headers.get("content-type") || "";
           if (contentType.includes("application/json")) {
@@ -3914,9 +3978,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // 2. If direct fetch failed or gave non-JSON, try the Express backend proxy
       if (!data || (!data.intakeRegister && !data.intakes && !data.courseLedger)) {
         try {
-          const proxyRes = await fetch(`/api/sheets?action=doGet&scriptUrl=${encodeURIComponent(SCRIPT_URL)}`, {
+          const proxyRes = await fetch(`/api/sheets?action=doGet&scriptUrl=${encodeURIComponent(SCRIPT_URL)}&${timestampParam}`, {
             method: "GET",
-            headers: { Accept: "application/json" },
+            headers: {
+              Accept: "application/json",
+              "Cache-Control": "no-cache, no-store, must-revalidate",
+              Pragma: "no-cache",
+            },
+            cache: "no-store",
           });
           if (proxyRes.ok) {
             data = await proxyRes.json();
@@ -3942,7 +4011,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const rawIntake = data.intakeRegister || data.intakes || data.Intake_Register || [];
         const rawLedger = data.courseLedger || data.course_ledger || data.Course_Ledger || [];
 
-        // Load local date overrides so server/remote sync NEVER restores to an old timestamp
+        // Load local date overrides only as last-resort fallback for rows missing timestamps
         let localDateOverrides: Record<string, string> = {};
         try {
           const ovStr = localStorage.getItem('ignou_sc2033_receipt_date_overrides');
@@ -4057,13 +4126,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           seenIntakeIds.add(id);
           const tokenNo = r.tokenNo || r.Token_No || id;
 
-          const overrideDate = getLocalOverrideDate(enrollment, tokenNo, id) || r.submissionDate || r.receiptDate || r.Submission_Date;
-          const explicitDate = overrideDate || r.Date || r.date;
+          // Validate date directly from Google Sheets! Google Sheets is the source of truth!
+          const sheetExplicitDate = r.submissionDate || r.receiptDate || r.Submission_Date || r.Date || r.date;
           const rawTimestamp = r.Timestamp || r.timestamp || r.createdAt || "";
-          const subDate = explicitDate
-            ? String(explicitDate).split('T')[0]
-            : (rawTimestamp ? String(rawTimestamp).split('T')[0] : new Date().toISOString().split('T')[0]);
-          const timestamp = overrideDate ? `${subDate}T10:00:00.000Z` : (rawTimestamp || `${subDate}T10:00:00.000Z`);
+          let subDate = "";
+          if (sheetExplicitDate) {
+            subDate = String(sheetExplicitDate).split('T')[0];
+          } else if (rawTimestamp) {
+            const strTs = String(rawTimestamp).trim();
+            if (strTs.includes('T')) {
+              subDate = strTs.split('T')[0];
+            } else if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}/.test(strTs)) {
+              const parts = strTs.split(/[\/\-]/);
+              subDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+            } else {
+              subDate = strTs.split(' ')[0];
+            }
+          } else {
+            const fallbackDate = getLocalOverrideDate(enrollment, tokenNo, id);
+            subDate = fallbackDate ? String(fallbackDate).split('T')[0] : new Date().toISOString().split('T')[0];
+          }
+          const timestamp = rawTimestamp || `${subDate}T10:00:00.000Z`;
           const official = r.Official || r.handledBy || r.official || "Desk Official";
 
           const isPurePractical = practicalCourses.length > 0 && assignmentCourses.length === 0;
@@ -4155,8 +4238,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const status = r.Status || r.status || "Pending";
           const isLocked = Boolean(status === 'Locked' || status === 'Marks Locked' || r.isLocked);
 
-          const ledgerOverrideDate = getLocalOverrideDate(enrollment, r.tokenNo || '', subId) || r.submissionDate || r.receiptDate || r.Submission_Date;
-          const ledgerDate = ledgerOverrideDate ? String(ledgerOverrideDate).split('T')[0] : (r.submissionDate || new Date().toISOString().split('T')[0]);
+          const sheetLedgerDate = r.submissionDate || r.receiptDate || r.Submission_Date || r.receivedDate || r.intakeDate || r.Date || r.date;
+          let ledgerDate = "";
+          if (sheetLedgerDate) {
+            ledgerDate = String(sheetLedgerDate).split('T')[0];
+          } else {
+            const fallbackDate = getLocalOverrideDate(enrollment, r.tokenNo || '', subId);
+            ledgerDate = fallbackDate ? String(fallbackDate).split('T')[0] : new Date().toISOString().split('T')[0];
+          }
 
           const hasPracTag = /\b(Practical|P)\b/i.test(rawCourse) || subId.includes('_PRAC_');
           const isPractical =

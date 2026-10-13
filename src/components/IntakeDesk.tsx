@@ -63,6 +63,7 @@ import { downloadStudentIntakePDF } from '../services/pdfReportGenerator';
 import { AssignmentStatusSummaryCard } from './AssignmentStatusSummaryCard';
 import { ErrorBoundary } from './ErrorBoundary';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
+import { runBackgroundDataEntryValidation } from '../services/dataEntryValidationService';
 
 export { ValidationSummary, ProgrammeIntakeBarChart, EnrollmentAuditModal, IntakeReportModal, AssignmentStatusSummaryCard };
 export type { ValidationSummaryProps };
@@ -182,7 +183,7 @@ export const IntakeDesk: React.FC = () => {
     setQuickDateValue(subDate);
   };
 
-  const handleSaveQuickDate = (e?: React.FormEvent) => {
+  const handleSaveQuickDate = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!quickDateModalRecord || !quickDateValue) return;
 
@@ -192,9 +193,9 @@ export const IntakeDesk: React.FC = () => {
       quickDateModalRecord.receiptNumber ||
       quickDateModalRecord.id;
 
-    updateIntakeDate(quickDateModalRecord.id || token, quickDateValue.trim());
+    await updateIntakeDate(quickDateModalRecord.id || token, quickDateValue.trim());
 
-    setQuickDateSuccessToast(`Receipt date updated to ${formatDate(quickDateValue.trim())}`);
+    setQuickDateSuccessToast(`Receipt date updated to ${formatDate(quickDateValue.trim())} & validated with Google Sheets`);
     setTimeout(() => setQuickDateSuccessToast(null), 3500);
     setQuickDateModalRecord(null);
   };
@@ -374,6 +375,47 @@ export const IntakeDesk: React.FC = () => {
     selectedProgramme &&
     String(registeredProgForEnrollment).toUpperCase() !== String(selectedProgramme || '').trim().toUpperCase()
   );
+
+  // Real-time Background Data Entry Validation Service:
+  // Checks for common data entry errors (malformed enrollment numbers, names, phone numbers,
+  // programme codes, dates) before pushing data to Google Sheets, providing real-time feedback
+  // to the user and always recording separately Assignment(TMA) and Practical.
+  const realtimeValidation = useMemo(() => {
+    return runBackgroundDataEntryValidation(
+      {
+        enrollmentNo,
+        studentName,
+        studentPhone,
+        programmeCode: selectedProgramme,
+        courseCodes: selectedCourses,
+        courseComponents: courseComponentTypes,
+        submissionDate,
+        session: selectedSession || currentSession,
+      },
+      {
+        existingIntakes: allIntakes || sessionIntakes,
+        existingEvaluations: allCourseEvaluations || sessionCourseEvaluations,
+        existingReceipts: allRegistrationReceipts || sessionRegistrationReceipts,
+        currentSession: selectedSession || currentSession,
+      }
+    );
+  }, [
+    enrollmentNo,
+    studentName,
+    studentPhone,
+    selectedProgramme,
+    selectedCourses,
+    courseComponentTypes,
+    submissionDate,
+    selectedSession,
+    currentSession,
+    allIntakes,
+    sessionIntakes,
+    allCourseEvaluations,
+    sessionCourseEvaluations,
+    allRegistrationReceipts,
+    sessionRegistrationReceipts,
+  ]);
 
   // Auto-fill student profile when existing enrollment is typed
   useEffect(() => {
@@ -1036,22 +1078,31 @@ export const IntakeDesk: React.FC = () => {
       return;
     }
 
-    // Compute separate practical and assignment course arrays based on user selection or course definition
-    const computedPracticals: string[] = [];
-    const computedAssignments: string[] = [];
-    coursesArray.forEach((c) => {
-      const isDual = isDualComponentCourse(c);
-      const isPrac = isPracticalCourse(c);
-      const ct = courseComponentTypes[c] || (defaultIntakeComponent === 'Practical' ? 'Practical' : (isDual ? 'Both' : isPrac ? 'Practical' : 'Assignment'));
-      if (ct === 'Both') {
-        computedAssignments.push(c);
-        computedPracticals.push(c);
-      } else if (ct === 'Practical') {
-        computedPracticals.push(c);
-      } else {
-        computedAssignments.push(c);
-      }
-    });
+    // Real-Time Background Validation Check before pushing:
+    if (!realtimeValidation.isValid) {
+      const primaryError = realtimeValidation.errors[0] || 'Please fix data entry errors before saving.';
+      recordRejectedAttempt('Background Pre-Push Validation Gate', primaryError, coursesArray);
+      setValidationResult({
+        status: 'Rejected',
+        action: 'Create',
+        rule: 'Background Pre-Push Validation Gate',
+        reason: primaryError,
+        timestamp: new Date().toISOString(),
+        attemptedData: {
+          enrollmentNo: cleanEnrollment,
+          studentName: studentName.trim(),
+          programmeCode: selectedProgramme.trim().toUpperCase(),
+          courseCodes: coursesArray,
+          session: targetSession,
+        },
+      });
+      setErrorMsg(primaryError);
+      return;
+    }
+
+    // Strictly separate practical and assignment courses: Never mix together
+    const computedPracticals: string[] = realtimeValidation.separated.practicalCourses;
+    const computedAssignments: string[] = realtimeValidation.separated.assignmentCourses;
 
     // 2. Strict Validation Engine Check (Rule 1, Rule 2, Rule 3)
     const validation = validateIntake({
@@ -2170,7 +2221,13 @@ export const IntakeDesk: React.FC = () => {
                             if (nameInput) nameInput.focus();
                           }
                         }}
-                        className="w-full pl-9 pr-10 py-2 text-xs font-mono font-bold tracking-wider border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                        className={`w-full pl-9 pr-10 py-2 text-xs font-mono font-bold tracking-wider border rounded-lg focus:outline-hidden transition ${
+                          enrollmentNo.trim().length === 0
+                            ? 'border-zinc-300 focus:ring-2 focus:ring-indigo-500'
+                            : realtimeValidation.fields.enrollmentNo.valid
+                            ? 'border-emerald-400 bg-emerald-50/20 focus:ring-2 focus:ring-emerald-500 text-emerald-950'
+                            : 'border-rose-400 bg-rose-50/25 focus:ring-2 focus:ring-rose-500 text-rose-950'
+                        }`}
                         required
                       />
                       <button
@@ -2182,6 +2239,25 @@ export const IntakeDesk: React.FC = () => {
                         <Camera className="w-4 h-4" />
                       </button>
                     </div>
+
+                    {/* Real-time Enrollment Number Validation Feedback */}
+                    {enrollmentNo.trim().length > 0 && (
+                      <div
+                        className={`mt-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition animate-in fade-in ${
+                          realtimeValidation.fields.enrollmentNo.valid
+                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                            : 'bg-rose-50 text-rose-800 border border-rose-300'
+                        }`}
+                      >
+                        {realtimeValidation.fields.enrollmentNo.valid ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                        )}
+                        <span>{realtimeValidation.fields.enrollmentNo.message}</span>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between text-[10px] text-zinc-500 mt-0.5">
                       <span>{enrollmentNo.length}/10 digits (Numbers only)</span>
                       {enrollmentNo.trim().length >= 5 && (
@@ -2206,9 +2282,33 @@ export const IntakeDesk: React.FC = () => {
                       placeholder="Candidate name as registered in IGNOU"
                       value={studentName}
                       onChange={(e) => setStudentName(e.target.value)}
-                      className="w-full px-3 py-2 text-xs border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                      className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-hidden transition ${
+                        studentName.trim().length === 0
+                          ? 'border-zinc-300 focus:ring-2 focus:ring-indigo-500'
+                          : realtimeValidation.fields.studentName.valid
+                          ? 'border-emerald-400 bg-emerald-50/20 focus:ring-2 focus:ring-emerald-500 text-emerald-950 font-semibold'
+                          : 'border-rose-400 bg-rose-50/25 focus:ring-2 focus:ring-rose-500 text-rose-950'
+                      }`}
                       required
                     />
+
+                    {/* Real-time Candidate Name Validation Feedback */}
+                    {studentName.trim().length > 0 && (
+                      <div
+                        className={`mt-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition animate-in fade-in ${
+                          realtimeValidation.fields.studentName.valid
+                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                            : 'bg-rose-50 text-rose-800 border border-rose-300'
+                        }`}
+                      >
+                        {realtimeValidation.fields.studentName.valid ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                        )}
+                        <span>{realtimeValidation.fields.studentName.message}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -2308,10 +2408,32 @@ export const IntakeDesk: React.FC = () => {
                         onInput={(e: any) => {
                           e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
                         }}
-                        className="w-full pl-8 pr-3 py-2 text-xs border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                        className={`w-full pl-8 pr-3 py-2 text-xs border rounded-lg focus:outline-hidden transition ${
+                          studentPhone.trim().length === 0
+                            ? 'border-zinc-300 focus:ring-2 focus:ring-indigo-500'
+                            : realtimeValidation.fields.studentPhone.valid
+                            ? 'border-emerald-400 bg-emerald-50/20 focus:ring-2 focus:ring-emerald-500 text-emerald-950 font-semibold'
+                            : 'border-rose-400 bg-rose-50/25 focus:ring-2 focus:ring-rose-500 text-rose-950'
+                        }`}
                         required
                       />
                     </div>
+                    {studentPhone.trim().length > 0 && (
+                      <div
+                        className={`mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 transition animate-in fade-in ${
+                          realtimeValidation.fields.studentPhone.valid
+                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                            : 'bg-rose-50 text-rose-800 border border-rose-300'
+                        }`}
+                      >
+                        {realtimeValidation.fields.studentPhone.valid ? (
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
+                        )}
+                        <span className="truncate">{realtimeValidation.fields.studentPhone.message}</span>
+                      </div>
+                    )}
                     <span className="text-[10px] text-zinc-500 mt-0.5 block">
                       {studentPhone.length}/10 digits
                     </span>
@@ -2390,10 +2512,20 @@ export const IntakeDesk: React.FC = () => {
                         value={submissionDate}
                         onChange={(e) => setSubmissionDate(e.target.value)}
                         max="2099-12-31"
-                        className="w-full pl-8 pr-3 py-2 text-xs font-bold border border-zinc-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                        className={`w-full pl-8 pr-3 py-2 text-xs font-bold border rounded-lg bg-white focus:outline-hidden transition ${
+                          !realtimeValidation.fields.submissionDate.valid
+                            ? 'border-rose-400 bg-rose-50/20 focus:ring-2 focus:ring-rose-500 text-rose-950'
+                            : 'border-zinc-300 focus:ring-2 focus:ring-indigo-500'
+                        }`}
                         required
                       />
                     </div>
+                    {!realtimeValidation.fields.submissionDate.valid && (
+                      <div className="mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-800 border border-rose-300 flex items-center gap-1 animate-in fade-in">
+                        <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
+                        <span>{realtimeValidation.fields.submissionDate.message}</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between mt-0.5 text-[10px]">
                       <span className="text-zinc-500 truncate">
                         {formatDate(submissionDate)}
@@ -3090,6 +3222,77 @@ export const IntakeDesk: React.FC = () => {
                           })}
                         </div>
                       </div>
+                    {/* Strict Component Separation Gate: Displays Assignment (TMA) vs Practical breakdown */}
+                    {selectedCourses.length > 0 && (
+                      <div className="mt-2.5 p-3 bg-gradient-to-r from-amber-50/90 via-purple-50/80 to-indigo-50/90 border border-indigo-200 rounded-xl space-y-2 shadow-2xs animate-in fade-in">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-zinc-900 flex items-center gap-1.5">
+                            <ShieldCheck className="w-4 h-4 text-indigo-700" />
+                            <span>Strict Component Separation (Assignment TMA vs. Practical)</span>
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-white text-indigo-900 border border-indigo-200">
+                            Recorded Separately in Google Sheets
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          {/* Assignment (TMA) Column */}
+                          <div className="p-2.5 bg-white rounded-lg border border-amber-200 shadow-2xs">
+                            <div className="flex items-center justify-between mb-1 pb-1 border-b border-amber-100">
+                              <span className="font-bold text-amber-950 flex items-center gap-1 text-[11px]">
+                                <FileCheck className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Assignment (TMA) Scripts</span>
+                              </span>
+                              <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold bg-amber-100 text-amber-900">
+                                {realtimeValidation.separated.assignmentCourses.length} TMA
+                              </span>
+                            </div>
+                            {realtimeValidation.separated.assignmentCourses.length > 0 ? (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {realtimeValidation.separated.assignmentCourses.map((c) => (
+                                  <span key={`tma-chip-${c}`} className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-950 font-mono text-[10.5px] font-bold border border-amber-200">
+                                    {c} <span className="text-[9px] text-amber-700 font-sans font-semibold">(TMA)</span>
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-[10.5px] text-zinc-400 italic">No TMA courses selected</p>
+                            )}
+                          </div>
+
+                          {/* Practical Column */}
+                          <div className="p-2.5 bg-white rounded-lg border border-purple-200 shadow-2xs">
+                            <div className="flex items-center justify-between mb-1 pb-1 border-b border-purple-100">
+                              <span className="font-bold text-purple-950 flex items-center gap-1 text-[11px]">
+                                <FlaskConical className="w-3.5 h-3.5 text-purple-600" />
+                                <span>Practical Scripts</span>
+                              </span>
+                              <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold bg-purple-100 text-purple-900">
+                                {realtimeValidation.separated.practicalCourses.length} Practical
+                              </span>
+                            </div>
+                            {realtimeValidation.separated.practicalCourses.length > 0 ? (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {realtimeValidation.separated.practicalCourses.map((c) => (
+                                  <span key={`prac-chip-${c}`} className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-950 font-mono text-[10.5px] font-bold border border-purple-200">
+                                    {c} <span className="text-[9px] text-purple-700 font-sans font-semibold">(Practical)</span>
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-[10.5px] text-zinc-400 italic">No Practical courses selected</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-[10.5px] text-indigo-950 bg-white/70 px-2.5 py-1 rounded-md border border-indigo-100 flex items-center justify-between">
+                          <span>
+                            Sheets Entry: <strong className="font-mono text-zinc-900">{realtimeValidation.separated.formattedGoogleSheetsString || 'None'}</strong>
+                          </span>
+                          <span className="text-[9.5px] text-emerald-800 font-semibold flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Strictly Separated • Never Mixed Together</span>
+                          </span>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -3136,6 +3339,84 @@ export const IntakeDesk: React.FC = () => {
                     />
                   </div>
                 )}
+
+                {/* Background Data Entry Validation Service: Real-Time Pre-Push Feedback */}
+                <div
+                  id="background-validation-card"
+                  className={`p-3.5 rounded-xl border transition-all ${
+                    realtimeValidation.isValid
+                      ? 'bg-emerald-50/90 border-emerald-300 shadow-xs'
+                      : realtimeValidation.errors.length > 0
+                      ? 'bg-rose-50/90 border-rose-300 shadow-xs'
+                      : 'bg-zinc-50 border-zinc-200'
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                    <div className="flex items-start gap-2.5 flex-1">
+                      {realtimeValidation.isValid ? (
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                      ) : (
+                        <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                      )}
+                      <div className="flex-1">
+                        <div className={`text-xs font-black ${realtimeValidation.isValid ? 'text-emerald-950' : 'text-rose-950'}`}>
+                          {realtimeValidation.isValid
+                            ? '✓ Pre-Push Background Validation Passed: Ready for Google Sheets'
+                            : `⚠️ Pre-Push Background Validation: Push Blocked (${realtimeValidation.errors.length} Issue${realtimeValidation.errors.length === 1 ? '' : 's'})`}
+                        </div>
+                        <p className={`text-[11px] mt-0.5 ${realtimeValidation.isValid ? 'text-emerald-800' : 'text-rose-800'}`}>
+                          {realtimeValidation.isValid
+                            ? 'All entry fields verified against IGNOU integrity rules. TMA and Practical courses recorded strictly separately.'
+                            : 'Common data entry errors detected. Correct the issues below before saving to ensure clean Google Sheets records.'}
+                        </p>
+
+                        {/* Live List of Errors if any */}
+                        {realtimeValidation.errors.length > 0 && (
+                          <ul className="mt-2 space-y-1 text-[11px] font-semibold text-rose-900 bg-white/80 p-2 rounded-lg border border-rose-200">
+                            {realtimeValidation.errors.map((err, idx) => (
+                              <li key={idx} className="flex items-start gap-1.5">
+                                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                                <span>{err}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+
+                        {/* Live Warnings if any */}
+                        {realtimeValidation.warnings.length > 0 && (
+                          <div className="mt-1.5 text-[10.5px] font-medium text-amber-900 bg-amber-50/80 px-2 py-1 rounded border border-amber-200 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                            <span>{realtimeValidation.warnings.join(' • ')}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Pre-Push Checklist Badges */}
+                    <div className="flex flex-wrap sm:flex-col items-start sm:items-end gap-1 shrink-0 text-[10px] font-bold">
+                      <span className={`px-2 py-0.5 rounded-full ${
+                        realtimeValidation.fields.enrollmentNo.valid ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                      }`}>
+                        {realtimeValidation.fields.enrollmentNo.valid ? '✓ Enrollment No.' : '! Enrollment No.'}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full ${
+                        realtimeValidation.fields.studentName.valid ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                      }`}>
+                        {realtimeValidation.fields.studentName.valid ? '✓ Candidate Name' : '! Candidate Name'}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full ${
+                        realtimeValidation.fields.courseCodes.valid ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                      }`}>
+                        {realtimeValidation.fields.courseCodes.valid ? '✓ Courses' : '! Courses'}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full ${
+                        realtimeValidation.fields.components.valid ? 'bg-purple-100 text-purple-900' : 'bg-zinc-100 text-zinc-600'
+                      }`}>
+                        Strict TMA/Prac Separated
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
                 {/* Form Actions: "Submit & Generate Receipt" (Non-Financial) */}
                 <div className="pt-4 border-t border-zinc-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">

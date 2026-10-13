@@ -546,15 +546,27 @@ app.get("/api/ignou/programme-lookup", (req, res) => {
 // 2. Google Sheets doGet() Proxy
 // Call doGet() to hydrate IntakeRegister and CourseLedger state from Google Sheets
 app.get("/api/sheets", async (req, res) => {
-  const targetUrl = getTargetAppsScriptUrl(req.query.scriptUrl as string);
+  const baseTargetUrl = getTargetAppsScriptUrl(req.query.scriptUrl as string);
+  const cacheBuster = `_t=${Date.now()}`;
+  const targetUrl = baseTargetUrl.includes("?")
+    ? `${baseTargetUrl}&${cacheBuster}`
+    : `${baseTargetUrl}?${cacheBuster}`;
+
   console.log(`[Proxy GET] Forwarding doGet to Google Apps Script: ${targetUrl}`);
+
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
 
   try {
     const remoteResponse = await fetch(targetUrl, {
       method: "GET",
       headers: {
         Accept: "application/json",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        Pragma: "no-cache",
       },
+      cache: "no-store",
       redirect: "follow",
     });
 
@@ -563,71 +575,7 @@ app.get("/api/sheets", async (req, res) => {
     const text = await remoteResponse.text();
     try {
       const json = JSON.parse(text);
-      const store = loadStore();
-      const overrides = store.dateOverrides || {};
-
-      const getOverrideDate = (item: any) => {
-        const enr = String(item.Enrollment_No || item.enrollmentNo || item.studentId || "").replace(/\D/g, "").trim();
-        const tok = String(item.Token_No || item.tokenNo || item.receiptNumber || "").trim();
-        const id = String(item.id || item.Sub_ID || item.subId || "").trim();
-        if (enr && (overrides[`enr_${enr}`] || overrides[`enrollment_${enr}`])) return overrides[`enr_${enr}`] || overrides[`enrollment_${enr}`];
-        if (tok && (overrides[`token_${tok}`] || overrides[`tok_${tok}`])) return overrides[`token_${tok}`] || overrides[`tok_${tok}`];
-        if (id && overrides[`id_${id}`]) return overrides[`id_${id}`];
-
-        // Also check matched records in store.intakes
-        const matchIntake = (store.intakes || []).find((si: any) => {
-          if (id && (si.id === id || si.tokenNo === id)) return true;
-          if (tok && (si.tokenNo === tok || si.receiptNumber === tok)) return true;
-          if (enr) {
-            const siEnr = String(si.enrollmentNo || si.Enrollment_No || "").replace(/\D/g, "").trim();
-            if (siEnr === enr) return true;
-          }
-          return false;
-        });
-        if (matchIntake && (matchIntake.submissionDate || matchIntake.receiptDate)) {
-          return matchIntake.submissionDate || matchIntake.receiptDate;
-        }
-        return null;
-      };
-
-      if (json.intakeRegister && Array.isArray(json.intakeRegister)) {
-        json.intakeRegister = json.intakeRegister.map((it: any) => {
-          const ov = getOverrideDate(it);
-          if (ov) {
-            return {
-              ...it,
-              submissionDate: ov,
-              receiptDate: ov,
-              Submission_Date: ov,
-              Date: ov,
-              date: ov,
-              Timestamp: `${ov}T10:00:00.000Z`,
-              timestamp: `${ov}T10:00:00.000Z`,
-            };
-          }
-          return it;
-        });
-      }
-
-      if (json.courseLedger && Array.isArray(json.courseLedger)) {
-        json.courseLedger = json.courseLedger.map((ce: any) => {
-          const ov = getOverrideDate(ce);
-          if (ov) {
-            return {
-              ...ce,
-              submissionDate: ov,
-              receiptDate: ov,
-              Submission_Date: ov,
-              receivedDate: ov,
-              intakeDate: ov,
-              Date: ov,
-              date: ov,
-            };
-          }
-          return ce;
-        });
-      }
-
+      // Validate directly from Google Sheets data - Google Sheets is the source of truth!
       return res.json(json);
     } catch {
       // If remote returned HTML or non-JSON (e.g. 404 landing or auth page)
@@ -660,12 +608,21 @@ app.post("/api/sheets", async (req, res) => {
   console.log(`[Proxy POST] Action: ${action} -> ${targetUrl}`);
 
   try {
+    const outgoingBody = {
+      action,
+      ...req.body,
+      payload: {
+        ...(req.body?.payload || {}),
+        ...(req.body || {}),
+      },
+    };
+
     const remoteResponse = await fetch(targetUrl, {
       method: "POST",
       headers: {
         "Content-Type": "text/plain;charset=utf-8",
       },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify(outgoingBody),
       redirect: "follow",
     });
 

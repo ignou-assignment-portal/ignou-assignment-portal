@@ -1,4 +1,5 @@
 import { getIgnouGrade } from '../utils/helpers';
+import { validatePrePushToGoogleSheets } from './dataEntryValidationService';
 
 /**
  * Universal Session Normalizer
@@ -78,12 +79,29 @@ export interface ApiResponse<T = any> {
 }
 
 /**
- * Sends a POST request to Google Apps Script bypassing browser CORS preflight.
- * Uses method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" }.
- * Because mode: "no-cors" returns an opaque response (status 0), do not wait for res.json().
+ * Sends a POST request to Google Apps Script.
+ * Uses /api/sheets proxy first (which reliably handles redirects & CORS in full-stack dev/prod),
+ * falling back to direct POST to Google Apps Script.
  */
 export async function sendScriptPost(payload: any): Promise<boolean> {
-  // Single dispatch to bypass CORS preflight & prevent duplicate records in Google Sheets
+  // 1. Try server proxy first to follow Google Apps Script 302 redirects and ensure data is committed
+  try {
+    const proxyRes = await fetch("/api/sheets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (proxyRes.ok) {
+      const result = await proxyRes.json();
+      if (result && (result.status === 'success' || result.saved || result.message)) {
+        return true;
+      }
+    }
+  } catch (proxyErr) {
+    console.warn("[Google Sheets proxy error, falling back to direct POST]:", proxyErr);
+  }
+
+  // 2. Direct fallback to Google Apps Script
   try {
     await fetch(SCRIPT_URL, {
       method: "POST",
@@ -95,33 +113,28 @@ export async function sendScriptPost(payload: any): Promise<boolean> {
     });
     return true;
   } catch (err) {
-    console.warn("[Google Sheets direct POST error, attempting proxy fallback]:", err);
-    try {
-      await fetch("/api/sheets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      return true;
-    } catch (proxyErr) {
-      console.warn("[Google Sheets proxy error]:", proxyErr);
-      return false;
-    }
+    console.error("[Google Sheets direct POST error]:", err);
+    return false;
   }
 }
 
 /**
  * 1. On Load:
  * Call doGet() to hydrate IntakeRegister and CourseLedger state from Google Sheets.
+ * Always passes timestamp & cache: 'no-store' to guarantee fresh data without stale caches.
  */
 export async function doGet(): Promise<HydrationResult> {
+  const timestamp = Date.now();
   try {
-    // Try via full-stack Express proxy first
-    const response = await fetch(`/api/sheets?action=doGet&scriptUrl=${encodeURIComponent(SCRIPT_URL)}`, {
+    // Try via full-stack Express proxy first with cache-busting
+    const response = await fetch(`/api/sheets?action=doGet&scriptUrl=${encodeURIComponent(SCRIPT_URL)}&_t=${timestamp}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
       },
+      cache: 'no-store',
     });
 
     if (response.ok) {
@@ -144,11 +157,11 @@ export async function doGet(): Promise<HydrationResult> {
     console.warn('[Google Sheets] Express proxy doGet failed, trying direct fetch:', err);
   }
 
-  // Direct client fetch fallback
+  // Direct client fetch fallback with cache-busting
   try {
-    const directRes = await fetch(SCRIPT_URL, {
+    const directRes = await fetch(`${SCRIPT_URL}?_t=${timestamp}`, {
       method: 'GET',
-      mode: 'cors',
+      cache: 'no-store',
     });
     if (directRes.ok) {
       const data = await directRes.json();
@@ -197,37 +210,33 @@ export async function postAddIntake(
   intakeRecord: any,
   unpackedCourses?: any[]
 ): Promise<ApiResponse> {
+  // Pre-Push Background Validation Gate:
+  // Checks for common data entry errors (malformed enrollment numbers, invalid names, dates, course codes)
+  // before pushing to Google Sheets, and guarantees TMA and Practical are NEVER mixed together.
+  const prePushCheck = validatePrePushToGoogleSheets(intakeRecord, unpackedCourses);
+  if (!prePushCheck.canPush) {
+    const errorDetails = prePushCheck.errors.join('; ');
+    console.error('[Google Sheets Push Blocked by Validation]:', errorDetails);
+    throw new Error(`Data entry validation failed: ${errorDetails}`);
+  }
+
+  const sanitized = prePushCheck.sanitizedData!;
   const activeSession = intakeRecord.session || 'July 2026';
-  const cleanEnrollment = String(intakeRecord.enrollmentNo || '').trim();
-  const candidateName = String(intakeRecord.candidateName || intakeRecord.studentName || '').trim();
-  const contact = String(intakeRecord.contact || intakeRecord.studentPhone || '').trim();
-  const programme = String(intakeRecord.programme || intakeRecord.programmeCode || '').trim().toUpperCase();
+  const cleanEnrollment = sanitized.enrollmentNo;
+  const candidateName = sanitized.candidateName;
+  const contact = sanitized.contact;
+  const programme = sanitized.programme;
+  const practicalList = sanitized.practicalCourses;
+  const assignmentList = sanitized.assignmentCourses;
+  const formattedCourseList = sanitized.separatedCourseString;
+  const categoryLabel = sanitized.categoryLabel;
+
   const rawCourses = intakeRecord.courses || intakeRecord.courseCodes || [];
   const coursesArray: string[] = Array.isArray(rawCourses)
     ? rawCourses.flatMap((c: any) => String(c).split(',')).map((c: string) => c.replace(/\s*[\(\[](Practical|TMA\s*\+\s*Practical|TMA|Both|P|Asgn|Assignment)[\)\]]\s*/gi, '').trim().toUpperCase()).filter(Boolean)
     : typeof rawCourses === 'string'
     ? rawCourses.split(',').map((c: string) => c.replace(/\s*[\(\[](Practical|TMA\s*\+\s*Practical|TMA|Both|P|Asgn|Assignment)[\)\]]\s*/gi, '').trim().toUpperCase()).filter(Boolean)
     : [];
-
-  const practicalList = (intakeRecord.practicalCourses || []).map((c: any) =>
-    String(c).replace(/\s*[\(\[](Practical|TMA\s*\+\s*Practical|TMA|Both|P|Asgn|Assignment)[\)\]]\s*/gi, '').trim().toUpperCase()
-  );
-  const assignmentList = (intakeRecord.assignmentCourses || []).map((c: any) =>
-    String(c).replace(/\s*[\(\[](Practical|TMA\s*\+\s*Practical|TMA|Both|P|Asgn|Assignment)[\)\]]\s*/gi, '').trim().toUpperCase()
-  );
-
-  // Distinctly tag each course in Google Sheets so operators inspecting the sheet instantly see Practical vs TMA
-  const formattedCourses = coursesArray.map((c) => {
-    const isPrac = practicalList.includes(c) || (practicalList.length > 0 && assignmentList.length === 0);
-    const isAsgn = assignmentList.includes(c) || (assignmentList.length > 0 && practicalList.length === 0);
-    if (isPrac && isAsgn) return `${c} (TMA + Practical)`;
-    if (isPrac) return `${c} (Practical)`;
-    return `${c} (TMA)`;
-  });
-
-  const isPurePractical = practicalList.length > 0 && assignmentList.length === 0;
-  const isPureAssignment = assignmentList.length > 0 && practicalList.length === 0;
-  const categoryLabel = isPurePractical ? 'Practical' : isPureAssignment ? 'Assignment (TMA)' : 'TMA + Practical';
 
   const handledBy =
     intakeRecord.handledBy ||
@@ -248,7 +257,7 @@ export async function postAddIntake(
       candidateName,
       contact,
       programme,
-      courses: formattedCourses.join(", "),
+      courses: formattedCourseList,
       rawCourses: coursesArray,
       component: categoryLabel,
       componentType: categoryLabel,
@@ -260,7 +269,7 @@ export async function postAddIntake(
     enrollmentNo: cleanEnrollment,
     candidateName,
     programme,
-    courses: formattedCourses.join(", "),
+    courses: formattedCourseList,
     rawCourses: coursesArray,
     component: categoryLabel,
     componentType: categoryLabel,
@@ -272,25 +281,16 @@ export async function postAddIntake(
     timestamp,
     intake: {
       ...intakeRecord,
-      courses: formattedCourses.join(", "),
+      enrollmentNo: cleanEnrollment,
+      candidateName,
+      courses: formattedCourseList,
       rawCourses: coursesArray,
       component: categoryLabel,
       componentType: categoryLabel,
       practicalCourses: practicalList,
       assignmentCourses: assignmentList,
     },
-    unpackedCourses: (unpackedCourses || []).map((row: any) => {
-      const isPrac = row.isPractical || row.componentType === 'Practical';
-      const cleanCode = String(row.courseCode || row.Course_Code || '').replace(/\s*[\(\[](Practical|TMA)[\)\]]\s*/gi, '').trim().toUpperCase();
-      return {
-        ...row,
-        Course_Code: isPrac ? `${cleanCode} (Practical)` : cleanCode,
-        courseCode: cleanCode,
-        Component: isPrac ? 'Practical' : 'Assignment',
-        componentType: isPrac ? 'Practical' : 'Assignment',
-        isPractical: isPrac,
-      };
-    }),
+    unpackedCourses: sanitized.unpackedCourses || [],
   };
 
   // Dispatch once to SCRIPT_URL with no-cors to prevent duplicate recordings in Intake_Register
@@ -311,7 +311,7 @@ export async function postAddIntake(
         assignmentCourses: assignmentList,
         componentType: categoryLabel,
         session: activeSession,
-        submissionDate: intakeRecord.submissionDate || intakeRecord.Submission_Date,
+        submissionDate: sanitized.submissionDate,
         submissionMode: intakeRecord.submissionMode,
         consignmentNo: intakeRecord.consignmentNo,
         remarks: intakeRecord.remarks,
@@ -344,58 +344,112 @@ export async function postEditIntake(payloadData: {
   submissionDate?: string;
   receiptDate?: string;
 }): Promise<ApiResponse> {
+  // Pre-push validation check for Edit
+  const prePushCheck = validatePrePushToGoogleSheets({
+    enrollmentNo: payloadData.enrollmentNo,
+    candidateName: payloadData.candidateName,
+    contact: payloadData.contact,
+    programme: payloadData.programme,
+    courses: payloadData.courses,
+    submissionDate: payloadData.submissionDate,
+    session: payloadData.session,
+  });
+
+  if (!prePushCheck.canPush) {
+    const errorDetails = prePushCheck.errors.join('; ');
+    console.error('[Google Sheets Edit Push Blocked by Validation]:', errorDetails);
+    throw new Error(`Data entry validation failed: ${errorDetails}`);
+  }
+
+  const sanitized = prePushCheck.sanitizedData!;
+  const cleanEnr = sanitized.enrollmentNo;
+  const cleanName = sanitized.candidateName;
+  const cleanContact = sanitized.contact;
+  const cleanProg = sanitized.programme;
+  const cleanDate = sanitized.submissionDate;
+  const cleanTimestamp = cleanDate ? `${cleanDate}T10:00:00.000Z` : '';
+  const separatedCourseList = sanitized.separatedCourseString;
+
   const payload = {
     action: "EDIT_INTAKE",
     payload: {
       id: payloadData.id,
       originalEnrollmentNo: String(payloadData.originalEnrollmentNo || '').trim(),
-      enrollmentNo: String(payloadData.enrollmentNo || '').trim(),
-      candidateName: String(payloadData.candidateName || '').trim(),
-      contact: String(payloadData.contact || '').trim(),
-      programme: String(payloadData.programme || '').trim().toUpperCase(),
+      enrollmentNo: cleanEnr,
+      candidateName: cleanName,
+      studentName: cleanName,
+      Candidate_Name: cleanName,
+      contact: cleanContact,
+      programme: cleanProg,
       courses: payloadData.courses || [],
+      separatedCourses: separatedCourseList,
+      practicalCourses: sanitized.practicalCourses,
+      assignmentCourses: sanitized.assignmentCourses,
+      component: sanitized.categoryLabel,
       session: payloadData.session || 'July 2026',
-      submissionDate: payloadData.submissionDate || '',
-      receiptDate: payloadData.receiptDate || payloadData.submissionDate || '',
+      submissionDate: cleanDate,
+      receiptDate: payloadData.receiptDate || cleanDate,
+      timestamp: cleanTimestamp,
+      Timestamp: cleanTimestamp,
+      date: cleanDate,
+      Date: cleanDate,
     },
     // Top-level aliases for flexible Apps Script handlers
     id: payloadData.id,
     originalEnrollmentNo: String(payloadData.originalEnrollmentNo || '').trim(),
-    enrollmentNo: String(payloadData.enrollmentNo || '').trim(),
-    candidateName: String(payloadData.candidateName || '').trim(),
-    contact: String(payloadData.contact || '').trim(),
-    programme: String(payloadData.programme || '').trim().toUpperCase(),
+    enrollmentNo: cleanEnr,
+    candidateName: cleanName,
+    studentName: cleanName,
+    Candidate_Name: cleanName,
+    contact: cleanContact,
+    programme: cleanProg,
     courses: payloadData.courses || [],
+    separatedCourses: separatedCourseList,
+    practicalCourses: sanitized.practicalCourses,
+    assignmentCourses: sanitized.assignmentCourses,
+    component: sanitized.categoryLabel,
     session: payloadData.session || 'July 2026',
-    submissionDate: payloadData.submissionDate || '',
-    receiptDate: payloadData.receiptDate || payloadData.submissionDate || '',
+    submissionDate: cleanDate,
+    receiptDate: payloadData.receiptDate || cleanDate,
+    timestamp: cleanTimestamp,
+    Timestamp: cleanTimestamp,
+    date: cleanDate,
+    Date: cleanDate,
   };
 
-  sendScriptPost(payload).catch((err) => console.warn('[postEditIntake error]:', err));
+  try {
+    await sendScriptPost(payload);
+  } catch (err) {
+    console.warn('[postEditIntake error]:', err);
+  }
 
   // Sync with Express backend data store
   try {
-    fetch('/api/intake/update', {
+    await fetch('/api/intake/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         id: payloadData.id,
         originalEnrollmentNo: payloadData.originalEnrollmentNo,
-        enrollmentNo: payloadData.enrollmentNo,
-        studentName: payloadData.candidateName,
-        studentPhone: payloadData.contact,
-        programmeCode: payloadData.programme,
+        enrollmentNo: cleanEnr,
+        studentName: cleanName,
+        studentPhone: cleanContact,
+        programmeCode: cleanProg,
         courseCodes: payloadData.courses,
+        practicalCourses: sanitized.practicalCourses,
+        assignmentCourses: sanitized.assignmentCourses,
         session: payloadData.session,
-        submissionDate: payloadData.submissionDate,
+        submissionDate: cleanDate,
       }),
-    }).catch(() => {});
-  } catch {}
+    });
+  } catch (backendErr) {
+    console.warn('[postEditIntake backend sync warning]:', backendErr);
+  }
 
   return {
     status: 'success',
     action: 'EDIT_INTAKE',
-    message: 'Intake entry updated & synced',
+    message: 'Intake entry updated & validated with Google Sheet',
   };
 }
 

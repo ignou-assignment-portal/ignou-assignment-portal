@@ -16,7 +16,12 @@ import {
   CheckCircle2,
   Lock,
   Layers,
+  ShieldCheck,
+  ShieldAlert,
+  FlaskConical,
+  FileCheck,
 } from 'lucide-react';
+import { runBackgroundDataEntryValidation } from '../services/dataEntryValidationService';
 
 interface EditIntakeModalProps {
   isOpen: boolean;
@@ -108,11 +113,49 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
       .map((ce) => ce.courseCode.toUpperCase());
   }, [record, currentSession, allCourseEvaluations]);
 
+  // Real-time Background Data Entry Validation Service for Edits:
+  // Validates enrollment numbers, candidate names, phone, programme, dates before pushing to Google Sheets
+  const realtimeValidation = useMemo(() => {
+    return runBackgroundDataEntryValidation(
+      {
+        enrollmentNo,
+        studentName: candidateName,
+        studentPhone: contact,
+        programmeCode: programme,
+        courseCodes: parsedCourses,
+        submissionDate,
+        session: record?.session || currentSession,
+      },
+      {
+        existingEvaluations: allCourseEvaluations,
+        currentIntakeId: record?.id,
+        currentSession: record?.session || currentSession,
+      }
+    );
+  }, [
+    enrollmentNo,
+    candidateName,
+    contact,
+    programme,
+    parsedCourses,
+    submissionDate,
+    record,
+    currentSession,
+    allCourseEvaluations,
+  ]);
+
   if (!isOpen || !record) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+
+    // Pre-Push Background Validation Check
+    if (!realtimeValidation.isValid) {
+      const primaryErr = realtimeValidation.errors[0] || 'Data entry validation failed. Please correct errors before saving.';
+      setFormError(primaryErr);
+      return;
+    }
 
     const cleanEnr = enrollmentNo.trim();
     const cleanName = candidateName.trim();
@@ -182,7 +225,7 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
     try {
       setIsSubmitting(true);
       // Perform optimistic state update & dispatch POST EDIT_INTAKE via AppContext
-      editIntakeEntry({
+      await editIntakeEntry({
         id: record.id,
         originalEnrollmentNo: originalEnrollmentNo.trim(),
         enrollmentNo: cleanEnr,
@@ -195,7 +238,7 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
       });
 
       if (submissionDate.trim()) {
-        updateIntakeDate(record.id || record.tokenNo, submissionDate.trim());
+        await updateIntakeDate(record.id || record.tokenNo, submissionDate.trim());
       }
 
       setIsSubmitting(false);
@@ -298,13 +341,36 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
                 <input
                   id="edit-enrollment-input"
                   type="text"
+                  maxLength={10}
                   value={enrollmentNo}
-                  onChange={(e) => setEnrollmentNo(e.target.value.trim())}
+                  onChange={(e) => setEnrollmentNo(e.target.value.replace(/\D/g, ''))}
                   placeholder="e.g., 2401928371"
                   required
-                  className="w-full pl-9 pr-3 py-2 text-xs font-mono font-bold border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  className={`w-full pl-9 pr-3 py-2 text-xs font-mono font-bold border rounded-lg focus:outline-hidden transition ${
+                    enrollmentNo.trim().length === 0
+                      ? 'border-zinc-300 focus:ring-2 focus:ring-indigo-500'
+                      : realtimeValidation.fields.enrollmentNo.valid
+                      ? 'border-emerald-400 bg-emerald-50/20 focus:ring-2 focus:ring-emerald-500 text-emerald-950'
+                      : 'border-rose-400 bg-rose-50/25 focus:ring-2 focus:ring-rose-500 text-rose-950'
+                  }`}
                 />
               </div>
+              {enrollmentNo.trim().length > 0 && (
+                <div
+                  className={`mt-1.5 px-2 py-0.5 rounded text-[10.5px] font-semibold flex items-center gap-1.5 transition animate-in fade-in ${
+                    realtimeValidation.fields.enrollmentNo.valid
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                      : 'bg-rose-50 text-rose-800 border border-rose-300'
+                  }`}
+                >
+                  {realtimeValidation.fields.enrollmentNo.valid ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  )}
+                  <span>{realtimeValidation.fields.enrollmentNo.message}</span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -323,9 +389,31 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
                   onChange={(e) => setCandidateName(e.target.value)}
                   placeholder="Full student name"
                   required
-                  className="w-full pl-9 pr-3 py-2 text-xs font-semibold border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  className={`w-full pl-9 pr-3 py-2 text-xs font-semibold border rounded-lg focus:outline-hidden transition ${
+                    candidateName.trim().length === 0
+                      ? 'border-zinc-300 focus:ring-2 focus:ring-indigo-500'
+                      : realtimeValidation.fields.studentName.valid
+                      ? 'border-emerald-400 bg-emerald-50/20 focus:ring-2 focus:ring-emerald-500 text-emerald-950'
+                      : 'border-rose-400 bg-rose-50/25 focus:ring-2 focus:ring-rose-500 text-rose-950'
+                  }`}
                 />
               </div>
+              {candidateName.trim().length > 0 && (
+                <div
+                  className={`mt-1.5 px-2 py-0.5 rounded text-[10.5px] font-semibold flex items-center gap-1.5 transition animate-in fade-in ${
+                    realtimeValidation.fields.studentName.valid
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border border-rose-300'
+                  }`}
+                >
+                  {realtimeValidation.fields.studentName.valid ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  )}
+                  <span>{realtimeValidation.fields.studentName.message}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -460,8 +548,8 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
 
             {/* Real-time recognized course chips */}
             {parsedCourses.length > 0 && (
-              <div className="mt-2.5 p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl">
-                <div className="text-[10px] uppercase font-bold text-zinc-500 mb-1.5 flex items-center justify-between">
+              <div className="mt-2.5 p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2">
+                <div className="text-[10px] uppercase font-bold text-zinc-500 mb-1 flex items-center justify-between">
                   <span>Recognized Course List:</span>
                   {lockedCourseCodes.length > 0 && (
                     <span className="text-amber-800 font-semibold flex items-center gap-1 text-[10px]">
@@ -473,24 +561,83 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
                 <div className="flex flex-wrap gap-1.5">
                   {parsedCourses.map((c) => {
                     const isLocked = lockedCourseCodes.includes(c);
+                    const isPrac = realtimeValidation.separated.practicalCourses.includes(c);
                     return (
                       <span
                         key={c}
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-bold border ${
                           isLocked
                             ? 'bg-amber-100 text-amber-950 border-amber-300'
-                            : 'bg-indigo-50 text-indigo-900 border-indigo-200'
+                            : isPrac
+                            ? 'bg-purple-100 text-purple-950 border-purple-300'
+                            : 'bg-amber-50 text-amber-950 border-amber-300'
                         }`}
                       >
                         {isLocked && <Lock className="w-3 h-3 text-amber-700" />}
+                        {isPrac && <FlaskConical className="w-3 h-3 text-purple-600" />}
+                        {!isLocked && !isPrac && <FileCheck className="w-3 h-3 text-amber-600" />}
                         {c}
-                        {isLocked && <span className="text-[9px] font-sans font-normal">(Locked)</span>}
+                        <span className="text-[9px] font-sans font-semibold">
+                          {isLocked ? '(Locked)' : isPrac ? '(Practical)' : '(TMA)'}
+                        </span>
                       </span>
                     );
                   })}
                 </div>
+
+                {/* Strict TMA vs Practical Separation Gate */}
+                <div className="pt-2 border-t border-zinc-200 grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2 rounded bg-amber-50/70 border border-amber-200">
+                    <div className="text-[10px] font-bold text-amber-900 flex items-center gap-1">
+                      <FileCheck className="w-3 h-3 text-amber-600" />
+                      <span>Assignment (TMA): {realtimeValidation.separated.assignmentCourses.length}</span>
+                    </div>
+                    <div className="text-[10.5px] font-mono text-amber-950 mt-0.5 truncate">
+                      {realtimeValidation.separated.assignmentCourses.join(', ') || 'None'}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded bg-purple-50/70 border border-purple-200">
+                    <div className="text-[10px] font-bold text-purple-900 flex items-center gap-1">
+                      <FlaskConical className="w-3 h-3 text-purple-600" />
+                      <span>Practical: {realtimeValidation.separated.practicalCourses.length}</span>
+                    </div>
+                    <div className="text-[10.5px] font-mono text-purple-950 mt-0.5 truncate">
+                      {realtimeValidation.separated.practicalCourses.join(', ') || 'None'}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
+          </div>
+
+          {/* Pre-Push Background Validation Card */}
+          <div
+            id="edit-background-validation-card"
+            className={`p-3 rounded-xl border transition-all ${
+              realtimeValidation.isValid
+                ? 'bg-emerald-50/90 border-emerald-300 shadow-xs'
+                : 'bg-rose-50/90 border-rose-300 shadow-xs'
+            }`}
+          >
+            <div className="flex items-start gap-2.5">
+              {realtimeValidation.isValid ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              ) : (
+                <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              )}
+              <div className="flex-1">
+                <div className={`text-xs font-bold ${realtimeValidation.isValid ? 'text-emerald-950' : 'text-rose-950'}`}>
+                  {realtimeValidation.isValid
+                    ? '✓ Pre-Push Validation Passed: Safe to Sync with Google Sheets'
+                    : `⚠️ Pre-Push Validation Blocked (${realtimeValidation.errors.length} Issue${realtimeValidation.errors.length === 1 ? '' : 's'})`}
+                </div>
+                <p className={`text-[11px] mt-0.5 ${realtimeValidation.isValid ? 'text-emerald-800' : 'text-rose-800'}`}>
+                  {realtimeValidation.isValid
+                    ? 'TMA and Practical courses strictly separated. Format ready for Google Sheets dispatch.'
+                    : realtimeValidation.errors.join('; ')}
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Sync & Persistence Guarantee Note */}

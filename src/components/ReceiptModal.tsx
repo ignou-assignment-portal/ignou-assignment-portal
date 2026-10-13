@@ -33,11 +33,11 @@ export const ReceiptModal: React.FC = () => {
     window.print();
   };
 
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDateChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const newDate = e.target.value;
     setCurrentReceiptDate(newDate);
     if (newDate) {
-      updateIntakeDate(selectedReceiptRecord.id || selectedReceiptRecord.tokenNo, newDate);
+      await updateIntakeDate(selectedReceiptRecord.id || selectedReceiptRecord.tokenNo, newDate);
     }
   };
 
@@ -88,10 +88,10 @@ export const ReceiptModal: React.FC = () => {
               />
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   const today = new Date().toISOString().split('T')[0];
                   setCurrentReceiptDate(today);
-                  updateIntakeDate(selectedReceiptRecord.id || selectedReceiptRecord.tokenNo, today);
+                  await updateIntakeDate(selectedReceiptRecord.id || selectedReceiptRecord.tokenNo, today);
                 }}
                 className="text-[10px] text-indigo-300 hover:text-white underline cursor-pointer ml-1"
                 title="Set receipt date to today"
