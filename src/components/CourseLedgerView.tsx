@@ -113,7 +113,7 @@ export const CourseLedgerView: React.FC = () => {
     });
 
     return Array.from(map.values()).sort((a, b) => b.totalReceived - a.totalReceived);
-  }, [sessionIntakes, sessionPackets]);
+  }, [sessionIntakes, sessionCourseEvaluations, sessionPackets]);
 
   // Evaluator lookup helper
   const getEvaluatorInfo = (evId: string | null) => {

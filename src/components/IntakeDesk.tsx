@@ -23,6 +23,8 @@ import {
   ShieldCheck,
   FileCheck,
   FileCheck2,
+  Camera,
+  QrCode,
   Eye,
   CheckCircle2,
   Phone,
@@ -60,6 +62,7 @@ import { IntakeReportModal } from './IntakeReportModal';
 import { downloadStudentIntakePDF } from '../services/pdfReportGenerator';
 import { AssignmentStatusSummaryCard } from './AssignmentStatusSummaryCard';
 import { ErrorBoundary } from './ErrorBoundary';
+import { BarcodeScannerModal } from './BarcodeScannerModal';
 
 export { ValidationSummary, ProgrammeIntakeBarChart, EnrollmentAuditModal, IntakeReportModal, AssignmentStatusSummaryCard };
 export type { ValidationSummaryProps };
@@ -434,6 +437,7 @@ export const IntakeDesk: React.FC = () => {
   // Sub-view toggle for Desk Official
   const [deskView, setDeskView] = useState<'REGISTER' | 'SUBMISSIONS_REGISTER' | 'RECEIPTS'>('REGISTER');
   const [editingRecord, setEditingRecord] = useState<any | null>(null);
+  const [isScannerModalOpen, setIsScannerModalOpen] = useState(false);
   const [isBannerCollapsed, setIsBannerCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem('ignou_sc2033_intake_banner_collapsed') === 'true';
@@ -1594,6 +1598,145 @@ export const IntakeDesk: React.FC = () => {
     }
   };
 
+  // Barcode / QR Scanner detection handler
+  const handleBarcodeScanSuccess = (decodedText: string) => {
+    setIsScannerModalOpen(false);
+    const raw = String(decodedText || '').trim();
+    if (!raw) return;
+
+    // Check if decoded text is JSON (e.g. from a generated QR)
+    let scannedEnrollment = '';
+    let scannedToken = '';
+    let scannedProgramme = '';
+    let scannedCandidateName = '';
+
+    try {
+      if (raw.startsWith('{') && raw.endsWith('}')) {
+        const parsed = JSON.parse(raw);
+        scannedEnrollment = String(parsed.enrollmentNo || parsed.studentId || parsed.Enrollment_No || '').trim();
+        scannedToken = String(parsed.tokenNo || parsed.receiptNumber || parsed.token || parsed.id || '').trim();
+        scannedProgramme = String(parsed.programmeCode || parsed.programme || parsed.Programme || '').trim();
+        scannedCandidateName = String(parsed.candidateName || parsed.studentName || parsed.Candidate_Name || '').trim();
+      }
+    } catch {}
+
+    // Extract enrollment or token if not parsed from JSON
+    if (!scannedEnrollment) {
+      if (/^(SC2033|REG-|TOK-|intake-|sub-)/i.test(raw)) {
+        scannedToken = raw;
+      }
+      const enrMatch = raw.match(/\b\d{9,10}\b/);
+      if (enrMatch) {
+        scannedEnrollment = enrMatch[0];
+      } else {
+        const digits = raw.replace(/\D/g, '');
+        if (digits.length >= 7 && digits.length <= 11) {
+          scannedEnrollment = digits;
+        } else {
+          scannedToken = raw;
+        }
+      }
+    }
+
+    // 1. Try to find existing record in active session by Token or Receipt Number
+    let matchedIntake: any = null;
+    let matchedReceipt: any = null;
+
+    if (scannedToken) {
+      matchedIntake = sessionIntakes.find(
+        (r: any) =>
+          norm(r.tokenNo) === norm(scannedToken) ||
+          norm(r.id) === norm(scannedToken) ||
+          norm(r.receiptNumber) === norm(scannedToken) ||
+          norm(r.Token_No) === norm(scannedToken)
+      );
+      matchedReceipt = sessionRegistrationReceipts.find(
+        (r: any) =>
+          norm(r.receiptNumber) === norm(scannedToken) ||
+          norm(r.id) === norm(scannedToken)
+      );
+    }
+
+    // 2. Try to find by enrollment number in active session
+    const targetEnr = scannedEnrollment || matchedIntake?.enrollmentNo || matchedReceipt?.studentId;
+    if (!matchedIntake && targetEnr) {
+      matchedIntake = sessionIntakes.find(
+        (r: any) =>
+          String(r.enrollmentNo || r.Enrollment_No || '').trim() === String(targetEnr).trim()
+      );
+    }
+
+    if (!matchedReceipt && targetEnr) {
+      matchedReceipt = sessionRegistrationReceipts.find(
+        (r: any) =>
+          String(r.studentId || r.enrollmentNo || '').trim() === String(targetEnr).trim()
+      );
+    }
+
+    if (matchedIntake) {
+      const enr = matchedIntake.enrollmentNo || matchedIntake.Enrollment_No || '';
+      const name = matchedIntake.studentName || matchedIntake.candidateName || matchedIntake.Candidate_Name || '';
+      const prog = matchedIntake.programmeCode || matchedIntake.programme || matchedIntake.Programme || '';
+      const phone = matchedIntake.studentPhone || matchedIntake.contact || matchedIntake.Contact || '';
+      const courses = matchedIntake.courseCodes || matchedIntake.courses || [];
+
+      setEnrollmentNo(enr);
+      if (name) setStudentName(name);
+      if (prog) setSelectedProgramme(prog);
+      if (phone) setStudentPhone(phone);
+
+      showToast(
+        `Scanned & Identified: ${name} (${enr}) - ${prog} [${courses.length} course${courses.length !== 1 ? 's' : ''}] in ${selectedSession || currentSession}`,
+        'success'
+      );
+
+      openReceiptModal(matchedIntake);
+      return;
+    }
+
+    if (matchedReceipt) {
+      const enr = matchedReceipt.studentId || matchedReceipt.enrollmentNo || '';
+      const name = matchedReceipt.studentName || matchedReceipt.candidateName || '';
+      const prog = matchedReceipt.programmeCode || matchedReceipt.programme || '';
+      const phone = matchedReceipt.studentPhone || matchedReceipt.contact || '';
+
+      setEnrollmentNo(enr);
+      if (name) setStudentName(name);
+      if (prog) setSelectedProgramme(prog);
+      if (phone) setStudentPhone(phone);
+
+      showToast(`Scanned & Retrieved Receipt: ${name} (${enr}) - ${prog}`, 'success');
+      openRegistrationReceiptModal(matchedReceipt);
+      return;
+    }
+
+    // Check if student exists in allIntakes history or lookup catalog
+    if (targetEnr) {
+      setEnrollmentNo(targetEnr);
+      const hist: any = allIntakes.find(
+        (r: any) => String(r.enrollmentNo || r.Enrollment_No || '').trim() === String(targetEnr).trim()
+      );
+      if (hist) {
+        if (hist.studentName || hist.candidateName) setStudentName(hist.studentName || hist.candidateName);
+        if (hist.programmeCode || hist.programme) setSelectedProgramme(hist.programmeCode || hist.programme);
+        if (hist.studentPhone || hist.contact) setStudentPhone(hist.studentPhone || hist.contact);
+      } else if (scannedCandidateName) {
+        setStudentName(scannedCandidateName);
+      }
+      if (scannedProgramme) {
+        setSelectedProgramme(scannedProgramme);
+      }
+
+      showToast(`Scanned Enrollment No: ${targetEnr}. Verified and loaded into Desk.`, 'info');
+      setTimeout(() => {
+        handleCheckSingleEnrollmentInActiveSession();
+      }, 50);
+      return;
+    }
+
+    showToast(`Scanned barcode/QR: "${raw}". No matching student assignment found.`, 'warning');
+  };
+
   const handleIntakeSubmit = handleSubmitAndGenerateReceipt;
 
   return (
@@ -1772,6 +1915,19 @@ export const IntakeDesk: React.FC = () => {
             <span className="px-1.5 py-0.2 rounded-md bg-indigo-200/70 text-indigo-900 font-mono text-[10px] font-bold">
               PDF
             </span>
+          </button>
+
+          {/* Barcode / QR Scanner Button: Uses device camera to scan and identify student records */}
+          <button
+            type="button"
+            id="open-barcode-scanner-btn"
+            data-testid="open-barcode-scanner-btn"
+            onClick={() => setIsScannerModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-2xs border border-purple-200 bg-purple-50/90 text-purple-700 hover:bg-purple-100 hover:border-purple-300 active:scale-98"
+            title="Scan student assignment barcode or QR code using device camera"
+          >
+            <Camera className="w-4 h-4 text-purple-600 shrink-0" />
+            <span>Scan Barcode/QR</span>
           </button>
 
           {/* Button to trigger integrity scan to detect duplicate enrollment numbers across all current active session records */}
@@ -1972,16 +2128,28 @@ export const IntakeDesk: React.FC = () => {
                       <label htmlFor="enrollment-input" className="block text-xs font-semibold text-zinc-700">
                         Student Enrollment Number <span className="text-rose-500">*</span>
                       </label>
-                      <button
-                        type="button"
-                        id="btn-check-enrollment-active-session"
-                        onClick={handleCheckSingleEnrollmentInActiveSession}
-                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 cursor-pointer transition"
-                        title={`Check if this enrollment number is already registered in active session (${selectedSession || currentSession})`}
-                      >
-                        <Search className="w-3 h-3" />
-                        <span>Check in {selectedSession || currentSession}</span>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          id="btn-scan-camera-enrollment"
+                          onClick={() => setIsScannerModalOpen(true)}
+                          className="text-[11px] font-bold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                          title="Open camera to scan Barcode / QR from assignment slip or student ID"
+                        >
+                          <Camera className="w-3 h-3 text-purple-600" />
+                          <span>Scan Barcode / QR</span>
+                        </button>
+                        <button
+                          type="button"
+                          id="btn-check-enrollment-active-session"
+                          onClick={handleCheckSingleEnrollmentInActiveSession}
+                          className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 cursor-pointer transition"
+                          title={`Check if this enrollment number is already registered in active session (${selectedSession || currentSession})`}
+                        >
+                          <Search className="w-3 h-3" />
+                          <span>Check in {selectedSession || currentSession}</span>
+                        </button>
+                      </div>
                     </div>
                     <div className="relative">
                       <Hash className="w-4 h-4 text-zinc-400 absolute left-3 top-2.5" />
@@ -2002,9 +2170,17 @@ export const IntakeDesk: React.FC = () => {
                             if (nameInput) nameInput.focus();
                           }
                         }}
-                        className="w-full pl-9 pr-3 py-2 text-xs font-mono font-bold tracking-wider border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                        className="w-full pl-9 pr-10 py-2 text-xs font-mono font-bold tracking-wider border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
                         required
                       />
+                      <button
+                        type="button"
+                        onClick={() => setIsScannerModalOpen(true)}
+                        className="absolute right-2 top-2 p-1 text-zinc-400 hover:text-purple-600 hover:bg-purple-50 rounded transition cursor-pointer"
+                        title="Scan Barcode / QR with camera"
+                      >
+                        <Camera className="w-4 h-4" />
+                      </button>
                     </div>
                     <div className="flex items-center justify-between text-[10px] text-zinc-500 mt-0.5">
                       <span>{enrollmentNo.length}/10 digits (Numbers only)</span>
@@ -3605,6 +3781,13 @@ export const IntakeDesk: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Barcode & QR Scanner Modal (Camera-assisted Student Retrieval) */}
+      <BarcodeScannerModal
+        isOpen={isScannerModalOpen}
+        onClose={() => setIsScannerModalOpen(false)}
+        onScanSuccess={handleBarcodeScanSuccess}
+      />
 
       {/* Floating Success Toast for Quick Date Updates */}
       {quickDateSuccessToast && (

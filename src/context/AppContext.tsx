@@ -369,9 +369,18 @@ const DUMMY_SEED_ENROLLMENTS = new Set([
   '2510294812', '2510294899', '2209182390', '2351829014', '2410982341'
 ]);
 
-export const isDummySubmissionId = (id: string, studentId?: string): boolean => {
+const DUMMY_STUDENT_NAMES = new Set([
+  'aarav sharma', 'pooja bhattacharya', 'mohammad tariq', 'kavita kumari',
+  'rohan joshi', 'temsula ao', 'divya soni', 'vikramaditya rao',
+  'neha malhotra', 'riya sen', 'rahul verma', 'deepa joshi',
+  'sunita meena', 'vikram malhotra', 'manish kumar tiwari'
+]);
+
+export const isDummySubmissionId = (id: string, studentId?: string, studentName?: string): boolean => {
   const sId = String(id || '').trim();
   if (sId.startsWith('sub-jul26-') || sId.startsWith('sub-jan27-') || sId.startsWith('sub-jan26-')) return true;
+  if (studentId && DUMMY_SEED_ENROLLMENTS.has(String(studentId).trim())) return true;
+  if (studentName && DUMMY_STUDENT_NAMES.has(String(studentName).trim().toLowerCase())) return true;
   if (sId.startsWith('sub-') && studentId && DUMMY_SEED_ENROLLMENTS.has(String(studentId).trim())) {
     const numPart = sId.replace('sub-', '');
     if (/^\d+$/.test(numPart) && Number(numPart) <= 50) return true;
@@ -379,18 +388,32 @@ export const isDummySubmissionId = (id: string, studentId?: string): boolean => 
   return false;
 };
 
-export const isDummyIntakeId = (id: string): boolean => {
+export const isDummyIntakeId = (id: string, enrollmentNo?: string, studentName?: string): boolean => {
   const sId = String(id || '').trim();
   if (sId.startsWith('intake-jul26-') || sId.startsWith('intake-jan27-') || sId.startsWith('intake-jan26-')) return true;
+  if (enrollmentNo && DUMMY_SEED_ENROLLMENTS.has(String(enrollmentNo).trim())) return true;
+  if (studentName && DUMMY_STUDENT_NAMES.has(String(studentName).trim().toLowerCase())) return true;
   return false;
 };
 
-export const isDummyEvaluationId = (id: string, intakeId?: string, enrollmentNo?: string): boolean => {
+export const isDummyEvaluationId = (id: string, intakeId?: string, enrollmentNo?: string, studentName?: string): boolean => {
   const sIntakeId = String(intakeId || '').trim();
   if (sIntakeId.startsWith('intake-jul26-') || sIntakeId.startsWith('intake-jan27-') || sIntakeId.startsWith('intake-jan26-')) return true;
   if (enrollmentNo && DUMMY_SEED_ENROLLMENTS.has(String(enrollmentNo).trim())) return true;
+  if (studentName && DUMMY_STUDENT_NAMES.has(String(studentName).trim().toLowerCase())) return true;
   const sId = String(id || '').trim();
   if (sId.startsWith('eval-jul26-') || sId.startsWith('eval-jan27-') || sId.startsWith('eval-jan26-')) return true;
+  if (sId.includes('_2350198421_') || sId.includes('_2240981723_') || sId.includes('_2109483721_') || sId.includes('_2351829014_') || sId.includes('_2410982341_') || sId.includes('_2401928371_') || sId.includes('_2510294812_') || sId.includes('_2510294899_') || sId.includes('_2209182390_')) return true;
+  return false;
+};
+
+export const isDummyReceiptId = (id: string, studentId?: string, receiptNumber?: string, studentName?: string): boolean => {
+  const sId = String(id || '').trim();
+  const sRec = String(receiptNumber || '').trim();
+  if (sId.startsWith('reg-receipt-jul26-') || sId.startsWith('reg-receipt-jan27-') || sId.startsWith('reg-receipt-jan26-')) return true;
+  if (sRec.startsWith('REG-SC2033-JUL26-000') || sRec.startsWith('REG-SC2033-JAN27-000') || sRec.startsWith('REG-SC2033-JAN26-000')) return true;
+  if (studentId && DUMMY_SEED_ENROLLMENTS.has(String(studentId).trim())) return true;
+  if (studentName && DUMMY_STUDENT_NAMES.has(String(studentName).trim().toLowerCase())) return true;
   return false;
 };
 
@@ -692,8 +715,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const hasReal = parsed.some((item: any) => !isDummyIntakeId(item.id));
-          const list = hasReal ? parsed.filter((item: any) => !isDummyIntakeId(item.id)) : parsed;
+          const list = parsed.filter((item: any) => !isDummyIntakeId(item.id, item.enrollmentNo));
           const seenIds = new Set<string>();
           return list.map((item: any, idx: number) => {
             let id = item.id;
@@ -708,9 +730,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
         }
       }
-      return INITIAL_INTAKE_RECORDS;
+      return [];
     } catch {
-      return INITIAL_INTAKE_RECORDS;
+      return [];
     }
   });
 
@@ -756,20 +778,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const hasReal = parsed.some((s: any) => !isDummySubmissionId(s.id, s.studentId));
-          if (hasReal) {
-            const cleaned = parsed.filter((s: any) => !isDummySubmissionId(s.id, s.studentId));
-            try {
-              localStorage.setItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS, JSON.stringify(cleaned));
-            } catch {}
-            return cleaned;
-          }
-          return parsed;
+          const cleaned = parsed.filter((s: any) => !isDummySubmissionId(s.id, s.studentId));
+          return cleaned;
         }
       }
-      return INITIAL_ASSIGNMENT_SUBMISSIONS;
+      return [];
     } catch {
-      return INITIAL_ASSIGNMENT_SUBMISSIONS;
+      return [];
     }
   });
 
@@ -779,11 +794,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const saved = localStorage.getItem(STORAGE_KEYS.REGISTRATION_RECEIPTS);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter((r: any) => !isDummyReceiptId(r.id, r.studentId, r.receiptNumber));
+        }
       }
-      return INITIAL_REGISTRATION_RECEIPTS;
+      return [];
     } catch {
-      return INITIAL_REGISTRATION_RECEIPTS;
+      return [];
     }
   });
 
@@ -797,17 +814,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (saved) {
         const data: CourseEvaluationRecord[] = JSON.parse(saved);
         if (Array.isArray(data) && data.length > 0) {
-          const hasReal = data.some((rec) => !isDummyEvaluationId(rec.id, rec.intakeId));
-          const list = hasReal ? data.filter((rec) => !isDummyEvaluationId(rec.id, rec.intakeId)) : data;
+          const list = data.filter((rec) => !isDummyEvaluationId(rec.id, rec.intakeId, rec.enrollmentNo));
           return list.map((rec) => ({
             ...rec,
             lockedBy: rec.lockedBy?.includes('Aggarwal') ? 'Dr. Sant K. Gupta (Coordinator)' : rec.lockedBy,
           }));
         }
       }
-      return INITIAL_COURSE_EVALUATIONS;
+      return [];
     } catch {
-      return INITIAL_COURSE_EVALUATIONS;
+      return [];
     }
   });
 
@@ -1710,29 +1726,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Flexible Session Isolation (Normalizes case and whitespace):
   // sessionIntakes, sessionPackets, sessionBills, sessionAssignmentSubmissions, sessionRegistrationReceipts
   const sessionIntakes = useMemo(() => {
-    const list = (intakes || []).filter((r: any) => {
-      if (!r) return false;
-      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
-      return normalizeSession(r.Session || r.session) === normalizeSession(currentSession);
-    });
-    const hasReal = list.some((r: any) => !isDummyIntakeId(r.id));
-    if (hasReal) {
-      return list.filter((r: any) => !isDummyIntakeId(r.id));
-    }
-    return list;
+    return (intakes || [])
+      .filter((r: any) => {
+        if (!r) return false;
+        if (isDummyIntakeId(r.id, r.enrollmentNo)) return false;
+        if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
+        return normalizeSession(r.Session || r.session) === normalizeSession(currentSession);
+      });
   }, [intakes, currentSession]);
 
   const sessionCourseEvaluations = useMemo(() => {
-    const list = (courseEvaluations || []).filter((c: any) => {
-      if (!c) return false;
-      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
-      return normalizeSession(c.Session || c.session) === normalizeSession(currentSession);
-    });
-    const hasReal = list.some((c: any) => !isDummyEvaluationId(c.id, c.intakeId, c.enrollmentNo || c.Enrollment_No));
-    if (hasReal) {
-      return list.filter((c: any) => !isDummyEvaluationId(c.id, c.intakeId, c.enrollmentNo || c.Enrollment_No));
-    }
-    return list;
+    return (courseEvaluations || [])
+      .filter((c: any) => {
+        if (!c) return false;
+        if (isDummyEvaluationId(c.id, c.intakeId, c.enrollmentNo || c.Enrollment_No)) return false;
+        if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
+        return normalizeSession(c.Session || c.session) === normalizeSession(currentSession);
+      });
   }, [courseEvaluations, currentSession]);
 
   const sessionPackets = useMemo(() => {
@@ -1761,25 +1771,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [bills, currentSession]);
 
   const sessionAssignmentSubmissions = useMemo(() => {
-    const list = (assignmentSubmissions || []).filter((s: any) => {
+    // Collect any metadata (submissionMode, consignmentNo, remarks, custom status) from assignmentSubmissions
+    const subMetaMap = new Map<string, AssignmentSubmission>();
+    (assignmentSubmissions || []).forEach((s: any) => {
+      if (s && !isDummySubmissionId(s.id, s.studentId, s.studentName)) {
+        const key = `${(s.studentId || '').trim()}_${(s.courseCode || '').trim().toUpperCase()}_${s.componentType || (s.isPractical ? 'Practical' : 'Assignment')}`;
+        subMetaMap.set(key, s);
+      }
+    });
+
+    if (sessionCourseEvaluations && sessionCourseEvaluations.length > 0) {
+      return sessionCourseEvaluations.map((ce: any) => {
+        const enr = (ce.enrollmentNo || ce.Enrollment_No || '').toString().trim();
+        const code = (ce.courseCode || ce.Course_Code || '').toString().trim().toUpperCase();
+        const comp = ce.componentType || (ce.isPractical ? 'Practical' : 'Assignment');
+        const key = `${enr}_${code}_${comp}`;
+        const meta = subMetaMap.get(key);
+
+        const subId = ce.subId || ce.id || meta?.id || `sub-${enr}-${code}`;
+        const status: SubmissionStatusType = meta?.status === 'not submitted' ? 'not submitted' : 'submitted';
+
+        return {
+          id: subId,
+          studentId: enr,
+          studentName: ce.candidateName || ce.studentName || meta?.studentName || '',
+          programmeCode: ce.programme || ce.programmeCode || meta?.programmeCode || 'IGNOU',
+          courseCode: code,
+          session: ce.session || ce.Session || currentSession,
+          status,
+          submissionDate: meta?.submissionDate || ce.submissionDate || ce.receiptDate || new Date().toISOString().split('T')[0],
+          submissionMode: meta?.submissionMode || ce.submissionMode || 'In-Person (Desk)',
+          consignmentNo: meta?.consignmentNo,
+          remarks: meta?.remarks || ce.remarks,
+          componentType: comp,
+          isPractical: Boolean(ce.isPractical),
+          Session: ce.session || ce.Session || currentSession,
+          Course_Code: code,
+          Enrollment_No: enr,
+          updatedAt: ce.updatedAt || new Date().toISOString(),
+          updatedBy: ce.lockedBy || 'Desk Official',
+        } as unknown as AssignmentSubmission;
+      });
+    }
+
+    return (assignmentSubmissions || []).filter((s: any) => {
       if (!s) return false;
+      if (isDummySubmissionId(s.id, s.studentId, s.studentName)) return false;
       if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
       return normalizeSession(s.Session || s.session) === normalizeSession(currentSession);
     });
-    // If real submissions exist in this session, filter out dummy seed submissions completely
-    const hasReal = list.some((s: any) => !isDummySubmissionId(s.id, s.studentId));
-    if (hasReal) {
-      return list.filter((s: any) => !isDummySubmissionId(s.id, s.studentId));
-    }
-    return list;
-  }, [assignmentSubmissions, currentSession]);
+  }, [assignmentSubmissions, sessionCourseEvaluations, currentSession]);
 
   const sessionRegistrationReceipts = useMemo(() => {
-    return (registrationReceipts || []).filter((r: any) => {
-      if (!r) return false;
-      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
-      return normalizeSession(r.Session || r.session) === normalizeSession(currentSession);
-    });
+    return (registrationReceipts || [])
+      .filter((r: any) => {
+        if (!r) return false;
+        if (isDummyReceiptId(r.id, r.studentId, r.receiptNumber)) return false;
+        if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
+        return normalizeSession(r.Session || r.session) === normalizeSession(currentSession);
+      });
   }, [registrationReceipts, currentSession]);
 
   // Assignment Submissions Operations
@@ -3915,7 +3965,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const seenIntakeIds = new Set<string>();
         const intakePracticalCourseSet = new Set<string>();
 
-        const cleanIntake = rawIntake.map((r: any, idx: number) => {
+        const cleanIntake = rawIntake
+          .filter((r: any) => {
+            if (!r) return false;
+            const enr = String(r.Enrollment_No || r.enrollmentNo || r["Enrollment No"] || "").trim();
+            const cand = String(r.Candidate_Name || r.candidateName || r["Candidate Name"] || r.studentName || "").trim();
+            const id = String(r.id || r.tokenNo || r.Token_No || "").trim();
+            if (!enr || enr.length < 5) return false;
+            if (isDummyIntakeId(id, enr, cand)) return false;
+            return true;
+          })
+          .map((r: any, idx: number) => {
           const rawCourses = r.Courses || r.courses || r.courseCodes || "";
           const rawCourseList: string[] = Array.isArray(rawCourses)
             ? rawCourses.flatMap((c: any) => String(c).split(','))
@@ -4066,7 +4126,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
 
         // 2. Universal Normalizer: Course Ledger
-        const cleanLedger = rawLedger.map((r: any) => {
+        const cleanLedger = rawLedger
+          .filter((r: any) => {
+            if (!r) return false;
+            const enr = String(r.Enrollment_No || r.enrollmentNo || r["Enrollment No"] || "").trim();
+            const course = String(r.Course_Code || r.courseCode || r["Course Code"] || "").trim();
+            const cand = String(r.Candidate_Name || r.candidateName || r["Candidate Name"] || r.studentName || "").trim();
+            const subId = String(r.Sub_ID || r.subId || r.id || "").trim();
+            if (!enr || enr.length < 5 || !course) return false;
+            if (isDummyEvaluationId(subId, r.intakeId, enr, cand)) return false;
+            return true;
+          })
+          .map((r: any) => {
           const enrollment = (r.Enrollment_No || r.enrollmentNo || r["Enrollment No"] || "").toString().replace(/^'/, '').trim();
           const rawCourse = (r.Course_Code || r.courseCode || r["Course Code"] || "").toString().trim();
           const cleanCourse = rawCourse

@@ -80,7 +80,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onVie
   const intakeCount = sessionIntakes.length;
   const evalCount = sessionCourseEvaluations.length;
   const lockedEvalCount = sessionCourseEvaluations.filter((e) => e.isLocked).length;
-  const gradedEvalCount = sessionCourseEvaluations.filter((e) => e.marks !== null).length;
+  const gradedEvalCount = sessionCourseEvaluations.filter(
+    (e) => typeof e.marks === 'number'
+  ).length;
   const subCount = sessionAssignmentSubmissions.length;
   const packetCount = sessionPackets.length;
   const evalDirectoryCount = evaluators.length;

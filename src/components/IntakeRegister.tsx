@@ -76,19 +76,10 @@ export const IntakeRegister: React.FC = () => {
     }
   };
 
-  // Flexible Session Filtering: normalizes activeSession so whitespace or case does not hide valid rows
   const normalizeSession = (s: any) => norm(s);
   const sessionRecords = useMemo(() => {
-    const list = (intakeRegister && intakeRegister.length > 0)
-      ? intakeRegister
-      : (allIntakes && allIntakes.length > 0)
-      ? allIntakes
-      : sessionIntakes;
-    return list.filter((row: any) => {
-      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
-      return norm(row.Session || row.session) === norm(currentSession);
-    });
-  }, [intakeRegister, allIntakes, sessionIntakes, currentSession]);
+    return sessionIntakes;
+  }, [sessionIntakes]);
 
   // Filtered records supporting both snake_case and camelCase keys
   const filteredRecords = useMemo(() => {

@@ -50,19 +50,16 @@ export const CourseSubmissionsTracker: React.FC = () => {
   // ==========================================
   // PROGRAMME-LEVEL TRACKING STATE & DATA
   // ==========================================
-  // Find all distinct programmes active in the session
+  // Find all distinct programmes active in the session directly from validated session submissions
   const activeProgrammeCodes = useMemo(() => {
     const progs = Array.from(
-      new Set(sessionAssignmentSubmissions.map((s) => s.programmeCode))
+      new Set(sessionAssignmentSubmissions.map((s) => s.programmeCode).filter(Boolean))
     );
-    if (progs.length === 0) {
-      return ['BAG', 'MEG', 'MPS', 'BCOM'];
-    }
     return progs.sort();
   }, [sessionAssignmentSubmissions]);
 
   const [selectedProgramme, setSelectedProgramme] = useState<string>(() => {
-    return activeProgrammeCodes[0] || 'MEG';
+    return activeProgrammeCodes[0] || '';
   });
 
   // Programme search & status filter
@@ -184,20 +181,17 @@ export const CourseSubmissionsTracker: React.FC = () => {
   // ==========================================
   // COURSE-LEVEL TRACKING STATE & DATA
   // ==========================================
-  // Find all distinct courses currently registered in the active session
+  // Find all distinct courses currently registered in the active session directly from validated session submissions
   const activeCourseCodes = useMemo(() => {
     const codes = Array.from(
-      new Set(sessionAssignmentSubmissions.map((s) => s.courseCode))
+      new Set(sessionAssignmentSubmissions.map((s) => s.courseCode).filter(Boolean))
     );
-    if (codes.length === 0) {
-      return ['MEG-01', 'MEG-02', 'MPS-001', 'BPSC-131', 'IBO-01', 'MHD-02'];
-    }
     return codes.sort();
   }, [sessionAssignmentSubmissions]);
 
   // Selected Course
   const [selectedCourse, setSelectedCourse] = useState<string>(() => {
-    return activeCourseCodes[0] || 'MEG-01';
+    return activeCourseCodes[0] || '';
   });
 
   // Auto-populate Course Selection in Stage 3 & Registers & Tracking:
