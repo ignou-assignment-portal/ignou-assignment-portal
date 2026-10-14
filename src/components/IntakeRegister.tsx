@@ -49,17 +49,35 @@ export const IntakeRegister: React.FC = () => {
   const [quickDateModalRecord, setQuickDateModalRecord] = useState<any | null>(null);
   const [quickDateValue, setQuickDateValue] = useState<string>('');
 
+  const normalizeDateInput = (val?: any): string => {
+    if (!val) return new Date().toISOString().split('T')[0];
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    if (str.includes('T')) return str.split('T')[0];
+    const dmyMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (dmyMatch) {
+      const [, d, m, y] = dmyMatch;
+      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0];
+    }
+    return new Date().toISOString().split('T')[0];
+  };
+
   const handleEditClick = (record: any) => {
     setEditingRecord(record);
   };
 
   const handleQuickDateClick = (record: any) => {
-    const initialDate =
+    const initialDate = normalizeDateInput(
       record.submissionDate ||
       record.receiptDate ||
-      (record.Timestamp ? String(record.Timestamp).split('T')[0] : '') ||
-      (record.createdAt ? String(record.createdAt).split('T')[0] : '') ||
-      new Date().toISOString().split('T')[0];
+      record.Submission_Date ||
+      record.Timestamp ||
+      record.createdAt
+    );
     setQuickDateValue(initialDate);
     setQuickDateModalRecord(record);
   };

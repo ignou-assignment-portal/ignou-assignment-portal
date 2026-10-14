@@ -2970,6 +2970,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return prev;
       });
 
+      // Persist date override to localStorage and backend store so future fetches never revert the date
+      if (data.submissionDate && data.submissionDate.trim()) {
+        const cleanDate = data.submissionDate.trim();
+        try {
+          const ovRaw = localStorage.getItem('ignou_sc2033_receipt_date_overrides');
+          const overridesMap: Record<string, string> = ovRaw ? JSON.parse(ovRaw) : {};
+          overridesMap[`enr_${cleanNewEnr}`] = cleanDate;
+          overridesMap[`enr_${cleanOrigEnr}`] = cleanDate;
+          overridesMap[`enrollment_${cleanNewEnr}`] = cleanDate;
+          if (data.id) overridesMap[`id_${data.id}`] = cleanDate;
+          if (cascade.updatedIntake?.tokenNo) {
+            overridesMap[`tok_${cascade.updatedIntake.tokenNo}`] = cleanDate;
+            overridesMap[`token_${cascade.updatedIntake.tokenNo}`] = cleanDate;
+          }
+          localStorage.setItem('ignou_sc2033_receipt_date_overrides', JSON.stringify(overridesMap));
+        } catch {}
+
+        try {
+          fetch('/api/intake/update-date', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: data.id,
+              tokenNo: cascade.updatedIntake?.tokenNo,
+              enrollmentNo: cleanNewEnr,
+              session: activeSession,
+              newDate: cleanDate,
+            }),
+          }).catch(() => {});
+        } catch {}
+      }
+
       // Dispatch to Google Apps Script / backend and validate from Google Sheets
       try {
         await postEditIntake({
@@ -4178,12 +4210,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const rawIntake = data.intakeRegister || data.intakes || data.Intake_Register || [];
         const rawLedger = data.courseLedger || data.course_ledger || data.Course_Ledger || [];
 
-        // Load local date overrides only as last-resort fallback for rows missing timestamps
+        // Load local date overrides and merge with any backend date overrides
         let localDateOverrides: Record<string, string> = {};
         try {
           const ovStr = localStorage.getItem('ignou_sc2033_receipt_date_overrides');
           if (ovStr) localDateOverrides = JSON.parse(ovStr);
         } catch {}
+        if (data.dateOverrides && typeof data.dateOverrides === 'object') {
+          localDateOverrides = { ...localDateOverrides, ...data.dateOverrides };
+          try {
+            localStorage.setItem('ignou_sc2033_receipt_date_overrides', JSON.stringify(localDateOverrides));
+          } catch {}
+        }
 
         const getLocalOverrideDate = (enr: string, token: string, id: string) => {
           const cleanE = enr ? enr.replace(/\D/g, '').trim() : '';
@@ -4293,11 +4331,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           seenIntakeIds.add(id);
           const tokenNo = r.tokenNo || r.Token_No || id;
 
-          // Validate date directly from Google Sheets! Google Sheets is the source of truth!
+          // Explicit user-edited date override takes highest precedence so edited dates never revert
+          const explicitOverride = getLocalOverrideDate(enrollment, tokenNo, id);
           const sheetExplicitDate = r.submissionDate || r.receiptDate || r.Submission_Date || r.Date || r.date;
           const rawTimestamp = r.Timestamp || r.timestamp || r.createdAt || "";
           let subDate = "";
-          if (sheetExplicitDate) {
+          if (explicitOverride) {
+            subDate = String(explicitOverride).split('T')[0];
+          } else if (sheetExplicitDate) {
             subDate = String(sheetExplicitDate).split('T')[0];
           } else if (rawTimestamp) {
             const strTs = String(rawTimestamp).trim();
@@ -4310,8 +4351,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               subDate = strTs.split(' ')[0];
             }
           } else {
-            const fallbackDate = getLocalOverrideDate(enrollment, tokenNo, id);
-            subDate = fallbackDate ? String(fallbackDate).split('T')[0] : new Date().toISOString().split('T')[0];
+            subDate = new Date().toISOString().split('T')[0];
           }
           const timestamp = rawTimestamp || `${subDate}T10:00:00.000Z`;
           const official = r.Official || r.handledBy || r.official || "Desk Official";
@@ -4405,13 +4445,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const status = r.Status || r.status || "Pending";
           const isLocked = Boolean(status === 'Locked' || status === 'Marks Locked' || r.isLocked);
 
+          const matchingIntake = cleanIntake.find((it: any) => {
+            if (r.tokenNo && it.tokenNo === r.tokenNo) return true;
+            if (r.intakeId && it.id === r.intakeId) return true;
+            return (
+              it.enrollmentNo === enrollment &&
+              norm(it.session) === norm(session) &&
+              Array.isArray(it.courses) &&
+              it.courses.includes(cleanCourse)
+            );
+          });
+          const resolvedIntakeId = r.intakeId || matchingIntake?.id || '';
+          const resolvedTokenNo = r.tokenNo || matchingIntake?.tokenNo || '';
+
+          const explicitLedgerOverride = getLocalOverrideDate(enrollment, resolvedTokenNo || r.tokenNo || '', subId);
           const sheetLedgerDate = r.submissionDate || r.receiptDate || r.Submission_Date || r.receivedDate || r.intakeDate || r.Date || r.date;
           let ledgerDate = "";
-          if (sheetLedgerDate) {
+          if (explicitLedgerOverride) {
+            ledgerDate = String(explicitLedgerOverride).split('T')[0];
+          } else if (matchingIntake?.submissionDate) {
+            ledgerDate = String(matchingIntake.submissionDate).split('T')[0];
+          } else if (sheetLedgerDate) {
             ledgerDate = String(sheetLedgerDate).split('T')[0];
           } else {
-            const fallbackDate = getLocalOverrideDate(enrollment, r.tokenNo || '', subId);
-            ledgerDate = fallbackDate ? String(fallbackDate).split('T')[0] : new Date().toISOString().split('T')[0];
+            ledgerDate = new Date().toISOString().split('T')[0];
           }
 
           const hasPracTag = /\b(Practical|P)\b/i.test(rawCourse) || subId.includes('_PRAC_');
@@ -4453,11 +4510,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             // Component compatibility keys
             id: subId,
             submissionKey: subId,
+            intakeId: resolvedIntakeId,
+            tokenNo: resolvedTokenNo,
             studentName: candidate,
             programmeCode: programme,
             evaluatorName: evaluator !== 'Unallotted' ? evaluator : null,
             isLocked,
-            tokenNo: r.tokenNo || '',
             submissionDate: ledgerDate,
             receiptDate: ledgerDate,
             Submission_Date: ledgerDate,

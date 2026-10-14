@@ -35,11 +35,29 @@ export const RegistrationReceiptModal: React.FC = () => {
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
-  const receiptDateVal =
+  const normalizeDateInput = (val?: any): string => {
+    if (!val) return new Date().toISOString().split('T')[0];
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    if (str.includes('T')) return str.split('T')[0];
+    const dmyMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (dmyMatch) {
+      const [, d, m, y] = dmyMatch;
+      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0];
+    }
+    return new Date().toISOString().split('T')[0];
+  };
+
+  const receiptDateVal = normalizeDateInput(
     selectedRegistrationReceipt?.submissionDate ||
     selectedRegistrationReceipt?.receiptDate ||
-    (selectedRegistrationReceipt?.issuedAt ? String(selectedRegistrationReceipt.issuedAt).split('T')[0] : '') ||
-    new Date().toISOString().split('T')[0];
+    (selectedRegistrationReceipt as any)?.Submission_Date ||
+    selectedRegistrationReceipt?.issuedAt
+  );
 
   const [currentReceiptDate, setCurrentReceiptDate] = useState(receiptDateVal);
 
@@ -75,7 +93,12 @@ export const RegistrationReceiptModal: React.FC = () => {
         i.tokenNo === (selectedRegistrationReceipt as any).tokenNo ||
         (selectedRegistrationReceipt.studentId && i.enrollmentNo.trim() === selectedRegistrationReceipt.studentId.trim())
     );
-    if (found) return found;
+    if (found) {
+      return {
+        ...found,
+        submissionDate: currentReceiptDate || found.submissionDate,
+      };
+    }
 
     return {
       id: selectedRegistrationReceipt.id || (selectedRegistrationReceipt as any).intakeId || selectedRegistrationReceipt.receiptNumber || `REG-${Date.now()}`,
@@ -88,7 +111,7 @@ export const RegistrationReceiptModal: React.FC = () => {
       courseCodes: safeRegisteredCourses,
       session: selectedRegistrationReceipt.session || '',
       submissionDate: currentReceiptDate,
-      submissionMode: 'In-Person (Desk)',
+      submissionMode: (selectedRegistrationReceipt as any).submissionMode || 'In-Person (Desk)',
       status: 'Received',
       registeredBy: selectedRegistrationReceipt.issuedBy || 'Desk Official',
       createdAt: selectedRegistrationReceipt.issuedAt || new Date().toISOString(),

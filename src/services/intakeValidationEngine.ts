@@ -130,10 +130,18 @@ export function getEnrolledCoursesForStudent(
   const enrolled = new Set<string>();
   if (!cleanEnr) return enrolled;
 
+  const currentIntake = currentIntakeId && Array.isArray(existingIntakes)
+    ? existingIntakes.find((it) => it && (it.id === currentIntakeId || it.tokenNo === currentIntakeId))
+    : null;
+  const currentToken = currentIntake?.tokenNo;
+  const currentCourses = new Set(
+    (currentIntake?.courseCodes || []).map((c) => normCode(c)).filter(Boolean)
+  );
+
   if (Array.isArray(existingIntakes)) {
     existingIntakes.forEach((it) => {
       if (!it) return;
-      if (currentIntakeId && (it.id === currentIntakeId || it.tokenNo === currentIntakeId)) return;
+      if (currentIntakeId && (it.id === currentIntakeId || it.tokenNo === currentIntakeId || (currentIntake && it.id === currentIntake.id))) return;
       const itEnr = normEnrollment(it.enrollmentNo || (it as any).Enrollment_No || (it as any).studentId || (it as any)['Enrollment No']);
       if (itEnr === cleanEnr) {
         const rawCourses = it.courseCodes || (it as any).courses || (it as any).Courses || [];
@@ -152,10 +160,13 @@ export function getEnrolledCoursesForStudent(
     existingEvaluations.forEach((ce) => {
       if (!ce) return;
       if (currentIntakeId && (ce.intakeId === currentIntakeId || ce.id === currentIntakeId)) return;
+      if (currentToken && (ce.tokenNo === currentToken || (ce as any).Token_No === currentToken)) return;
       const ceEnr = normEnrollment(ce.enrollmentNo || (ce as any).Enrollment_No || (ce as any)['Enrollment No']);
-      const course = ce.courseCode || (ce as any).Course_Code || (ce as any)['Course Code'];
-      if (ceEnr === cleanEnr && course) {
+      if (ceEnr === cleanEnr) {
+        const course = ce.courseCode || (ce as any).Course_Code || (ce as any)['Course Code'];
         const cleanC = normCode(course);
+        // If this evaluation belongs to the intake currently being edited, don't flag as duplicate
+        if (currentIntake && currentCourses.has(cleanC)) return;
         if (cleanC) enrolled.add(cleanC);
       }
     });
@@ -178,6 +189,14 @@ export function getEnrolledCourseComponentsForStudent(
   const map = new Map<string, Set<'Assignment' | 'Practical'>>();
   if (!cleanEnr) return map;
 
+  const currentIntake = currentIntakeId && Array.isArray(existingIntakes)
+    ? existingIntakes.find((it) => it && (it.id === currentIntakeId || it.tokenNo === currentIntakeId))
+    : null;
+  const currentToken = currentIntake?.tokenNo;
+  const currentCourses = new Set(
+    (currentIntake?.courseCodes || []).map((c) => normCode(c)).filter(Boolean)
+  );
+
   const addComp = (code: string, type: 'Assignment' | 'Practical') => {
     const cleanC = normCode(code);
     if (!cleanC) return;
@@ -190,9 +209,12 @@ export function getEnrolledCourseComponentsForStudent(
     existingEvaluations.forEach((ce) => {
       if (!ce) return;
       if (currentIntakeId && (ce.intakeId === currentIntakeId || ce.id === currentIntakeId)) return;
+      if (currentToken && (ce.tokenNo === currentToken || (ce as any).Token_No === currentToken)) return;
       const ceEnr = normEnrollment(ce.enrollmentNo || (ce as any).Enrollment_No || (ce as any)['Enrollment No']);
       if (ceEnr === cleanEnr) {
         const c = ce.courseCode || (ce as any).Course_Code;
+        const cleanC = normCode(c);
+        if (currentIntake && currentCourses.has(cleanC)) return;
         if (c) {
           const isPrac = Boolean(ce.isPractical || ce.componentType === 'Practical');
           addComp(c, isPrac ? 'Practical' : 'Assignment');
@@ -204,7 +226,7 @@ export function getEnrolledCourseComponentsForStudent(
   if (Array.isArray(existingIntakes)) {
     existingIntakes.forEach((it) => {
       if (!it) return;
-      if (currentIntakeId && (it.id === currentIntakeId || it.tokenNo === currentIntakeId)) return;
+      if (currentIntakeId && (it.id === currentIntakeId || it.tokenNo === currentIntakeId || (currentIntake && it.id === currentIntake.id))) return;
       const itEnr = normEnrollment(it.enrollmentNo || (it as any).Enrollment_No || (it as any).studentId || (it as any)['Enrollment No']);
       if (itEnr === cleanEnr) {
         (it.practicalCourses || []).forEach((c) => addComp(c, 'Practical'));

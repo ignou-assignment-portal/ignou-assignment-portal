@@ -23,6 +23,23 @@ import {
 } from 'lucide-react';
 import { runBackgroundDataEntryValidation } from '../services/dataEntryValidationService';
 
+const normalizeDateInput = (val?: any): string => {
+  if (!val) return new Date().toISOString().split('T')[0];
+  const str = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  if (str.includes('T')) return str.split('T')[0];
+  const dmyMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (dmyMatch) {
+    const [, d, m, y] = dmyMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().split('T')[0];
+  }
+  return new Date().toISOString().split('T')[0];
+};
+
 interface EditIntakeModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -75,12 +92,13 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
       setProgramme(record.programmeCode || '');
       setCoursesInput(record.courseCodes ? record.courseCodes.join(', ') : '');
       const recAny = record as any;
-      const initialDate =
+      const initialDate = normalizeDateInput(
         record.submissionDate ||
         recAny.receiptDate ||
-        (recAny.Timestamp ? String(recAny.Timestamp).split('T')[0] : '') ||
-        (recAny.createdAt ? String(recAny.createdAt).split('T')[0] : '') ||
-        new Date().toISOString().split('T')[0];
+        recAny.Submission_Date ||
+        recAny.Timestamp ||
+        recAny.createdAt
+      );
       setSubmissionDate(initialDate);
       setFormError(null);
     }
@@ -178,7 +196,6 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
     }
 
     if (cleanContact && cleanContact.length !== 10) {
-      alert("Contact number must be exactly 10 digits.");
       setFormError("Contact number must be exactly 10 digits.");
       return;
     }
@@ -218,7 +235,6 @@ export const EditIntakeModal: React.FC<EditIntakeModalProps> = ({
 
     if (!validation.valid) {
       setFormError(validation.reason);
-      alert(validation.reason);
       return;
     }
 

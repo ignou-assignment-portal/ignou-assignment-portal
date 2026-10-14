@@ -112,19 +112,27 @@ export function validateEnrollmentNumber(
 
   const digits = cleanEnrollmentDigits(trimmed);
 
-  if (digits.length < 9) {
+  if (digits.length < 7) {
     return {
       valid: false,
       severity: 'error',
-      message: `Malformed: Too short (${digits.length} digits). IGNOU enrollment numbers must be 9 or 10 digits`,
+      message: `Malformed: Too short (${digits.length} digits). IGNOU enrollment numbers must be at least 7 digits`,
     };
   }
 
-  if (digits.length > 10) {
+  if (digits.length > 12) {
     return {
       valid: false,
       severity: 'error',
-      message: `Malformed: Too long (${digits.length} digits). IGNOU enrollment numbers cannot exceed 10 digits`,
+      message: `Malformed: Too long (${digits.length} digits). IGNOU enrollment numbers cannot exceed 12 digits`,
+    };
+  }
+
+  if (digits.length !== 9 && digits.length !== 10) {
+    return {
+      valid: true,
+      severity: 'warning',
+      message: `Note: Enrollment is ${digits.length} digits (standard IGNOU format is 9 or 10 digits)`,
     };
   }
 
@@ -515,8 +523,10 @@ export function validateSubmissionDate(dateStr?: string): FieldValidationStatus 
     };
   }
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  if (clean > todayStr) {
+  // Allow local calendar date including timezone offset buffer (+1 day from UTC)
+  const now = new Date();
+  const maxDate = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  if (clean > maxDate) {
     return {
       valid: false,
       severity: 'error',
@@ -524,11 +534,11 @@ export function validateSubmissionDate(dateStr?: string): FieldValidationStatus 
     };
   }
 
-  if (clean < '2020-01-01') {
+  if (clean < '2015-01-01') {
     return {
       valid: false,
       severity: 'warning',
-      message: 'Date is earlier than standard academic operational window (2020+)',
+      message: 'Date is earlier than standard academic operational window',
     };
   }
 

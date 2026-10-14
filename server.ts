@@ -430,6 +430,22 @@ app.post("/api/intake/update", (req, res) => {
     }
   );
 
+  if (submissionDate) {
+    const cleanDate = String(submissionDate).trim();
+    store.dateOverrides = store.dateOverrides || {};
+    const cleanEnr = String(enrollmentNo || originalEnrollmentNo || "").replace(/\D/g, "").trim();
+    if (cleanEnr) {
+      store.dateOverrides[`enr_${cleanEnr}`] = cleanDate;
+      store.dateOverrides[`enrollment_${cleanEnr}`] = cleanDate;
+    }
+    if (cascade.updatedIntake?.tokenNo) {
+      store.dateOverrides[`token_${cascade.updatedIntake.tokenNo}`] = cleanDate;
+      store.dateOverrides[`tok_${cascade.updatedIntake.tokenNo}`] = cleanDate;
+    }
+    if (resolvedId) store.dateOverrides[`id_${resolvedId}`] = cleanDate;
+    if (id) store.dateOverrides[`id_${id}`] = cleanDate;
+  }
+
   store.intakes = (store.intakes || []).map((it: any) => (it.id === id ? cascade.updatedIntake : it));
   store.courseLedger = cascade.updatedEvaluations;
   store.registrationReceipts = cascade.updatedReceipts;
@@ -575,6 +591,10 @@ app.get("/api/sheets", async (req, res) => {
     const text = await remoteResponse.text();
     try {
       const json = JSON.parse(text);
+      const store = loadStore();
+      if (store.dateOverrides && typeof json === 'object' && json !== null) {
+        json.dateOverrides = { ...(json.dateOverrides || {}), ...store.dateOverrides };
+      }
       // Validate directly from Google Sheets data - Google Sheets is the source of truth!
       return res.json(json);
     } catch {

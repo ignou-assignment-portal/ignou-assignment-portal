@@ -24,12 +24,30 @@ export const ReceiptModal: React.FC = () => {
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
-  const receiptDateVal =
+  const normalizeDateInput = (val?: any): string => {
+    if (!val) return new Date().toISOString().split('T')[0];
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    if (str.includes('T')) return str.split('T')[0];
+    const dmyMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (dmyMatch) {
+      const [, d, m, y] = dmyMatch;
+      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0];
+    }
+    return new Date().toISOString().split('T')[0];
+  };
+
+  const receiptDateVal = normalizeDateInput(
     selectedReceiptRecord?.submissionDate ||
     (selectedReceiptRecord as any)?.receiptDate ||
-    (selectedReceiptRecord?.Timestamp ? String(selectedReceiptRecord.Timestamp).split('T')[0] : '') ||
-    (selectedReceiptRecord?.createdAt ? String(selectedReceiptRecord.createdAt).split('T')[0] : '') ||
-    new Date().toISOString().split('T')[0];
+    (selectedReceiptRecord as any)?.Submission_Date ||
+    selectedReceiptRecord?.Timestamp ||
+    selectedReceiptRecord?.createdAt
+  );
 
   const [currentReceiptDate, setCurrentReceiptDate] = useState(receiptDateVal);
 
@@ -60,7 +78,12 @@ export const ReceiptModal: React.FC = () => {
         i.tokenNo === selectedReceiptRecord.tokenNo ||
         (selectedReceiptRecord.enrollmentNo && i.enrollmentNo.trim() === selectedReceiptRecord.enrollmentNo.trim())
     );
-    if (found) return found;
+    if (found) {
+      return {
+        ...found,
+        submissionDate: currentReceiptDate || found.submissionDate,
+      };
+    }
 
     return {
       id: selectedReceiptRecord.id || selectedReceiptRecord.tokenNo || `REC-${Date.now()}`,
