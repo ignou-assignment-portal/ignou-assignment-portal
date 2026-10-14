@@ -792,13 +792,91 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [registrationReceipts, setRegistrationReceipts] = useState<RegistrationReceipt[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.REGISTRATION_RECEIPTS);
+      const intakeList = (intakes || []).filter((item: any) => !isDummyIntakeId(item.id, item.enrollmentNo));
+      const intakeSessions = new Set(intakeList.map((i: any) => normalizeSession(i.session)));
+
+      let parsedList: any[] = [];
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.filter((r: any) => !isDummyReceiptId(r.id, r.studentId, r.receiptNumber));
+          parsedList = parsed.filter((r: any) => !isDummyReceiptId(r.id, r.studentId, r.receiptNumber));
         }
       }
-      return [];
+
+      // If we have intakes loaded, reconcile receipts for those sessions
+      if (intakeList.length > 0) {
+        const intakeTokens = new Set(intakeList.map((i: any) => String(i.tokenNo || i.id || '').trim()));
+        const intakeEnrs = new Set(intakeList.map((i: any) => `${String(i.enrollmentNo).trim()}_${normalizeSession(i.session)}`));
+        const intakeIds = new Set(intakeList.map((i: any) => String(i.id || '').trim()));
+
+        // Keep receipts that match an active intake, or belong to a different session not in intakeSessions
+        const validReceipts = parsedList.filter((r: any) => {
+          const sess = normalizeSession(r.session || r.Session || '');
+          if (!intakeSessions.has(sess)) return true; // keep receipts for other sessions
+          const rId = String(r.id || '').trim();
+          const rIntakeId = String(r.intakeId || '').trim();
+          const rTok = String(r.tokenNo || r.receiptNumber || '').trim();
+          const rEnrKey = `${String(r.studentId || r.Enrollment_No || '').trim()}_${sess}`;
+
+          return intakeIds.has(rId) || intakeIds.has(rIntakeId) || intakeTokens.has(rTok) || intakeEnrs.has(rEnrKey);
+        });
+
+        // Ensure every intake in intakeList has a receipt
+        const existingReceiptMap = new Map<string, any>();
+        validReceipts.forEach((r: any) => {
+          if (r.id) existingReceiptMap.set(r.id, r);
+          if (r.intakeId) existingReceiptMap.set(r.intakeId, r);
+          if (r.tokenNo) existingReceiptMap.set(r.tokenNo, r);
+        });
+
+        const reconciled = intakeList.map((item: any, idx: number) => {
+          const match = existingReceiptMap.get(item.id) || (item.tokenNo && existingReceiptMap.get(item.tokenNo));
+          const subDate = item.submissionDate || item.receiptDate || new Date().toISOString().split('T')[0];
+          return {
+            id: item.id || match?.id || `receipt-${item.id || idx}`,
+            receiptNumber: match?.receiptNumber || item.receiptNumber || item.tokenNo || item.id,
+            intakeId: item.id,
+            tokenNo: item.tokenNo || item.id,
+            studentId: item.enrollmentNo,
+            studentName: item.studentName || item.candidateName,
+            studentPhone: item.studentPhone || item.contact || '',
+            studentEmail: item.studentEmail || item.email || '',
+            programmeCode: item.programmeCode || item.programme,
+            session: item.session,
+            registeredCourses: item.courseCodes || item.courses || [],
+            practicalCourses: item.practicalCourses || [],
+            assignmentCourses: item.assignmentCourses || [],
+            courseDetails: item.courseDetails || match?.courseDetails,
+            isIntegrated: Boolean(item.isIntegrated || match?.isIntegrated),
+            partNo: item.integratedPartsCount || match?.partNo || 1,
+            submissionParts: item.submissionParts || match?.submissionParts,
+            issuedBy: item.registeredBy || item.handledBy || 'Coordinator Desk',
+            issuedAt: item.createdAt || match?.issuedAt || `${subDate}T10:00:00.000Z`,
+            submissionDate: subDate,
+            receiptDate: subDate,
+            remarks: item.remarks || match?.remarks || '',
+            feesPaid: match?.feesPaid,
+            Enrollment_No: item.enrollmentNo,
+            Candidate_Name: item.studentName || item.candidateName,
+            Contact: item.studentPhone || item.contact,
+            Programme: item.programmeCode || item.programme,
+            Courses: Array.isArray(item.courseCodes) ? item.courseCodes.join(', ') : String(item.courses || ''),
+            Timestamp: subDate,
+            Official: item.registeredBy || item.handledBy || 'Coordinator Desk',
+            Session: item.session,
+          } as RegistrationReceipt;
+        });
+
+        // Add other session receipts
+        const otherSessions = validReceipts.filter((r: any) => !intakeSessions.has(normalizeSession(r.session || r.Session || '')));
+        const finalReceipts = [...reconciled, ...otherSessions];
+        try {
+          localStorage.setItem(STORAGE_KEYS.REGISTRATION_RECEIPTS, JSON.stringify(finalReceipts));
+        } catch {}
+        return finalReceipts;
+      }
+
+      return parsedList;
     } catch {
       return [];
     }
@@ -1823,14 +1901,79 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [assignmentSubmissions, sessionCourseEvaluations, currentSession]);
 
   const sessionRegistrationReceipts = useMemo(() => {
-    return (registrationReceipts || [])
-      .filter((r: any) => {
+    // If no sessionIntakes exist or session is All, fallback to filtering registrationReceipts cleanly
+    if (!sessionIntakes || sessionIntakes.length === 0) {
+      return (registrationReceipts || []).filter((r: any) => {
         if (!r) return false;
         if (isDummyReceiptId(r.id, r.studentId, r.receiptNumber)) return false;
         if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
         return normalizeSession(r.Session || r.session) === normalizeSession(currentSession);
       });
-  }, [registrationReceipts, currentSession]);
+    }
+
+    // Canonical 1-to-1 sync: Exactly one official registration receipt per active intake in sessionIntakes!
+    const existingMap = new Map<string, RegistrationReceipt>();
+    (registrationReceipts || []).forEach((rcpt) => {
+      if (!rcpt) return;
+      if (rcpt.intakeId) existingMap.set(`intake_${rcpt.intakeId}`, rcpt);
+      if (rcpt.id) existingMap.set(`id_${rcpt.id}`, rcpt);
+      if (rcpt.tokenNo) existingMap.set(`tok_${rcpt.tokenNo.trim()}`, rcpt);
+      if (rcpt.receiptNumber) existingMap.set(`rec_${rcpt.receiptNumber.trim()}`, rcpt);
+      const enr = rcpt.studentId || (rcpt as any).Enrollment_No;
+      if (enr) {
+        existingMap.set(`enr_${String(enr).trim()}_${normalizeSession(rcpt.session || '')}`, rcpt);
+      }
+    });
+
+    return sessionIntakes.map((intake, idx) => {
+      const match =
+        existingMap.get(`intake_${intake.id}`) ||
+        existingMap.get(`id_${intake.id}`) ||
+        (intake.tokenNo && existingMap.get(`tok_${intake.tokenNo.trim()}`)) ||
+        (intake.receiptNumber && existingMap.get(`rec_${intake.receiptNumber.trim()}`)) ||
+        existingMap.get(`enr_${String(intake.enrollmentNo).trim()}_${normalizeSession(intake.session || currentSession)}`);
+
+      const sessionCode = generateSessionCode(intake.session || currentSession);
+      const tokenNo = intake.tokenNo || `SC2033-${sessionCode}-${String(idx + 1).padStart(4, '0')}`;
+      const receiptNumber = match?.receiptNumber || intake.receiptNumber || tokenNo;
+      const subDate = intake.submissionDate || intake.Submission_Date || intake.receiptDate || new Date().toISOString().split('T')[0];
+
+      return {
+        id: intake.id || match?.id || `receipt-${intake.id || idx}`,
+        receiptNumber,
+        intakeId: intake.id,
+        tokenNo,
+        studentId: intake.enrollmentNo,
+        studentName: intake.studentName,
+        studentPhone: intake.studentPhone || '',
+        studentEmail: intake.studentEmail || match?.studentEmail || '',
+        programmeCode: intake.programmeCode,
+        session: intake.session || currentSession,
+        registeredCourses: intake.courseCodes || [],
+        practicalCourses: intake.practicalCourses || [],
+        assignmentCourses: intake.assignmentCourses || [],
+        courseDetails: intake.courseDetails || match?.courseDetails,
+        isIntegrated: intake.isIntegrated ?? match?.isIntegrated ?? false,
+        partNo: intake.integratedPartsCount ?? match?.partNo ?? 1,
+        submissionParts: intake.submissionParts || match?.submissionParts,
+        issuedBy: intake.registeredBy || match?.issuedBy || 'Coordinator Desk',
+        issuedAt: intake.createdAt || match?.issuedAt || `${subDate}T10:00:00.000Z`,
+        submissionDate: subDate,
+        receiptDate: subDate,
+        remarks: intake.remarks || match?.remarks || '',
+        feesPaid: match?.feesPaid,
+        // Compatibility keys
+        Enrollment_No: intake.enrollmentNo,
+        Candidate_Name: intake.studentName,
+        Contact: intake.studentPhone,
+        Programme: intake.programmeCode,
+        Courses: Array.isArray(intake.courseCodes) ? intake.courseCodes.join(', ') : String(intake.courseCodes || ''),
+        Timestamp: subDate,
+        Official: intake.registeredBy || 'Coordinator Desk',
+        Session: intake.session || currentSession,
+      } as RegistrationReceipt;
+    });
+  }, [registrationReceipts, sessionIntakes, currentSession]);
 
   // Assignment Submissions Operations
   const updateSubmissionStatus = useCallback(
@@ -4305,34 +4448,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCourseEvaluations(cleanLedger as any);
 
         // Also update Registration Receipts so receipts view has latest entries
+        // Clean canonical receipts strictly derived from cleanIntake:
         setRegistrationReceipts((prev) => {
-          const map = new Map(prev.map((item) => [item.id || item.receiptNumber, item]));
-          cleanIntake.forEach((item: any) => {
-            map.set(item.id, {
-              id: item.id,
-              receiptNumber: item.tokenNo || item.id,
+          const incomingSessionsSet = new Set(cleanIntake.map((item: any) => normalizeSession(item.session)));
+          const prevMap = new Map<string, RegistrationReceipt>();
+          prev.forEach((p) => {
+            if (p.intakeId) prevMap.set(`intake_${p.intakeId}`, p);
+            if (p.id) prevMap.set(`id_${p.id}`, p);
+            if (p.tokenNo) prevMap.set(`tok_${p.tokenNo.trim()}`, p);
+            if (p.receiptNumber) prevMap.set(`rec_${p.receiptNumber.trim()}`, p);
+            const enr = p.studentId || (p as any).Enrollment_No;
+            if (enr) prevMap.set(`enr_${String(enr).trim()}_${normalizeSession(p.session)}`, p);
+          });
+
+          const syncedReceipts: RegistrationReceipt[] = cleanIntake.map((item: any) => {
+            const match =
+              prevMap.get(`intake_${item.id}`) ||
+              prevMap.get(`id_${item.id}`) ||
+              (item.tokenNo && prevMap.get(`tok_${item.tokenNo.trim()}`)) ||
+              (item.receiptNumber && prevMap.get(`rec_${item.receiptNumber.trim()}`)) ||
+              prevMap.get(`enr_${String(item.enrollmentNo).trim()}_${normalizeSession(item.session)}`);
+
+            const receiptId = item.id;
+            const tokenNo = item.tokenNo || item.id;
+            const receiptNumber = match?.receiptNumber || item.receiptNumber || tokenNo;
+            const subDate = item.submissionDate || item.receiptDate || (item.timestamp ? String(item.timestamp).split('T')[0] : new Date().toISOString().split('T')[0]);
+
+            return {
+              id: receiptId,
+              receiptNumber,
+              intakeId: item.id,
+              tokenNo,
               studentId: item.enrollmentNo,
               studentName: item.candidateName,
               studentPhone: item.contact,
+              studentEmail: item.email || match?.studentEmail || '',
               programmeCode: item.programme,
               session: item.session,
               registeredCourses: item.courses,
-              issuedBy: item.handledBy,
+              practicalCourses: item.practicalCourses || [],
+              assignmentCourses: item.assignmentCourses || [],
+              courseDetails: item.courseDetails || match?.courseDetails,
+              isIntegrated: Boolean(item.isIntegrated || match?.isIntegrated),
+              partNo: item.integratedPartsCount || match?.partNo || 1,
+              submissionParts: item.submissionParts || match?.submissionParts,
+              issuedBy: item.handledBy || match?.issuedBy || 'Coordinator Desk',
               issuedAt: item.submissionDate ? `${item.submissionDate}T10:00:00Z` : (item.timestamp || new Date().toISOString()),
-              submissionDate: item.submissionDate,
-              receiptDate: item.submissionDate,
-              remarks: '',
+              submissionDate: subDate,
+              receiptDate: subDate,
+              remarks: item.remarks || match?.remarks || '',
+              feesPaid: match?.feesPaid,
               Enrollment_No: item.enrollmentNo,
               Candidate_Name: item.candidateName,
               Contact: item.contact,
               Programme: item.programme,
               Courses: item.courses,
-              Timestamp: item.submissionDate || item.timestamp,
-              Official: item.handledBy,
+              Timestamp: subDate,
+              Official: item.handledBy || 'Coordinator Desk',
               Session: item.session,
-            } as any);
+            } as any;
           });
-          return Array.from(map.values());
+
+          // Retain receipts from other non-synced sessions only
+          const otherSessionReceipts = prev.filter((p) => !incomingSessionsSet.has(normalizeSession(p.session)));
+          const combined = [...syncedReceipts, ...otherSessionReceipts];
+          try {
+            localStorage.setItem(STORAGE_KEYS.REGISTRATION_RECEIPTS, JSON.stringify(combined));
+          } catch {}
+          return combined;
         });
 
         // Also update Assignment Submissions so Course Submissions Tracker is hydrated

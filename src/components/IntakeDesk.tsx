@@ -583,13 +583,12 @@ export const IntakeDesk: React.FC = () => {
   }, [duplicateEnrollmentGroups]);
 
   const filteredReceipts = useMemo(() => {
-    const list = (allRegistrationReceipts && allRegistrationReceipts.length > 0)
-      ? allRegistrationReceipts
-      : sessionRegistrationReceipts;
-    return list.filter((row: any) => {
-      if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") return true;
-      return norm(row.Session || row.session) === norm(currentSession);
-    });
+    if (!currentSession || currentSession === "All" || currentSession.toLowerCase() === "all") {
+      return (allRegistrationReceipts && allRegistrationReceipts.length > 0)
+        ? allRegistrationReceipts
+        : sessionRegistrationReceipts;
+    }
+    return sessionRegistrationReceipts;
   }, [allRegistrationReceipts, sessionRegistrationReceipts, currentSession]);
 
   const handleEditClick = (record: any) => {
@@ -3222,6 +3221,8 @@ export const IntakeDesk: React.FC = () => {
                           })}
                         </div>
                       </div>
+                    )}
+
                     {/* Strict Component Separation Gate: Displays Assignment (TMA) vs Practical breakdown */}
                     {selectedCourses.length > 0 && (
                       <div className="mt-2.5 p-3 bg-gradient-to-r from-amber-50/90 via-purple-50/80 to-indigo-50/90 border border-indigo-200 rounded-xl space-y-2 shadow-2xs animate-in fade-in">
