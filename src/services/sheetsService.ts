@@ -1,5 +1,6 @@
 import { getIgnouGrade } from '../utils/helpers';
 import { validatePrePushToGoogleSheets } from './dataEntryValidationService';
+import { enqueueSyncMutation, SyncQueueItem } from './syncQueueService';
 
 /**
  * Universal Session Normalizer
@@ -76,14 +77,37 @@ export interface ApiResponse<T = any> {
   url?: string;
   data?: T;
   message?: string;
+  queued?: boolean;
 }
 
 /**
  * Sends a POST request to Google Apps Script.
  * Uses /api/sheets proxy first (which reliably handles redirects & CORS in full-stack dev/prod),
  * falling back to direct POST to Google Apps Script.
+ * If network is offline or request fails and queueOnFailure is true, automatically saves to IndexedDB.
  */
-export async function sendScriptPost(payload: any): Promise<boolean> {
+export async function sendScriptPost(
+  payload: any,
+  options?: { queueOnFailure?: boolean; summary?: string; type?: SyncQueueItem['type'] }
+): Promise<boolean> {
+  const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+
+  if (!isOnline && options?.queueOnFailure && options?.type) {
+    console.info(`[Offline] Enqueuing ${options.type} into persistent offline sync queue`);
+    try {
+      await enqueueSyncMutation({
+        type: options.type,
+        payload,
+        summary: options.summary || `${options.type} queued while offline`,
+      });
+    } catch (e) {
+      console.warn('[enqueueSyncMutation error]:', e);
+    }
+    return false;
+  }
+
+  let sent = false;
+
   // 1. Try server proxy first to follow Google Apps Script 302 redirects and ensure data is committed
   try {
     const proxyRes = await fetch("/api/sheets", {
@@ -94,7 +118,7 @@ export async function sendScriptPost(payload: any): Promise<boolean> {
     if (proxyRes.ok) {
       const result = await proxyRes.json();
       if (result && (result.status === 'success' || result.saved || result.message)) {
-        return true;
+        sent = true;
       }
     }
   } catch (proxyErr) {
@@ -102,18 +126,46 @@ export async function sendScriptPost(payload: any): Promise<boolean> {
   }
 
   // 2. Direct fallback to Google Apps Script
+  if (!sent) {
+    try {
+      await fetch(SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8",
+        },
+        body: JSON.stringify(payload),
+      });
+      sent = true;
+    } catch (err) {
+      console.error("[Google Sheets direct POST error]:", err);
+    }
+  }
+
+  if (!sent && options?.queueOnFailure && options?.type) {
+    console.info(`[Failed] Enqueuing ${options.type} into persistent offline sync queue for automatic retry`);
+    try {
+      await enqueueSyncMutation({
+        type: options.type,
+        payload,
+        summary: options.summary || `${options.type} queued after network failure`,
+      });
+    } catch (qErr) {
+      console.warn('[enqueueSyncMutation error]:', qErr);
+    }
+  }
+
+  return sent;
+}
+
+/**
+ * Executor function used by syncQueueService to replay queued operations
+ */
+export async function executeQueuedMutation(item: SyncQueueItem): Promise<boolean> {
   try {
-    await fetch(SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8",
-      },
-      body: JSON.stringify(payload),
-    });
-    return true;
+    return await sendScriptPost(item.payload, { queueOnFailure: false });
   } catch (err) {
-    console.error("[Google Sheets direct POST error]:", err);
+    console.error(`[executeQueuedMutation ${item.type} error]:`, err);
     return false;
   }
 }
@@ -293,8 +345,12 @@ export async function postAddIntake(
     unpackedCourses: sanitized.unpackedCourses || [],
   };
 
-  // Dispatch once to SCRIPT_URL with no-cors to prevent duplicate recordings in Intake_Register
-  await sendScriptPost(payload);
+  // Dispatch once to SCRIPT_URL with automatic fallback to offline queue
+  await sendScriptPost(payload, {
+    queueOnFailure: true,
+    type: 'ADD_INTAKE',
+    summary: `Add Intake: ${cleanEnrollment} (${candidateName} - ${programme})`,
+  });
 
   // Sync with Express backend data store
   try {
@@ -418,7 +474,11 @@ export async function postEditIntake(payloadData: {
   };
 
   try {
-    await sendScriptPost(payload);
+    await sendScriptPost(payload, {
+      queueOnFailure: true,
+      type: 'EDIT_INTAKE',
+      summary: `Edit Intake: ${cleanEnr} (${cleanName} - ${cleanProg})`,
+    });
   } catch (err) {
     console.warn('[postEditIntake error]:', err);
   }
@@ -476,7 +536,11 @@ export async function postDeleteIntake(payloadData: {
     session: payloadData.session || 'July 2026',
   };
 
-  sendScriptPost(payload).catch((err) => console.warn('[postDeleteIntake error]:', err));
+  sendScriptPost(payload, {
+    queueOnFailure: true,
+    type: 'DELETE_INTAKE',
+    summary: `Delete Intake: ${payloadData.enrollmentNo || payloadData.id} (${payloadData.session})`,
+  }).catch((err) => console.warn('[postDeleteIntake error]:', err));
 
   // Sync with Express backend data store
   if (payloadData.id) {
@@ -610,7 +674,7 @@ export async function postUpdateMarks(
     console.warn('[UPDATE_MARKS fetch error]:', err);
   }
 
-  // Also dispatch to local server proxy in parallel
+  // Also dispatch to local server proxy in parallel with offline queuing support
   sendScriptPost({
     action: "UPDATE_MARKS",
     payload,
@@ -621,6 +685,10 @@ export async function postUpdateMarks(
     marks: Number(numericMarks),
     grade: calculatedGrade,
     isLocked: isLockAction,
+  }, {
+    queueOnFailure: true,
+    type: 'UPDATE_MARKS',
+    summary: `Update Marks: ${enrollmentNo} - ${courseCode} (${numericMarks}/100 Grade ${calculatedGrade})`,
   }).catch((err) => console.warn(err));
 
   return {

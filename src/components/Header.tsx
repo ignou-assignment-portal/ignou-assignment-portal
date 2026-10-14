@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { ThemeSelector } from './ThemeSelector';
+import { DataSyncMonitor } from './DataSyncMonitor';
 import {
   ShieldAlert,
   UserCheck,
@@ -351,21 +352,8 @@ export const Header: React.FC<HeaderProps> = ({ onViewHome }) => {
             <span>Lock / Sign Out</span>
           </button>
 
-          {/* Google Sheets Backend Sync Button */}
-          <button
-            id="btn-sync-sheets"
-            type="button"
-            onClick={() => syncGoogleSheets(false)}
-            disabled={isSyncingSheets}
-            style={{ touchAction: 'manipulation' }}
-            className="relative z-10 flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-semibold transition cursor-pointer disabled:opacity-50 select-none shadow-2xs"
-            title={`Sync with Google Sheets (Last synced: ${lastSheetSync})`}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 text-emerald-700 ${isSyncingSheets ? 'animate-spin' : ''}`} />
-            <span className="font-mono text-[11px] whitespace-nowrap">
-              {isSyncingSheets ? 'Syncing...' : syncStatus || 'Sync with Google Sheets'}
-            </span>
-          </button>
+          {/* Google Sheets Data Sync Monitor & Parity Engine */}
+          <DataSyncMonitor />
 
           {/* Sync Evaluators Directory Button */}
           <button

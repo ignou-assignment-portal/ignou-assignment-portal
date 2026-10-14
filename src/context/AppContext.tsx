@@ -47,7 +47,16 @@ import {
   isPracticalCourse,
   isDualComponentCourse,
 } from '../utils/helpers';
-import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, SCRIPT_URL, normalizeSessionName, norm } from '../services/sheetsService';
+import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, executeQueuedMutation, SCRIPT_URL, normalizeSessionName, norm } from '../services/sheetsService';
+import {
+  subscribeSyncQueue,
+  processPendingQueue,
+  retrySingleSyncItem,
+  removeSyncItem,
+  clearPendingQueue,
+  SyncQueueItem,
+} from '../services/syncQueueService';
+import { verifyGoogleSheetsParity, DataIntegrityReport } from '../services/dataIntegrityService';
 import {
   validateIntakeRecord,
   applyCascadingUpdate,
@@ -202,6 +211,21 @@ interface AppContextType {
   isSyncingEvaluators: boolean;
   syncEvaluatorsDirectory: () => Promise<void>;
   lastSheetSync: string;
+
+  // Data Sync Monitor & Offline Parity Engine
+  pendingSyncQueue: SyncQueueItem[];
+  connectionStatus: 'connected' | 'syncing' | 'queued' | 'offline' | 'error';
+  lastLatencyMs: number | null;
+  integrityReport: DataIntegrityReport | null;
+  isCheckingIntegrity: boolean;
+  isSyncDrawerOpen: boolean;
+  setIsSyncDrawerOpen: (val: boolean) => void;
+  toggleSyncDrawer: () => void;
+  checkDataIntegrity: () => Promise<DataIntegrityReport>;
+  retryPendingQueue: (forceAll?: boolean) => Promise<{ processed: number; succeeded: number; failed: number }>;
+  retrySingleQueueItem: (id: string) => Promise<boolean>;
+  removeQueueItem: (id: string) => Promise<void>;
+  clearAllQueueItems: () => Promise<void>;
 
   // Remuneration & Bills
   sessionBills: RemunerationBill[];
@@ -4644,6 +4668,123 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncGoogleSheets(true);
   }, [syncGoogleSheets]);
 
+  // Data Sync Monitor & Offline Parity Engine State
+  const [pendingSyncQueue, setPendingSyncQueue] = useState<SyncQueueItem[]>([]);
+  const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
+  const [integrityReport, setIntegrityReport] = useState<DataIntegrityReport | null>(null);
+  const [isCheckingIntegrity, setIsCheckingIntegrity] = useState<boolean>(false);
+  const [isSyncDrawerOpen, setIsSyncDrawerOpen] = useState<boolean>(false);
+  const [isOnline, setIsOnline] = useState<boolean>(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
+
+  // Subscribe to persistent IndexedDB sync queue
+  useEffect(() => {
+    const unsubscribe = subscribeSyncQueue((queue) => {
+      setPendingSyncQueue(queue);
+    });
+    return unsubscribe;
+  }, []);
+
+  const toggleSyncDrawer = useCallback(() => {
+    setIsSyncDrawerOpen((prev) => !prev);
+  }, []);
+
+  const checkDataIntegrity = useCallback(async (): Promise<DataIntegrityReport> => {
+    setIsCheckingIntegrity(true);
+    try {
+      const report = await verifyGoogleSheetsParity({
+        intakes: intakes.length,
+        ledger: courseEvaluations.length,
+        evaluators: evaluators.length,
+      });
+      setIntegrityReport(report);
+      setLastLatencyMs(report.latencyMs);
+      return report;
+    } catch (err) {
+      console.error('[checkDataIntegrity error]:', err);
+      const fallbackReport: DataIntegrityReport = {
+        timestamp: new Date().toISOString(),
+        latencyMs: 0,
+        isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+        status: 'error',
+        summary: 'Failed to verify data integrity with master sheet.',
+        entities: [],
+      };
+      setIntegrityReport(fallbackReport);
+      return fallbackReport;
+    } finally {
+      setIsCheckingIntegrity(false);
+    }
+  }, [intakes.length, courseEvaluations.length, evaluators.length]);
+
+  const retryPendingQueue = useCallback(async (forceAll: boolean = true) => {
+    const res = await processPendingQueue(executeQueuedMutation, forceAll);
+    if (res.processed > 0) {
+      if (res.succeeded > 0) {
+        showToast(`Synced ${res.succeeded} queued mutation(s) to Google Sheets`, 'success');
+        fetchAllData(true);
+        checkDataIntegrity();
+      }
+      if (res.failed > 0) {
+        showToast(`${res.failed} queued item(s) could not be synced yet`, 'warning');
+      }
+    } else {
+      showToast('No pending items in sync queue', 'info');
+    }
+    return res;
+  }, [fetchAllData, checkDataIntegrity, showToast]);
+
+  const retrySingleQueueItem = useCallback(async (id: string) => {
+    const ok = await retrySingleSyncItem(id, executeQueuedMutation);
+    if (ok) {
+      showToast('Item synced successfully to Google Sheets', 'success');
+      fetchAllData(true);
+      checkDataIntegrity();
+    } else {
+      showToast('Retry failed. Item remains in queue.', 'error');
+    }
+    return ok;
+  }, [fetchAllData, checkDataIntegrity, showToast]);
+
+  const removeQueueItem = useCallback(async (id: string) => {
+    await removeSyncItem(id);
+    showToast('Queued mutation discarded', 'info');
+  }, [showToast]);
+
+  const clearAllQueueItems = useCallback(async () => {
+    await clearPendingQueue();
+    showToast('Offline sync queue cleared', 'info');
+  }, [showToast]);
+
+  // Monitor network online / offline events
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      showToast('Network restored: online mode active', 'info');
+      retryPendingQueue(true);
+      checkDataIntegrity();
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      showToast('Offline mode: outgoing changes will be queued in IndexedDB', 'warning');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [retryPendingQueue, checkDataIntegrity, showToast]);
+
+  const connectionStatus = useMemo((): 'connected' | 'syncing' | 'queued' | 'offline' | 'error' => {
+    if (!isOnline) return 'offline';
+    if (isSyncingSheets || isCheckingIntegrity) return 'syncing';
+    if (pendingSyncQueue.length > 0) return 'queued';
+    if (integrityReport?.status === 'error') return 'error';
+    return 'connected';
+  }, [isOnline, isSyncingSheets, isCheckingIntegrity, pendingSyncQueue.length, integrityReport?.status]);
+
   // Billing & Remuneration
   const generateBill = useCallback(
     (evaluatorId: string, courseCodes: string[], totalScripts: number, rateOverride?: number) => {
@@ -5105,6 +5246,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isSyncingEvaluators,
         syncEvaluatorsDirectory,
         lastSheetSync,
+        // Data Sync Monitor & Offline Parity Engine
+        pendingSyncQueue,
+        connectionStatus,
+        lastLatencyMs,
+        integrityReport,
+        isCheckingIntegrity,
+        isSyncDrawerOpen,
+        setIsSyncDrawerOpen,
+        toggleSyncDrawer,
+        checkDataIntegrity,
+        retryPendingQueue,
+        retrySingleQueueItem,
+        removeQueueItem,
+        clearAllQueueItems,
         sessionBills,
         generateBill,
         sanctionBill,

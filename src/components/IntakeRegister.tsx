@@ -19,6 +19,8 @@ import {
   Award,
   ChevronRight,
   ShieldAlert,
+  Calendar,
+  X,
 } from 'lucide-react';
 import { EditIntakeModal } from './EditIntakeModal';
 
@@ -31,6 +33,7 @@ export const IntakeRegister: React.FC = () => {
     allCourseEvaluations,
     updateIntakeRecord,
     deleteIntakeRecord,
+    updateIntakeDate,
     openReceiptModal,
     isAdmin,
     verifyAndSetAdminRole,
@@ -43,9 +46,31 @@ export const IntakeRegister: React.FC = () => {
   const [selectedProgramme, setSelectedProgramme] = useState<string>('ALL');
   const [selectedComponentFilter, setSelectedComponentFilter] = useState<'ALL' | 'TMA' | 'PRACTICAL'>('ALL');
   const [editingRecord, setEditingRecord] = useState<any | null>(null);
+  const [quickDateModalRecord, setQuickDateModalRecord] = useState<any | null>(null);
+  const [quickDateValue, setQuickDateValue] = useState<string>('');
 
   const handleEditClick = (record: any) => {
     setEditingRecord(record);
+  };
+
+  const handleQuickDateClick = (record: any) => {
+    const initialDate =
+      record.submissionDate ||
+      record.receiptDate ||
+      (record.Timestamp ? String(record.Timestamp).split('T')[0] : '') ||
+      (record.createdAt ? String(record.createdAt).split('T')[0] : '') ||
+      new Date().toISOString().split('T')[0];
+    setQuickDateValue(initialDate);
+    setQuickDateModalRecord(record);
+  };
+
+  const handleQuickDateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickDateModalRecord || !quickDateValue) return;
+    const targetId = quickDateModalRecord.id || quickDateModalRecord.tokenNo;
+    await updateIntakeDate(targetId, quickDateValue);
+    showToast(`Submission date updated to ${formatDate(quickDateValue)} across all linked records.`, 'success');
+    setQuickDateModalRecord(null);
   };
 
   const handleDeleteClick = (record: any) => {
@@ -53,7 +78,23 @@ export const IntakeRegister: React.FC = () => {
     const enr = record.Enrollment_No || record.enrollmentNo || record["Enrollment No"] || '-';
     const activeSession = record.Session || record.session || currentSession;
 
-    // Check if any course for this student in courseLedger has status === "Locked" or isLocked
+    // 1. Access Guard: Require Coordinator Mode (PIN 2033) for Delete actions
+    if (!isAdmin) {
+      const enteredPin = window.prompt('Coordinator PIN Required: Enter PIN 2033 to authorize deletion of intake records:');
+      if (!enteredPin) return;
+      if (enteredPin.trim() === '2033') {
+        const authorized = verifyAndSetAdminRole('2033');
+        if (!authorized) {
+          showToast('Coordinator PIN verification failed.', 'error');
+          return;
+        }
+      } else {
+        showToast('Unauthorized: Incorrect Coordinator PIN.', 'error');
+        return;
+      }
+    }
+
+    // 2. Check if any course for this student in courseLedger has status === "Locked" or isLocked
     const isAnyCourseLocked = allCourseEvaluations.some(
       (ce) =>
         (ce.intakeId === record.id || ce.enrollmentNo.trim() === String(enr).trim()) &&
@@ -66,13 +107,14 @@ export const IntakeRegister: React.FC = () => {
       return;
     }
 
-    // Confirmation dialog allowing users to delete mistakes made during intake
+    // 3. Confirmation dialog allowing users to delete mistakes made during intake
     const confirmed = window.confirm(
       `Delete Intake Entry?\n\nAre you sure you want to delete intake record for ${candName} (${enr})?\n\nThis will completely purge the intake record and cascade cleanup across Course Ledger, Receipts, and Submissions.`
     );
 
     if (confirmed) {
       deleteIntakeRecord(record.id);
+      showToast(`Intake record for ${candName} (${enr}) deleted successfully.`, 'success');
     }
   };
 
@@ -545,9 +587,15 @@ export const IntakeRegister: React.FC = () => {
                         <div className="font-mono font-bold text-indigo-950 text-xs">
                           {tokenNo}
                         </div>
-                        <div className="text-[11px] text-zinc-500 mt-0.5">
-                          {formatDate(subDate)}
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickDateClick(record)}
+                          className="text-[11px] text-zinc-500 hover:text-indigo-600 font-medium mt-0.5 flex items-center gap-1 group cursor-pointer transition text-left"
+                          title="Click to modify intake submission date"
+                        >
+                          <Calendar className="w-3 h-3 text-zinc-400 group-hover:text-indigo-500 shrink-0" />
+                          <span className="group-hover:underline">{formatDate(subDate)}</span>
+                        </button>
                       </td>
 
                       {/* Student Info */}
@@ -734,6 +782,133 @@ export const IntakeRegister: React.FC = () => {
         record={editingRecord}
         onClose={() => setEditingRecord(null)}
       />
+
+      {/* Quick Intake Date Modification Modal */}
+      {quickDateModalRecord && (
+        <div
+          id="quick-date-modal-backdrop"
+          className="fixed inset-0 bg-zinc-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setQuickDateModalRecord(null);
+          }}
+        >
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-zinc-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-zinc-200 bg-zinc-50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-zinc-900 text-sm">
+                    Modify Intake Submission Date
+                  </h3>
+                  <p className="text-[11px] text-zinc-500">
+                    Token:{' '}
+                    <strong className="font-mono text-zinc-700">
+                      {quickDateModalRecord.tokenNo || quickDateModalRecord.Token_No || quickDateModalRecord.id}
+                    </strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuickDateModalRecord(null)}
+                className="p-1 text-zinc-400 hover:text-zinc-600 rounded-lg hover:bg-zinc-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickDateSubmit} className="p-5 space-y-4">
+              <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200 text-xs space-y-1">
+                <div>
+                  <span className="text-zinc-500">Candidate: </span>
+                  <strong className="text-zinc-900">
+                    {quickDateModalRecord.candidateName || quickDateModalRecord.studentName || quickDateModalRecord.Candidate_Name || '-'}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-zinc-500">Enrollment: </span>
+                  <strong className="font-mono text-zinc-900">
+                    {quickDateModalRecord.enrollmentNo || quickDateModalRecord.Enrollment_No || '-'}
+                  </strong>
+                  <span className="text-zinc-400 mx-1.5">•</span>
+                  <span className="text-zinc-500">Programme: </span>
+                  <strong className="text-zinc-900">
+                    {quickDateModalRecord.programmeCode || quickDateModalRecord.Programme || '-'}
+                  </strong>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="quick-intake-date-input" className="block text-xs font-bold text-zinc-700">
+                    New Submission Date <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const d = new Date();
+                        d.setDate(d.getDate() - 1);
+                        setQuickDateValue(d.toISOString().split('T')[0]);
+                      }}
+                      className="text-[10px] text-zinc-600 hover:text-zinc-900 font-semibold cursor-pointer"
+                    >
+                      Yesterday
+                    </button>
+                    <span className="text-zinc-300">•</span>
+                    <button
+                      type="button"
+                      onClick={() => setQuickDateValue(new Date().toISOString().split('T')[0])}
+                      className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
+                    >
+                      Today
+                    </button>
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <Calendar className="w-4 h-4 text-zinc-400 absolute left-3 top-2.5" />
+                  <input
+                    id="quick-intake-date-input"
+                    type="date"
+                    value={quickDateValue}
+                    onChange={(e) => setQuickDateValue(e.target.value)}
+                    required
+                    max="2099-12-31"
+                    className="w-full pl-9 pr-3 py-2 text-xs font-bold border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden bg-white"
+                  />
+                </div>
+                <div className="flex items-center justify-between mt-1 text-[11px] text-zinc-500">
+                  <span>Selected: <strong className="text-zinc-800">{formatDate(quickDateValue)}</strong></span>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-2.5 leading-relaxed">
+                <strong>Synchronized Update:</strong> Updating this date will immediately update this intake slip, Stage 2 course evaluation records, and official printable receipt acknowledgment slips.
+              </div>
+
+              <div className="pt-2 border-t border-zinc-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQuickDateModalRecord(null)}
+                  className="px-3.5 py-1.5 text-xs text-zinc-600 hover:bg-zinc-100 rounded-lg font-medium cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Update Submission Date</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useApp } from '../context/AppContext';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useApp, norm } from '../context/AppContext';
 import { formatDate, formatDateTime, isPracticalCourse } from '../utils/helpers';
 import {
   Printer,
@@ -10,18 +10,30 @@ import {
   Building2,
   ClipboardCheck,
   Calendar,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
+import { EditIntakeModal } from './EditIntakeModal';
+import { IntakeRecord } from '../types';
 
 export const RegistrationReceiptModal: React.FC = () => {
   const {
     selectedRegistrationReceipt,
     closeRegistrationReceiptModal,
     updateIntakeDate,
+    deleteIntakeRecord,
+    allIntakes,
+    allCourseEvaluations,
+    isAdmin,
+    verifyAndSetAdminRole,
+    showToast,
     settings,
     allProgrammes,
     getCourseInfo,
     getCourseTitle,
   } = useApp();
+
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const receiptDateVal =
     selectedRegistrationReceipt?.submissionDate ||
@@ -35,6 +47,55 @@ export const RegistrationReceiptModal: React.FC = () => {
     setCurrentReceiptDate(receiptDateVal);
   }, [receiptDateVal]);
 
+  // Find programme details from dynamic registry
+  const progInfo = allProgrammes.find(
+    (p) => p.code === selectedRegistrationReceipt?.programmeCode
+  );
+
+  // Safely extract registered courses array from any record representation
+  const rawRegCourses =
+    selectedRegistrationReceipt?.registeredCourses ||
+    (selectedRegistrationReceipt as any)?.courseCodes ||
+    (selectedRegistrationReceipt as any)?.courses ||
+    (selectedRegistrationReceipt as any)?.Courses ||
+    [];
+  const safeRegisteredCourses: string[] = Array.isArray(rawRegCourses)
+    ? rawRegCourses
+    : typeof rawRegCourses === 'string'
+    ? rawRegCourses.split(',').map((c: string) => c.trim()).filter(Boolean)
+    : [];
+
+  const matchingIntakeRecord: IntakeRecord | null = useMemo(() => {
+    if (!selectedRegistrationReceipt) return null;
+    const found = allIntakes.find(
+      (i) =>
+        i.id === selectedRegistrationReceipt.id ||
+        i.id === (selectedRegistrationReceipt as any).intakeId ||
+        i.tokenNo === selectedRegistrationReceipt.receiptNumber ||
+        i.tokenNo === (selectedRegistrationReceipt as any).tokenNo ||
+        (selectedRegistrationReceipt.studentId && i.enrollmentNo.trim() === selectedRegistrationReceipt.studentId.trim())
+    );
+    if (found) return found;
+
+    return {
+      id: selectedRegistrationReceipt.id || (selectedRegistrationReceipt as any).intakeId || selectedRegistrationReceipt.receiptNumber || `REG-${Date.now()}`,
+      tokenNo: selectedRegistrationReceipt.receiptNumber || (selectedRegistrationReceipt as any).tokenNo || 'INT-ACK',
+      enrollmentNo: selectedRegistrationReceipt.studentId || '',
+      studentName: selectedRegistrationReceipt.studentName || '',
+      studentPhone: selectedRegistrationReceipt.studentPhone || '',
+      studentEmail: selectedRegistrationReceipt.studentEmail || '',
+      programmeCode: selectedRegistrationReceipt.programmeCode || '',
+      courseCodes: safeRegisteredCourses,
+      session: selectedRegistrationReceipt.session || '',
+      submissionDate: currentReceiptDate,
+      submissionMode: 'In-Person (Desk)',
+      status: 'Received',
+      registeredBy: selectedRegistrationReceipt.issuedBy || 'Desk Official',
+      createdAt: selectedRegistrationReceipt.issuedAt || new Date().toISOString(),
+      marks: {},
+    } as unknown as IntakeRecord;
+  }, [selectedRegistrationReceipt, allIntakes, currentReceiptDate, safeRegisteredCourses]);
+
   if (!selectedRegistrationReceipt) return null;
 
   const handlePrint = () => {
@@ -46,26 +107,61 @@ export const RegistrationReceiptModal: React.FC = () => {
     setCurrentReceiptDate(newDate);
     if (newDate) {
       await updateIntakeDate(selectedRegistrationReceipt.id || selectedRegistrationReceipt.receiptNumber, newDate);
+      showToast(`Registration receipt date updated to ${formatDate(newDate)} across all linked records.`, 'success');
     }
   };
 
-  // Find programme details from dynamic registry
-  const progInfo = allProgrammes.find(
-    (p) => p.code === selectedRegistrationReceipt.programmeCode
-  );
+  const handleEditClick = () => {
+    setIsEditModalOpen(true);
+  };
 
-  // Safely extract registered courses array from any record representation
-  const rawRegCourses =
-    selectedRegistrationReceipt.registeredCourses ||
-    (selectedRegistrationReceipt as any).courseCodes ||
-    (selectedRegistrationReceipt as any).courses ||
-    (selectedRegistrationReceipt as any).Courses ||
-    [];
-  const safeRegisteredCourses: string[] = Array.isArray(rawRegCourses)
-    ? rawRegCourses
-    : typeof rawRegCourses === 'string'
-    ? rawRegCourses.split(',').map((c: string) => c.trim()).filter(Boolean)
-    : [];
+  const handleDeleteClick = () => {
+    if (!selectedRegistrationReceipt) return;
+    const candName = selectedRegistrationReceipt.studentName || 'Candidate';
+    const enr = selectedRegistrationReceipt.studentId || '-';
+    const activeSession = selectedRegistrationReceipt.session;
+    const targetId = (selectedRegistrationReceipt as any).intakeId || selectedRegistrationReceipt.id || selectedRegistrationReceipt.receiptNumber;
+
+    // 1. Operator vs Coordinator check: Require PIN 2033 for deletion
+    if (!isAdmin) {
+      const enteredPin = window.prompt('Coordinator PIN Required: Enter PIN 2033 to authorize deletion of intake records:');
+      if (!enteredPin) return;
+      if (enteredPin.trim() === '2033') {
+        const authorized = verifyAndSetAdminRole('2033');
+        if (!authorized) {
+          showToast('Coordinator PIN verification failed.', 'error');
+          return;
+        }
+      } else {
+        showToast('Unauthorized: Incorrect Coordinator PIN.', 'error');
+        return;
+      }
+    }
+
+    // 2. Lock check: cannot delete if marks are locked
+    const isAnyCourseLocked = allCourseEvaluations.some(
+      (ce) =>
+        (ce.intakeId === targetId || ce.enrollmentNo.trim() === String(enr).trim()) &&
+        (!activeSession || norm(ce.session) === norm(activeSession)) &&
+        (ce.isLocked || (ce.status as any) === 'Locked' || ce.status === 'Marks Locked')
+    );
+
+    if (isAnyCourseLocked) {
+      showToast('Cannot delete intake. Marks have already been locked for one or more courses.', 'error');
+      return;
+    }
+
+    // 3. Confirm deletion
+    const confirmed = window.confirm(
+      `Delete Intake Receipt?\n\nAre you sure you want to delete intake record for ${candName} (${enr})?\n\nThis will completely purge the intake record and cascade cleanup across Course Ledger, Receipts, and Submissions.`
+    );
+
+    if (confirmed) {
+      deleteIntakeRecord(targetId);
+      closeRegistrationReceiptModal();
+      showToast(`Intake record for ${candName} (${enr}) deleted successfully.`, 'success');
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-zinc-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 z-50 overflow-y-auto animate-in fade-in">
@@ -83,7 +179,7 @@ export const RegistrationReceiptModal: React.FC = () => {
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center flex-wrap gap-2">
             {/* Quick Date Selector */}
             <div className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 px-2.5 py-1 rounded-lg text-xs">
               <Calendar className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
@@ -102,9 +198,25 @@ export const RegistrationReceiptModal: React.FC = () => {
               <button
                 type="button"
                 onClick={async () => {
+                  const d = new Date();
+                  d.setDate(d.getDate() - 1);
+                  const yesterday = d.toISOString().split('T')[0];
+                  setCurrentReceiptDate(yesterday);
+                  await updateIntakeDate(selectedRegistrationReceipt.id || selectedRegistrationReceipt.receiptNumber, yesterday);
+                  showToast(`Registration receipt date updated to yesterday (${formatDate(yesterday)}).`, 'success');
+                }}
+                className="text-[10px] text-zinc-400 hover:text-white underline cursor-pointer ml-1"
+                title="Set receipt date to yesterday"
+              >
+                Yesterday
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
                   const today = new Date().toISOString().split('T')[0];
                   setCurrentReceiptDate(today);
                   await updateIntakeDate(selectedRegistrationReceipt.id || selectedRegistrationReceipt.receiptNumber, today);
+                  showToast(`Registration receipt date updated to today (${formatDate(today)}).`, 'success');
                 }}
                 className="text-[10px] text-indigo-300 hover:text-white underline cursor-pointer ml-1"
                 title="Set receipt date to today"
@@ -112,6 +224,31 @@ export const RegistrationReceiptModal: React.FC = () => {
                 Today
               </button>
             </div>
+
+            {/* Instant Edit Intake Button for Operators */}
+            <button
+              id="reg-receipt-edit-btn"
+              type="button"
+              onClick={handleEditClick}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 hover:border-zinc-500 text-xs font-semibold rounded-lg transition shadow-xs cursor-pointer"
+              title="Edit student details, courses, or submission date"
+            >
+              <Pencil className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Edit</span>
+            </button>
+
+            {/* Delete Intake Button - Requires PIN 2033 */}
+            <button
+              id="reg-receipt-delete-btn"
+              type="button"
+              onClick={handleDeleteClick}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-800 hover:border-rose-700 text-xs font-semibold rounded-lg transition shadow-xs cursor-pointer"
+              title="Delete intake mistake (Requires Coordinator PIN 2033)"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>Delete</span>
+            </button>
+
             <button
               onClick={handlePrint}
               id="print-registration-receipt-btn"
@@ -425,6 +562,24 @@ export const RegistrationReceiptModal: React.FC = () => {
           <span>Official Registration Receipt stored in register: <strong>{selectedRegistrationReceipt.receiptNumber}</strong></span>
           <div className="flex items-center gap-2">
             <button
+              type="button"
+              onClick={handleEditClick}
+              className="px-3.5 py-1.5 rounded-lg border border-zinc-300 text-zinc-700 hover:bg-zinc-200 font-semibold transition flex items-center gap-1.5 cursor-pointer"
+              title="Edit student details, courses, or date"
+            >
+              <Pencil className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Edit Receipt</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteClick}
+              className="px-3.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold transition flex items-center gap-1.5 cursor-pointer"
+              title="Delete intake entry (Requires Coordinator PIN 2033)"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              <span>Delete Receipt</span>
+            </button>
+            <button
               onClick={closeRegistrationReceiptModal}
               className="px-4 py-1.5 rounded-lg border border-zinc-300 text-zinc-700 hover:bg-zinc-200 font-medium transition cursor-pointer"
             >
@@ -440,6 +595,13 @@ export const RegistrationReceiptModal: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Embedded Edit Intake Modal */}
+      <EditIntakeModal
+        isOpen={isEditModalOpen}
+        record={matchingIntakeRecord}
+        onClose={() => setIsEditModalOpen(false)}
+      />
     </div>
   );
 };
