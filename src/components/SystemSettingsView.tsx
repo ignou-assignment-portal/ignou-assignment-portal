@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { ThemeSelector } from './ThemeSelector';
+import { DataSyncMonitor } from './DataSyncMonitor';
 import { formatCurrency, formatDate, formatDateTime } from '../utils/helpers';
 import { SessionArchiveRecord } from '../types';
 import {
@@ -29,7 +30,20 @@ import {
   FileCheck2,
   X,
   Info,
+  Palette,
+  Maximize2,
+  Minimize2,
+  ChevronUp,
+  RefreshCw,
+  Sun,
+  Moon,
+  Database,
+  Activity,
+  Check,
+  SlidersHorizontal,
 } from 'lucide-react';
+
+type SettingsTabId = 'general' | 'appearance' | 'rates' | 'sync';
 
 export const SystemSettingsView: React.FC = () => {
   const {
@@ -58,7 +72,24 @@ export const SystemSettingsView: React.FC = () => {
     auditLogs,
     exportAuditLogsCSV,
     exportAuditLogsJSON,
+    isHeaderCompact,
+    toggleHeaderCompact,
+    isContentFullWidth,
+    toggleContentFullWidth,
+    isDark,
+    toggleDark,
+    connectionStatus,
+    isSyncingSheets,
+    syncGoogleSheets,
+    isSyncingEvaluators,
+    syncEvaluatorsDirectory,
+    lastSheetSync,
+    lastLatencyMs,
+    pendingSyncQueue,
+    toggleSyncDrawer,
   } = useApp();
+
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('general');
 
   // Helper to suggest next academic cycle
   const getSuggestedNextSession = (curr: string) => {
@@ -291,350 +322,889 @@ export const SystemSettingsView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto">
       {/* Banner */}
       <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <Settings className="w-5 h-5 text-indigo-600" />
             <h2 className="text-base sm:text-lg font-bold text-zinc-900">
-              Study Centre Configuration & Data Governance
+              Study Centre Configuration & Governance
             </h2>
           </div>
           <p className="text-xs text-zinc-500 mt-1">
-            Manage Study Centre SC-2033 institutional parameters, remuneration rates, academic cycles, and data backup.
+            Configure institutional parameters, visual themes, statutory remuneration rates, and data sync parity for SC-2033.
           </p>
         </div>
 
         {!isAdmin && (
           <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
             <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>Read-Only mode: Settings modification requires Coordinator role.</span>
+            <span>Read-Only Mode: Settings modification requires Coordinator PIN (2033).</span>
           </div>
         )}
       </div>
 
       {savedSuccess && (
         <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs text-emerald-800 font-semibold animate-in fade-in">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>System configuration parameters saved successfully.</span>
         </div>
       )}
 
-      {/* Settings Form */}
-      <form onSubmit={handleSave} className="space-y-6">
-        {/* Theme & Visual Appearance Section */}
-        <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs">
-          <ThemeSelector variant="cards" />
+      {/* Structured Configuration Tabs */}
+      <div className="flex items-center gap-1.5 p-1.5 bg-zinc-100/90 rounded-2xl border border-zinc-200 overflow-x-auto shadow-2xs">
+        <button
+          type="button"
+          onClick={() => setActiveTab('general')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+            activeTab === 'general'
+              ? 'bg-white text-indigo-950 shadow-xs border border-zinc-200'
+              : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/50'
+          }`}
+        >
+          <Building2 className={`w-4 h-4 ${activeTab === 'general' ? 'text-indigo-600' : 'text-zinc-500'}`} />
+          <span>General</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('appearance')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+            activeTab === 'appearance'
+              ? 'bg-white text-indigo-950 shadow-xs border border-zinc-200'
+              : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/50'
+          }`}
+        >
+          <Palette className={`w-4 h-4 ${activeTab === 'appearance' ? 'text-indigo-600' : 'text-zinc-500'}`} />
+          <span>Appearance</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('rates')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+            activeTab === 'rates'
+              ? 'bg-white text-indigo-950 shadow-xs border border-zinc-200'
+              : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/50'
+          }`}
+        >
+          <DollarSign className={`w-4 h-4 ${activeTab === 'rates' ? 'text-emerald-600' : 'text-zinc-500'}`} />
+          <span>Rates & Norms</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('sync')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+            activeTab === 'sync'
+              ? 'bg-white text-indigo-950 shadow-xs border border-zinc-200'
+              : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/50'
+          }`}
+        >
+          <RefreshCw className={`w-4 h-4 ${activeTab === 'sync' ? 'text-indigo-600' : 'text-zinc-500'}`} />
+          <span>Data Sync & Governance</span>
+          {pendingSyncQueue.length > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-amber-500 text-white font-bold">
+              {pendingSyncQueue.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* TAB 1: GENERAL */}
+      {activeTab === 'general' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <form onSubmit={handleSave} className="space-y-6">
+            {/* Centre Details */}
+            <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+                <div className="flex items-center gap-2 font-bold text-sm text-zinc-900">
+                  <Building2 className="w-4 h-4 text-indigo-600" />
+                  <span>Institutional Centre Details</span>
+                </div>
+                <span className="text-[10px] font-mono bg-zinc-100 text-zinc-700 px-2 py-0.5 rounded border border-zinc-200">
+                  IGNOU Mandate
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <label className="block font-semibold text-zinc-700 mb-1">Study Centre Code</label>
+                  <input
+                    type="text"
+                    disabled={!isAdmin}
+                    value={systemSettings.centreCode}
+                    onChange={(e) => setSystemSettings({ ...systemSettings, centreCode: e.target.value })}
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono font-bold bg-zinc-50 disabled:opacity-75 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-zinc-700 mb-1">Regional Centre</label>
+                  <input
+                    type="text"
+                    disabled={!isAdmin}
+                    value={systemSettings.regionalCentre}
+                    onChange={(e) => setSystemSettings({ ...systemSettings, regionalCentre: e.target.value })}
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block font-semibold text-zinc-700 mb-1">Host College / Institution Name</label>
+                  <input
+                    type="text"
+                    disabled={!isAdmin}
+                    value={systemSettings.hostInstitution}
+                    onChange={(e) => setSystemSettings({ ...systemSettings, hostInstitution: e.target.value })}
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-zinc-700 mb-1">Coordinator Name</label>
+                  <input
+                    type="text"
+                    disabled={!isAdmin}
+                    value={systemSettings.coordinatorName}
+                    onChange={(e) => setSystemSettings({ ...systemSettings, coordinatorName: e.target.value })}
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-zinc-700 mb-1">Coordinator Official Designation</label>
+                  <input
+                    type="text"
+                    disabled={!isAdmin}
+                    value={systemSettings.coordinatorDesignation}
+                    onChange={(e) => setSystemSettings({ ...systemSettings, coordinatorDesignation: e.target.value })}
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-zinc-700 mb-1">Coordinator Contact Phone</label>
+                  <input
+                    type="text"
+                    disabled={!isAdmin}
+                    value={systemSettings.coordinatorPhone}
+                    onChange={(e) => setSystemSettings({ ...systemSettings, coordinatorPhone: e.target.value })}
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75 font-mono focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-zinc-700 mb-1">Coordinator Email</label>
+                  <input
+                    type="email"
+                    disabled={!isAdmin}
+                    value={systemSettings.coordinatorEmail}
+                    onChange={(e) => setSystemSettings({ ...systemSettings, coordinatorEmail: e.target.value })}
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75 font-mono focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {isAdmin && (
+                <div className="flex justify-end pt-3 border-t border-zinc-100">
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save Institutional Details</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </form>
+
+          {/* Security Credentials Management (Gatekeeper PINs) */}
+          {!isUrlLockedDeskMode && isAdmin && (
+            <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+                <div className="flex items-center gap-2 font-bold text-sm text-zinc-900">
+                  <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                  <span>Security Credentials Management (Gatekeeper PINs)</span>
+                </div>
+                <span className="text-[10px] font-mono bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded-full font-bold">
+                  LocalStorage: ignou_sc2033_pins
+                </span>
+              </div>
+
+              <p className="text-xs text-zinc-500">
+                Customize the institutional authentication credentials required at the Gatekeeper terminal login screen. Changes take effect across all application sessions.
+              </p>
+
+              {pinSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs text-emerald-800 font-semibold">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Security PINs updated and stored successfully.</span>
+                </div>
+              )}
+
+              {pinError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-xs text-rose-800 font-semibold">
+                  <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{pinError}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs pt-2">
+                <div className="p-3.5 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-zinc-800">Desk Official Terminal PIN</label>
+                    <span className="text-[10px] text-zinc-400 font-mono">Default: 1001</span>
+                  </div>
+                  <input
+                    type="password"
+                    maxLength={6}
+                    value={deskPinInput}
+                    onChange={(e) => setDeskPinInput(e.target.value)}
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono text-center tracking-widest text-sm font-bold bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    placeholder="1001"
+                  />
+                  <p className="text-[10px] text-zinc-500">
+                    Restricted access to Stage 1 (Intake Desk) and Stage 2 (Draft Evaluation Ledger).
+                  </p>
+                </div>
+
+                <div className="p-3.5 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-zinc-800">Administrator (Coordinator) PIN</label>
+                    <span className="text-[10px] text-zinc-400 font-mono">Default: 2033</span>
+                  </div>
+                  <input
+                    type="password"
+                    maxLength={6}
+                    value={adminPinInput}
+                    onChange={(e) => setAdminPinInput(e.target.value)}
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono text-center tracking-widest text-sm font-bold bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    placeholder="2033"
+                  />
+                  <p className="text-[10px] text-zinc-500">
+                    Master access to all stages, marks locking, billing, rate config, and delete operations.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={handleSavePins}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Update Institutional PINs</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+      )}
 
-        {/* Centre Details */}
-        <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
-          <div className="flex items-center gap-2 pb-3 border-b border-zinc-100 font-bold text-sm text-zinc-900">
-            <Building2 className="w-4 h-4 text-indigo-600" />
-            <span>Institutional Centre Details</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-            <div>
-              <label className="block font-semibold text-zinc-700 mb-1">Study Centre Code</label>
-              <input
-                type="text"
-                disabled={!isAdmin}
-                value={systemSettings.centreCode}
-                onChange={(e) => setSystemSettings({ ...systemSettings, centreCode: e.target.value })}
-                className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono font-bold bg-zinc-50 disabled:opacity-75"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-zinc-700 mb-1">Regional Centre</label>
-              <input
-                type="text"
-                disabled={!isAdmin}
-                value={systemSettings.regionalCentre}
-                onChange={(e) => setSystemSettings({ ...systemSettings, regionalCentre: e.target.value })}
-                className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75"
-              />
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="block font-semibold text-zinc-700 mb-1">Host College / Institution Name</label>
-              <input
-                type="text"
-                disabled={!isAdmin}
-                value={systemSettings.hostInstitution}
-                onChange={(e) => setSystemSettings({ ...systemSettings, hostInstitution: e.target.value })}
-                className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-zinc-700 mb-1">Coordinator Name</label>
-              <input
-                type="text"
-                disabled={!isAdmin}
-                value={systemSettings.coordinatorName}
-                onChange={(e) => setSystemSettings({ ...systemSettings, coordinatorName: e.target.value })}
-                className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-zinc-700 mb-1">Coordinator Official Designation</label>
-              <input
-                type="text"
-                disabled={!isAdmin}
-                value={systemSettings.coordinatorDesignation}
-                onChange={(e) => setSystemSettings({ ...systemSettings, coordinatorDesignation: e.target.value })}
-                className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-zinc-700 mb-1">Coordinator Contact Phone</label>
-              <input
-                type="text"
-                disabled={!isAdmin}
-                value={systemSettings.coordinatorPhone}
-                onChange={(e) => setSystemSettings({ ...systemSettings, coordinatorPhone: e.target.value })}
-                className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75 font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-zinc-700 mb-1">Coordinator Email</label>
-              <input
-                type="email"
-                disabled={!isAdmin}
-                value={systemSettings.coordinatorEmail}
-                onChange={(e) => setSystemSettings({ ...systemSettings, coordinatorEmail: e.target.value })}
-                className="w-full px-3 py-2 border border-zinc-300 rounded-lg disabled:opacity-75 font-mono"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Financial & Evaluation Rates (Admin Only - Hidden in Desk Official mode) */}
-        {!isUrlLockedDeskMode && isAdmin && (
-          <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
-            <div className="flex items-center gap-2 pb-3 border-b border-zinc-100 font-bold text-sm text-zinc-900">
-              <DollarSign className="w-4 h-4 text-emerald-600" />
-              <span>Financial Norms & Remuneration Rates (IGNOU Mandate)</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-              <div>
-                <label className="block font-semibold text-zinc-700 mb-1">
-                  Remuneration Rate / Script (₹)
-                </label>
-                <input
-                  type="number"
-                  step="0.50"
-                  min="0"
-                  disabled={!isAdmin}
-                  value={systemSettings.remunerationRatePerScript}
-                  onChange={(e) =>
-                    setSystemSettings({ ...systemSettings, remunerationRatePerScript: parseFloat(e.target.value) || 0 })
-                  }
-                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-bold disabled:opacity-75"
-                />
-                <span className="text-[10px] text-zinc-500 mt-1 block">
-                  Standard study centre rate (₹27.50)
-                </span>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-zinc-700 mb-1">
-                  Conveyance Allowance / Packet (₹)
-                </label>
-                <input
-                  type="number"
-                  disabled={!isAdmin}
-                  value={systemSettings.conveyanceAllowancePerPacket}
-                  onChange={(e) =>
-                    setSystemSettings({ ...systemSettings, conveyanceAllowancePerPacket: parseFloat(e.target.value) || 0 })
-                  }
-                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-bold disabled:opacity-75"
-                />
-                <span className="text-[10px] text-zinc-500 mt-1 block">
-                  Default ₹0.00 unless entered
-                </span>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-zinc-700 mb-1">
-                  Coordination Charges / Script (₹)
-                </label>
-                <input
-                  type="number"
-                  disabled={!isAdmin}
-                  value={systemSettings.coordinationChargesPerScript}
-                  onChange={(e) =>
-                    setSystemSettings({ ...systemSettings, coordinationChargesPerScript: parseFloat(e.target.value) || 0 })
-                  }
-                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-bold disabled:opacity-75"
-                />
-                <span className="text-[10px] text-zinc-500 mt-1 block">
-                  Default ₹0.00 unless entered
-                </span>
-              </div>
-            </div>
-
-            {/* Admin PIN configuration */}
-            <div className="pt-4 border-t border-zinc-100">
-              <div className="flex items-center gap-2 mb-2 font-bold text-xs text-zinc-900">
-                <ShieldCheck className="w-4 h-4 text-indigo-600" />
-                <span>Administrator Role Security PIN</span>
-              </div>
-              <div className="max-w-xs">
-                <label className="block font-semibold text-zinc-700 mb-1 text-xs">
-                  4-Digit Admin Authentication PIN
-                </label>
-                <input
-                  type="password"
-                  maxLength={6}
-                  value={systemSettings.adminPin}
-                  onChange={(e) => setSystemSettings({ ...systemSettings, adminPin: e.target.value })}
-                  placeholder="2033"
-                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono tracking-widest text-center font-bold text-sm bg-zinc-50 focus:bg-white"
-                />
-                <span className="text-[10px] text-zinc-500 mt-1 block">
-                  Default PIN is 2033. Required when switching roles to Coordinator (Admin).
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Security Credentials Management (Admin Only) */}
-        {!isUrlLockedDeskMode && isAdmin && (
+      {/* TAB 2: APPEARANCE */}
+      {activeTab === 'appearance' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Workspace Layout & Density Toggles */}
           <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
               <div className="flex items-center gap-2 font-bold text-sm text-zinc-900">
-                <ShieldCheck className="w-4 h-4 text-indigo-600" />
-                <span>Security Credentials Management (Gatekeeper PINs)</span>
+                <SlidersHorizontal className="w-4 h-4 text-indigo-600" />
+                <span>Workspace Layout & Density Controls</span>
               </div>
-              <span className="text-[10px] font-mono bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded-full font-bold">
-                LocalStorage: ignou_sc2033_pins
+              <span className="text-[10px] font-mono bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded border border-zinc-200">
+                User Preference
               </span>
             </div>
 
-            <p className="text-xs text-zinc-500">
-              Customize the institutional authentication credentials required at the Gatekeeper terminal login screen. Changes are saved immediately to local storage and take effect across all sessions.
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              {/* Header Compactness Mode */}
+              <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl flex flex-col justify-between gap-3">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-zinc-900 text-sm">Top Institution Header Bar</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      isHeaderCompact ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'
+                    }`}>
+                      {isHeaderCompact ? 'Compact (Hidden)' : 'Expanded (Visible)'}
+                    </span>
+                  </div>
+                  <p className="text-zinc-500 mt-1">
+                    Toggle visibility of the top dark IGNOU institution bar. Compact mode preserves 36px of vertical screen real estate for high-volume intake lists.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end pt-2 border-t border-zinc-200">
+                  <button
+                    type="button"
+                    onClick={toggleHeaderCompact}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-zinc-100 border border-zinc-300 font-semibold text-zinc-800 shadow-2xs transition cursor-pointer"
+                  >
+                    <ChevronUp className={`w-3.5 h-3.5 transition-transform ${isHeaderCompact ? 'rotate-180 text-indigo-600' : ''}`} />
+                    <span>{isHeaderCompact ? 'Expand Top Bar' : 'Enable Compact Header'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Viewport Width Mode */}
+              <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl flex flex-col justify-between gap-3">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-zinc-900 text-sm">Main Content Viewport Width</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      isContentFullWidth ? 'bg-indigo-100 text-indigo-900' : 'bg-zinc-200 text-zinc-800'
+                    }`}>
+                      {isContentFullWidth ? 'Fluid (100% Edge-to-Edge)' : 'Standard (1280px Centered)'}
+                    </span>
+                  </div>
+                  <p className="text-zinc-500 mt-1">
+                    Fluid mode expands data tables and registers across your full monitor width. Standard mode centers content in an executive 1280px container.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end pt-2 border-t border-zinc-200">
+                  <button
+                    type="button"
+                    onClick={toggleContentFullWidth}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-zinc-100 border border-zinc-300 font-semibold text-zinc-800 shadow-2xs transition cursor-pointer"
+                  >
+                    {isContentFullWidth ? (
+                      <Minimize2 className="w-3.5 h-3.5 text-indigo-600" />
+                    ) : (
+                      <Maximize2 className="w-3.5 h-3.5 text-zinc-600" />
+                    )}
+                    <span>{isContentFullWidth ? 'Switch to Standard 1280px' : 'Switch to Full Width 100%'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Theme & Visual Appearance Cards */}
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs">
+            <ThemeSelector variant="cards" />
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: RATES & NORMS */}
+      {activeTab === 'rates' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <form onSubmit={handleSave} className="space-y-6">
+            {/* Financial & Evaluation Rates */}
+            <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+                <div className="flex items-center gap-2 font-bold text-sm text-zinc-900">
+                  <DollarSign className="w-4 h-4 text-emerald-600" />
+                  <span>Financial Norms & Remuneration Rates (IGNOU Mandate)</span>
+                </div>
+                <span className="text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
+                  Statutory Claim Engine
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div>
+                  <label className="block font-semibold text-zinc-700 mb-1">
+                    Remuneration Rate / Script (₹)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.50"
+                    min="0"
+                    disabled={!isAdmin}
+                    value={systemSettings.remunerationRatePerScript}
+                    onChange={(e) =>
+                      setSystemSettings({ ...systemSettings, remunerationRatePerScript: parseFloat(e.target.value) || 0 })
+                    }
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-bold disabled:opacity-75 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 font-mono"
+                  />
+                  <span className="text-[10px] text-zinc-500 mt-1 block">
+                    Standard study centre evaluation rate (₹27.50)
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-zinc-700 mb-1">
+                    Conveyance Allowance / Packet (₹)
+                  </label>
+                  <input
+                    type="number"
+                    disabled={!isAdmin}
+                    value={systemSettings.conveyanceAllowancePerPacket}
+                    onChange={(e) =>
+                      setSystemSettings({ ...systemSettings, conveyanceAllowancePerPacket: parseFloat(e.target.value) || 0 })
+                    }
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-bold disabled:opacity-75 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 font-mono"
+                  />
+                  <span className="text-[10px] text-zinc-500 mt-1 block">
+                    Default ₹0.00 unless applicable
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-zinc-700 mb-1">
+                    Coordination Charges / Script (₹)
+                  </label>
+                  <input
+                    type="number"
+                    disabled={!isAdmin}
+                    value={systemSettings.coordinationChargesPerScript}
+                    onChange={(e) =>
+                      setSystemSettings({ ...systemSettings, coordinationChargesPerScript: parseFloat(e.target.value) || 0 })
+                    }
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-bold disabled:opacity-75 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 font-mono"
+                  />
+                  <span className="text-[10px] text-zinc-500 mt-1 block">
+                    Default ₹0.00 unless applicable
+                  </span>
+                </div>
+              </div>
+
+              {/* Admin PIN configuration */}
+              <div className="pt-4 border-t border-zinc-100">
+                <div className="flex items-center gap-2 mb-2 font-bold text-xs text-zinc-900">
+                  <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                  <span>Administrator Role Security PIN</span>
+                </div>
+                <div className="max-w-xs">
+                  <label className="block font-semibold text-zinc-700 mb-1 text-xs">
+                    4-Digit Admin Authentication PIN
+                  </label>
+                  <input
+                    type="password"
+                    maxLength={6}
+                    value={systemSettings.adminPin}
+                    onChange={(e) => setSystemSettings({ ...systemSettings, adminPin: e.target.value })}
+                    placeholder="2033"
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono tracking-widest text-center font-bold text-sm bg-zinc-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <span className="text-[10px] text-zinc-500 mt-1 block">
+                    Default PIN is 2033. Required when switching roles to Coordinator (Admin).
+                  </span>
+                </div>
+              </div>
+
+              {isAdmin && (
+                <div className="flex justify-end pt-3 border-t border-zinc-100">
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save Financial Rates</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </form>
+
+          {/* Statutory Mandate Guidelines Info */}
+          <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 text-xs text-zinc-600 space-y-2">
+            <div className="font-bold text-zinc-900 flex items-center gap-2 text-sm">
+              <Info className="w-4 h-4 text-indigo-600" />
+              <span>IGNOU Statutory Remuneration Rules & Compliance</span>
+            </div>
+            <p>
+              Under IGNOU Financial Code norms, academic counselors who evaluate term-end assignment scripts are compensated at fixed rates per script upon verified submission of SED 3-Part Award Sheets.
             </p>
+            <ul className="list-disc pl-5 space-y-1 text-zinc-500 pt-1">
+              <li>Scripts evaluated must be sealed in packets before bill processing.</li>
+              <li>TDS deduction and PAN validation occur automatically on evaluator disbursement vouchers.</li>
+              <li>Claims are calculated across sealed course packets in Stage 4 (Remuneration Billing).</li>
+            </ul>
+          </div>
+        </div>
+      )}
 
-            {pinSuccess && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs text-emerald-800 font-semibold">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Security PINs updated and stored in LocalStorage successfully.</span>
+      {/* TAB 4: DATA SYNC & GOVERNANCE */}
+      {activeTab === 'sync' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Google Sheets Sync & Remote Parity */}
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-zinc-100 gap-2">
+              <div className="flex items-center gap-2 font-bold text-sm text-zinc-900">
+                <Database className="w-4 h-4 text-emerald-600" />
+                <span>Google Sheets Live Data Parity & Offline Queue</span>
               </div>
-            )}
-
-            {pinError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-xs text-rose-800 font-semibold">
-                <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>{pinError}</span>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs pt-2">
-              <div className="p-3.5 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-zinc-800">Desk Official Terminal PIN</label>
-                  <span className="text-[10px] text-zinc-400 font-mono">Default: 1001</span>
-                </div>
-                <input
-                  type="password"
-                  maxLength={6}
-                  value={deskPinInput}
-                  onChange={(e) => setDeskPinInput(e.target.value)}
-                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono text-center tracking-widest text-sm font-bold bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                  placeholder="1001"
-                />
-                <p className="text-[10px] text-zinc-500">
-                  Grants restricted terminal access to Stage 1 (Intake Desk) and Stage 2 (Draft Evaluation Ledger).
-                </p>
-              </div>
-
-              <div className="p-3.5 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-zinc-800">Administrator (Coordinator) PIN</label>
-                  <span className="text-[10px] text-zinc-400 font-mono">Default: 2033</span>
-                </div>
-                <input
-                  type="password"
-                  maxLength={6}
-                  value={adminPinInput}
-                  onChange={(e) => setAdminPinInput(e.target.value)}
-                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono text-center tracking-widest text-sm font-bold bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                  placeholder="2033"
-                />
-                <p className="text-[10px] text-zinc-500">
-                  Grants master access to all stages, marks locking, billing, rate config, and delete operations.
-                </p>
+              <div className="flex items-center gap-2">
+                <DataSyncMonitor />
               </div>
             </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-3 bg-zinc-50 border border-zinc-200 rounded-xl">
+                <div className="text-[10px] text-zinc-500 uppercase font-semibold">Connection State</div>
+                <div className="text-sm font-bold text-zinc-900 mt-0.5 capitalize flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${
+                    connectionStatus === 'connected' ? 'bg-emerald-500' :
+                    connectionStatus === 'syncing' ? 'bg-indigo-500 animate-spin' :
+                    connectionStatus === 'queued' ? 'bg-amber-500' : 'bg-rose-500'
+                  }`} />
+                  <span>{connectionStatus}</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-zinc-50 border border-zinc-200 rounded-xl">
+                <div className="text-[10px] text-zinc-500 uppercase font-semibold">Roundtrip Latency</div>
+                <div className="text-sm font-bold text-zinc-900 font-mono mt-0.5">
+                  {lastLatencyMs !== null ? `${lastLatencyMs}ms` : 'Nominal'}
+                </div>
+              </div>
+
+              <div className="p-3 bg-zinc-50 border border-zinc-200 rounded-xl">
+                <div className="text-[10px] text-zinc-500 uppercase font-semibold">Offline Queue</div>
+                <div className="text-sm font-bold font-mono mt-0.5 text-zinc-900">
+                  {pendingSyncQueue.length} Pending
+                </div>
+              </div>
+
+              <div className="p-3 bg-zinc-50 border border-zinc-200 rounded-xl">
+                <div className="text-[10px] text-zinc-500 uppercase font-semibold">Last Sheet Sync</div>
+                <div className="text-xs font-semibold text-zinc-700 truncate mt-0.5 font-mono">
+                  {lastSheetSync || 'Active session'}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-100">
               <button
                 type="button"
-                onClick={handleSavePins}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                onClick={() => syncGoogleSheets(true)}
+                disabled={isSyncingSheets}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 shadow-2xs"
               >
-                <Save className="w-3.5 h-3.5" />
-                <span>Update Institutional PINs</span>
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin' : ''}`} />
+                <span>{isSyncingSheets ? 'Pulling Data...' : 'Pull Latest Sheet Intake'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => syncEvaluatorsDirectory()}
+                disabled={isSyncingEvaluators}
+                className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+              >
+                <Users className={`w-3.5 h-3.5 ${isSyncingEvaluators ? 'animate-spin text-indigo-600' : 'text-indigo-600'}`} />
+                <span>{isSyncingEvaluators ? 'Syncing...' : 'Sync Evaluators Directory'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={toggleSyncDrawer}
+                className="px-3.5 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <Activity className="w-3.5 h-3.5 text-zinc-600" />
+                <span>Open Parity Inspector Drawer</span>
               </button>
             </div>
           </div>
-        )}
 
-        {/* Accountability & Audit Trail Section */}
-        <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
-            <div className="flex items-center gap-2 font-bold text-sm text-zinc-900">
-              <HistoryIcon className="w-4 h-4 text-indigo-600" />
-              <span>Audit Trail & Accountability Oversight</span>
+          {/* Academic Session Archival & History Snapshots */}
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-zinc-100 gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-50 text-indigo-700">
+                  <Archive className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-sm sm:text-base text-zinc-900">
+                      Academic Session Archival & History Snapshots
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      Session Rollover Engine
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    Snapshot assignment data into permanent History state & files. Transition to a new academic cycle with a fresh workspace without manual deletions.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => importFileInputRef.current?.click()}
+                  className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border border-zinc-200"
+                  title="Upload previously exported session archive JSON"
+                >
+                  <Upload className="w-3.5 h-3.5 text-zinc-600" />
+                  <span>Import History File</span>
+                </button>
+              </div>
             </div>
-            <span className="text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
-              {auditLogs.length} Events Logged
-            </span>
+
+            {/* Active Session Status & Quick Archival Actions Banner */}
+            <div className="bg-gradient-to-r from-zinc-900 via-indigo-950 to-zinc-900 text-white rounded-2xl p-5 shadow-sm relative overflow-hidden">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+                <div>
+                  <div className="flex items-center gap-2 text-indigo-300 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Current Active Academic Cycle</span>
+                  </div>
+                  <div className="text-2xl font-black text-white mt-1 flex flex-wrap items-baseline gap-2">
+                    <span>{currentSession}</span>
+                    <span className="text-xs font-normal text-zinc-400">
+                      ({sessionIntakes.length} Intake Receipts • {sessionCourseEvaluations.length} Course Scripts)
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-300 mt-1 max-w-xl">
+                    Ready to conclude this cycle? Snapshot this data into History to preserve audit records, generate an offline JSON backup, and open a clean slate for the next term.
+                  </p>
+                </div>
+
+                {isAdmin && (
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenArchiveModal('snapshot_only')}
+                      className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-zinc-700 cursor-pointer shadow-xs"
+                      title="Take a point-in-time History snapshot without clearing active workspace"
+                    >
+                      <Archive className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Snapshot to History</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      id="btn-archive-and-fresh-session"
+                      onClick={() => handleOpenArchiveModal('archive_and_fresh')}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer shadow-md"
+                      title="Archive current session and initialize clean slate for new term"
+                    >
+                      <CalendarPlus className="w-4 h-4" />
+                      <span>Archive & Start New Session</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Active Session Mini Metric Counter */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 pt-4 border-t border-white/10 text-xs">
+                <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
+                  <div className="text-[10px] text-zinc-400 uppercase font-semibold">Active Candidates</div>
+                  <div className="text-lg font-black text-white font-mono mt-0.5">
+                    {new Set(sessionIntakes.map((r) => r.enrollmentNo)).size}
+                  </div>
+                </div>
+                <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
+                  <div className="text-[10px] text-zinc-400 uppercase font-semibold">Assignment Scripts</div>
+                  <div className="text-lg font-black text-amber-300 font-mono mt-0.5">
+                    {sessionCourseEvaluations.length}
+                  </div>
+                </div>
+                <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
+                  <div className="text-[10px] text-zinc-400 uppercase font-semibold">Course Packets</div>
+                  <div className="text-lg font-black text-indigo-300 font-mono mt-0.5">
+                    {sessionPackets.length}
+                  </div>
+                </div>
+                <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
+                  <div className="text-[10px] text-zinc-400 uppercase font-semibold">Sealed & Locked</div>
+                  <div className="text-lg font-black text-emerald-300 font-mono mt-0.5">
+                    {sessionCourseEvaluations.filter((e) => e.isLocked).length}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Historical Snapshots Ledger */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold text-zinc-800">
+                <div className="flex items-center gap-1.5">
+                  <HistoryIcon className="w-4 h-4 text-indigo-600" />
+                  <span>Historical Archives Ledger ({archives.length} Snapshots)</span>
+                </div>
+                <span className="text-[10px] text-zinc-500 font-normal">
+                  Stored persistently in LocalStorage and exportable as JSON
+                </span>
+              </div>
+
+              {archives.length === 0 ? (
+                <div className="p-8 border-2 border-dashed border-zinc-200 rounded-2xl text-center space-y-2 bg-zinc-50/50">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+                    <HistoryIcon className="w-5 h-5" />
+                  </div>
+                  <div className="text-xs font-bold text-zinc-800">No Session Archives Saved Yet</div>
+                  <p className="text-[11px] text-zinc-500 max-w-md mx-auto">
+                    Once an academic session closes, click <strong>"Archive & Start New Session"</strong> above. This will freeze current assignment intake and course ledger records into a historical snapshot and prepare a pristine workspace for the next term without manual deletions.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {archives.map((archive) => (
+                    <div
+                      key={archive.id}
+                      className="bg-zinc-50 hover:bg-zinc-100/70 border border-zinc-200 rounded-xl p-3.5 transition flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-zinc-950 text-sm">{archive.name}</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-100 text-indigo-900 border border-indigo-200">
+                            {archive.session}
+                          </span>
+                          <span className="text-[11px] text-zinc-400 font-mono">
+                            {formatDateTime(archive.archivedAt)}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-600">
+                          <span>By: <strong className="text-zinc-800">{archive.archivedBy}</strong></span>
+                          <span>•</span>
+                          <span className="bg-white border border-zinc-200 px-2 py-0.5 rounded font-mono">
+                            <strong>{archive.stats.totalCandidates}</strong> Candidates
+                          </span>
+                          <span className="bg-white border border-zinc-200 px-2 py-0.5 rounded font-mono text-amber-900 font-semibold">
+                            <strong>{archive.stats.totalCourseScripts}</strong> Scripts
+                          </span>
+                          <span className="bg-white border border-zinc-200 px-2 py-0.5 rounded font-mono">
+                            <strong>{archive.stats.totalPackets}</strong> Packets
+                          </span>
+                          <span className="bg-white border border-zinc-200 px-2 py-0.5 rounded font-mono text-emerald-800">
+                            <strong>{archive.stats.totalEvaluated}</strong> Evaluated
+                          </span>
+                        </div>
+
+                        {archive.notes && (
+                          <p className="text-[11px] text-zinc-500 italic max-w-2xl line-clamp-1">
+                            "{archive.notes}"
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0 self-end md:self-auto">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedArchiveDetail(archive)}
+                          className="px-2.5 py-1.5 bg-white hover:bg-zinc-200 text-zinc-700 rounded-lg text-xs font-semibold flex items-center gap-1 border border-zinc-300 transition cursor-pointer"
+                          title="Inspect Snapshot details"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-zinc-500" />
+                          <span>Details</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => downloadArchiveJSON(archive)}
+                          className="px-2.5 py-1.5 bg-white hover:bg-zinc-200 text-zinc-700 rounded-lg text-xs font-semibold flex items-center gap-1 border border-zinc-300 transition cursor-pointer"
+                          title="Download History JSON archive file"
+                        >
+                          <Download className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>JSON</span>
+                        </button>
+
+                        {isAdmin && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleRestoreArchiveConfirm(archive)}
+                              className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg text-xs font-semibold flex items-center gap-1 border border-amber-200 transition cursor-pointer"
+                              title="Restore this historical snapshot into active workspace"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                              <span>Restore</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteArchiveConfirm(archive)}
+                              className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-transparent hover:border-rose-200 transition cursor-pointer"
+                              title="Delete snapshot from History"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-          <p className="text-xs text-zinc-500">
-            Real-time forensic logs tracking user logins, student assignment modifications, marks locking, and administrative overrides stored persistently in AppContext state.
-          </p>
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <button
-              type="button"
-              onClick={exportAuditLogsCSV}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-800 text-xs font-semibold transition cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Export Audit CSV</span>
-            </button>
-            <button
-              type="button"
-              onClick={exportAuditLogsJSON}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-800 text-xs font-semibold transition cursor-pointer"
-            >
-              <FileText className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Export Audit JSON</span>
-            </button>
+
+          {/* Accountability & Audit Trail Section */}
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+              <div className="flex items-center gap-2 font-bold text-sm text-zinc-900">
+                <HistoryIcon className="w-4 h-4 text-indigo-600" />
+                <span>Audit Trail & Accountability Oversight</span>
+              </div>
+              <span className="text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
+                {auditLogs.length} Events Logged
+              </span>
+            </div>
+            <p className="text-xs text-zinc-500">
+              Real-time forensic logs tracking user logins, student assignment modifications, marks locking, and administrative overrides stored persistently in AppContext state.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={exportAuditLogsCSV}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-800 text-xs font-semibold transition cursor-pointer shadow-2xs"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Export Audit CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={exportAuditLogsJSON}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-800 text-xs font-semibold transition cursor-pointer shadow-2xs"
+              >
+                <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Export Audit JSON</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Institutional Data Governance & Disaster Recovery */}
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
+            <div className="flex items-center gap-2 pb-3 border-b border-zinc-100 font-bold text-sm text-zinc-900">
+              <Calendar className="w-4 h-4 text-indigo-600" />
+              <span>Institutional Backup & Disaster Recovery</span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-zinc-50 border border-zinc-200 rounded-xl text-xs">
+              <div>
+                <div className="font-bold text-zinc-900">Export Institutional Database Archive</div>
+                <p className="text-zinc-500 mt-0.5 max-w-lg">
+                  Download a complete snapshot containing all session intakes ({allIntakes.length} records), evaluators master ({evaluators.length}), course packets, and settings.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleExportAllJSON}
+                className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl font-semibold flex items-center gap-2 shrink-0 transition cursor-pointer shadow-xs"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export Full JSON Archive</span>
+              </button>
+            </div>
+
+            {isAdmin && (
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs">
+                <div>
+                  <div className="font-bold text-rose-900">Reset to Institutional Factory Baseline</div>
+                  <p className="text-rose-700/80 mt-0.5 max-w-lg">
+                    Restore initial IGNOU SC-2033 mock intake records, evaluators directory, and default session configurations.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={resetAllData}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold flex items-center gap-2 shrink-0 transition cursor-pointer shadow-xs"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Reset Database</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
-
-        {isAdmin && (
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer"
-            >
-              <Save className="w-4 h-4" />
-              <span>Save System Settings</span>
-            </button>
-          </div>
-        )}
-      </form>
+      )}
 
       {/* Hidden File Input for Archive JSON Import */}
       <input
@@ -644,230 +1214,6 @@ export const SystemSettingsView: React.FC = () => {
         style={{ display: 'none' }}
         accept=".json"
       />
-
-      {/* Module: Academic Session Archival & Historical Snapshots Section */}
-      <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-zinc-100 gap-2">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-indigo-50 text-indigo-700">
-              <Archive className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-sm sm:text-base text-zinc-900">
-                  Academic Session Archival & History Snapshots
-                </h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                  Session Rollover Engine
-                </span>
-              </div>
-              <p className="text-xs text-zinc-500 mt-0.5">
-                Snapshot assignment data into permanent History state & files. Transition to a new academic cycle with a fresh workspace without manual deletions.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => importFileInputRef.current?.click()}
-              className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border border-zinc-200"
-              title="Upload previously exported session archive JSON"
-            >
-              <Upload className="w-3.5 h-3.5 text-zinc-600" />
-              <span>Import History File</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Active Session Status & Quick Archival Actions Banner */}
-        <div className="bg-gradient-to-r from-zinc-900 via-indigo-950 to-zinc-900 text-white rounded-2xl p-5 shadow-sm relative overflow-hidden">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
-            <div>
-              <div className="flex items-center gap-2 text-indigo-300 font-mono text-[10px] font-bold uppercase tracking-wider">
-                <Clock className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Current Active Academic Cycle</span>
-              </div>
-              <div className="text-2xl font-black text-white mt-1 flex flex-wrap items-baseline gap-2">
-                <span>{currentSession}</span>
-                <span className="text-xs font-normal text-zinc-400">
-                  ({sessionIntakes.length} Intake Receipts • {sessionCourseEvaluations.length} Course Scripts)
-                </span>
-              </div>
-              <p className="text-xs text-zinc-300 mt-1 max-w-xl">
-                Ready to conclude this cycle? Snapshot this data into History to preserve audit records, generate an offline JSON backup, and open a clean slate for the next term.
-              </p>
-            </div>
-
-            {isAdmin && (
-              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => handleOpenArchiveModal('snapshot_only')}
-                  className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-zinc-700 cursor-pointer shadow-xs"
-                  title="Take a point-in-time History snapshot without clearing active workspace"
-                >
-                  <Archive className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Snapshot to History</span>
-                </button>
-
-                <button
-                  type="button"
-                  id="btn-archive-and-fresh-session"
-                  onClick={() => handleOpenArchiveModal('archive_and_fresh')}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer shadow-md"
-                  title="Archive current session and initialize clean slate for new term"
-                >
-                  <CalendarPlus className="w-4 h-4" />
-                  <span>Archive & Start New Session</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Active Session Mini Metric Counter */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 pt-4 border-t border-white/10 text-xs">
-            <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
-              <div className="text-[10px] text-zinc-400 uppercase font-semibold">Active Candidates</div>
-              <div className="text-lg font-black text-white font-mono mt-0.5">
-                {new Set(sessionIntakes.map((r) => r.enrollmentNo)).size}
-              </div>
-            </div>
-            <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
-              <div className="text-[10px] text-zinc-400 uppercase font-semibold">Assignment Scripts</div>
-              <div className="text-lg font-black text-amber-300 font-mono mt-0.5">
-                {sessionCourseEvaluations.length}
-              </div>
-            </div>
-            <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
-              <div className="text-[10px] text-zinc-400 uppercase font-semibold">Course Packets</div>
-              <div className="text-lg font-black text-indigo-300 font-mono mt-0.5">
-                {sessionPackets.length}
-              </div>
-            </div>
-            <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
-              <div className="text-[10px] text-zinc-400 uppercase font-semibold">Sealed & Locked</div>
-              <div className="text-lg font-black text-emerald-300 font-mono mt-0.5">
-                {sessionCourseEvaluations.filter((e) => e.isLocked).length}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Historical Snapshots Ledger */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs font-bold text-zinc-800">
-            <div className="flex items-center gap-1.5">
-              <HistoryIcon className="w-4 h-4 text-indigo-600" />
-              <span>Historical Archives Ledger ({archives.length} Snapshots)</span>
-            </div>
-            <span className="text-[10px] text-zinc-500 font-normal">
-              Stored persistently in LocalStorage and exportable as JSON
-            </span>
-          </div>
-
-          {archives.length === 0 ? (
-            <div className="p-8 border-2 border-dashed border-zinc-200 rounded-2xl text-center space-y-2 bg-zinc-50/50">
-              <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
-                <HistoryIcon className="w-5 h-5" />
-              </div>
-              <div className="text-xs font-bold text-zinc-800">No Session Archives Saved Yet</div>
-              <p className="text-[11px] text-zinc-500 max-w-md mx-auto">
-                Once an academic session closes, click <strong>"Archive & Start New Session"</strong> above. This will freeze current assignment intake and course ledger records into a historical snapshot and prepare a pristine workspace for the next term without manual deletions.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2.5">
-              {archives.map((archive) => (
-                <div
-                  key={archive.id}
-                  className="bg-zinc-50 hover:bg-zinc-100/70 border border-zinc-200 rounded-xl p-3.5 transition flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
-                >
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-bold text-zinc-950 text-sm">{archive.name}</span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-100 text-indigo-900 border border-indigo-200">
-                        {archive.session}
-                      </span>
-                      <span className="text-[11px] text-zinc-400 font-mono">
-                        {formatDateTime(archive.archivedAt)}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-600">
-                      <span>By: <strong className="text-zinc-800">{archive.archivedBy}</strong></span>
-                      <span>•</span>
-                      <span className="bg-white border border-zinc-200 px-2 py-0.5 rounded font-mono">
-                        <strong>{archive.stats.totalCandidates}</strong> Candidates
-                      </span>
-                      <span className="bg-white border border-zinc-200 px-2 py-0.5 rounded font-mono text-amber-900 font-semibold">
-                        <strong>{archive.stats.totalCourseScripts}</strong> Scripts
-                      </span>
-                      <span className="bg-white border border-zinc-200 px-2 py-0.5 rounded font-mono">
-                        <strong>{archive.stats.totalPackets}</strong> Packets
-                      </span>
-                      <span className="bg-white border border-zinc-200 px-2 py-0.5 rounded font-mono text-emerald-800">
-                        <strong>{archive.stats.totalEvaluated}</strong> Evaluated
-                      </span>
-                    </div>
-
-                    {archive.notes && (
-                      <p className="text-[11px] text-zinc-500 italic max-w-2xl line-clamp-1">
-                        "{archive.notes}"
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-1.5 shrink-0 self-end md:self-auto">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedArchiveDetail(archive)}
-                      className="px-2.5 py-1.5 bg-white hover:bg-zinc-200 text-zinc-700 rounded-lg text-xs font-semibold flex items-center gap-1 border border-zinc-300 transition cursor-pointer"
-                      title="Inspect Snapshot details"
-                    >
-                      <Eye className="w-3.5 h-3.5 text-zinc-500" />
-                      <span>Details</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => downloadArchiveJSON(archive)}
-                      className="px-2.5 py-1.5 bg-white hover:bg-zinc-200 text-zinc-700 rounded-lg text-xs font-semibold flex items-center gap-1 border border-zinc-300 transition cursor-pointer"
-                      title="Download History JSON archive file"
-                    >
-                      <Download className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>JSON</span>
-                    </button>
-
-                    {isAdmin && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleRestoreArchiveConfirm(archive)}
-                          className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg text-xs font-semibold flex items-center gap-1 border border-amber-200 transition cursor-pointer"
-                          title="Restore this historical snapshot into active workspace"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
-                          <span>Restore</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteArchiveConfirm(archive)}
-                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-transparent hover:border-rose-200 transition cursor-pointer"
-                          title="Delete snapshot from History"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* Modal 1: Create Session Archive & Rollover Dialog */}
       {isArchiveModalOpen && (
@@ -897,177 +1243,74 @@ export const SystemSettingsView: React.FC = () => {
             </div>
 
             <form onSubmit={handleConfirmArchive} className="p-5 space-y-4 text-xs">
-              {/* Mode Toggle */}
-              <div>
-                <label className="block font-bold text-zinc-800 uppercase tracking-wider text-[10px] mb-2">
-                  Archival Mode & Rollover Behavior
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <label
-                    className={`p-3 rounded-xl border-2 flex flex-col justify-between cursor-pointer transition ${
-                      archiveForm.mode === 'archive_and_fresh'
-                        ? 'border-indigo-600 bg-indigo-50/50 shadow-xs'
-                        : 'border-zinc-200 hover:border-zinc-300'
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      <input
-                        type="radio"
-                        name="archiveMode"
-                        checked={archiveForm.mode === 'archive_and_fresh'}
-                        onChange={() =>
-                          setArchiveForm({
-                            ...archiveForm,
-                            mode: 'archive_and_fresh',
-                            name: `${archiveForm.session} Final Closeout Archive`,
-                          })
-                        }
-                        className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <div>
-                        <div className="font-bold text-zinc-900">Archive & Start Fresh</div>
-                        <p className="text-[11px] text-zinc-500 mt-1 leading-snug">
-                          Freezes current term into History and clears active records for a clean slate in the new cycle.
-                        </p>
-                      </div>
-                    </div>
-                  </label>
-
-                  <label
-                    className={`p-3 rounded-xl border-2 flex flex-col justify-between cursor-pointer transition ${
-                      archiveForm.mode === 'snapshot_only'
-                        ? 'border-indigo-600 bg-indigo-50/50 shadow-xs'
-                        : 'border-zinc-200 hover:border-zinc-300'
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      <input
-                        type="radio"
-                        name="archiveMode"
-                        checked={archiveForm.mode === 'snapshot_only'}
-                        onChange={() =>
-                          setArchiveForm({
-                            ...archiveForm,
-                            mode: 'snapshot_only',
-                            name: `${archiveForm.session} Point-in-Time Snapshot`,
-                          })
-                        }
-                        className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <div>
-                        <div className="font-bold text-zinc-900">Snapshot Only</div>
-                        <p className="text-[11px] text-zinc-500 mt-1 leading-snug">
-                          Creates a History snapshot & JSON file while keeping active records intact.
-                        </p>
-                      </div>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              {/* Target Session */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-zinc-700 mb-1">
-                    Academic Session to Snapshot
-                  </label>
-                  <select
-                    value={archiveForm.session}
-                    onChange={(e) =>
-                      setArchiveForm({
-                        ...archiveForm,
-                        session: e.target.value,
-                        name: `${e.target.value} Closeout Archive`,
-                        newSessionName: getSuggestedNextSession(e.target.value),
-                      })
-                    }
-                    className="w-full px-3 py-2 border border-zinc-300 rounded-xl font-bold bg-white text-zinc-900 focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                  >
-                    {availableSessions.map((s) => (
-                      <option key={s} value={s}>
-                        {s} {s === currentSession ? '(Current Active)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {archiveForm.mode === 'archive_and_fresh' && (
-                  <div>
-                    <label className="block font-semibold text-zinc-700 mb-1">
-                      New Academic Session Name
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={archiveForm.newSessionName}
-                      onChange={(e) => setArchiveForm({ ...archiveForm, newSessionName: e.target.value })}
-                      placeholder="e.g. January 2027"
-                      className="w-full px-3 py-2 border border-zinc-300 rounded-xl font-bold bg-white text-zinc-900 focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Snapshot Name */}
-              <div>
-                <label className="block font-semibold text-zinc-700 mb-1">
-                  Archive Snapshot Title
-                </label>
+              <div className="space-y-2">
+                <label className="font-bold text-zinc-800">Archive / Snapshot Name</label>
                 <input
                   type="text"
                   required
                   value={archiveForm.name}
                   onChange={(e) => setArchiveForm({ ...archiveForm, name: e.target.value })}
-                  placeholder="e.g. July 2026 Closeout Archive"
-                  className="w-full px-3 py-2 border border-zinc-300 rounded-xl font-semibold bg-white text-zinc-900 focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-semibold"
                 />
               </div>
 
-              {/* Notes */}
-              <div>
-                <label className="block font-semibold text-zinc-700 mb-1">
-                  Administrative Closeout Notes (Optional)
-                </label>
-                <textarea
-                  rows={2}
-                  value={archiveForm.notes}
-                  onChange={(e) => setArchiveForm({ ...archiveForm, notes: e.target.value })}
-                  placeholder="e.g. Evaluation completed, all award sheets forwarded to RC Kohima."
-                  className="w-full px-3 py-2 border border-zinc-300 rounded-xl bg-white text-zinc-900 focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              {/* Download JSON option */}
-              <div className="p-3 bg-zinc-50 border border-zinc-200 rounded-xl flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-zinc-800">Download History JSON Archive File</div>
-                  <p className="text-[11px] text-zinc-500">
-                    Automatically saves a full offline backup file (.json) to your computer.
+              {archiveForm.mode === 'archive_and_fresh' && (
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl space-y-2">
+                  <label className="font-bold text-indigo-950 flex items-center gap-1.5">
+                    <CalendarPlus className="w-4 h-4 text-indigo-600" />
+                    <span>Next Term Academic Cycle Name (Fresh Workspace)</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={archiveForm.newSessionName}
+                    onChange={(e) => setArchiveForm({ ...archiveForm, newSessionName: e.target.value })}
+                    className="w-full px-3 py-2 border border-indigo-300 rounded-lg bg-white font-bold text-indigo-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-mono"
+                    placeholder="e.g. July 2028 or January 2029"
+                  />
+                  <p className="text-[11px] text-indigo-700">
+                    Active workspace will be switched directly to this new academic cycle upon archival.
                   </p>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={archiveForm.downloadJSON}
-                  onChange={(e) => setArchiveForm({ ...archiveForm, downloadJSON: e.target.checked })}
-                  className="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+              )}
+
+              <div className="space-y-2">
+                <label className="font-bold text-zinc-800">Archival Notes / Record Summary</label>
+                <textarea
+                  rows={3}
+                  value={archiveForm.notes}
+                  onChange={(e) => setArchiveForm({ ...archiveForm, notes: e.target.value })}
+                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  placeholder="e.g. Concluded evaluation cycle. All 3-part award sheets forwarded to Regional Centre Kohima."
                 />
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-100">
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="chk-download-json"
+                  checked={archiveForm.downloadJSON}
+                  onChange={(e) => setArchiveForm({ ...archiveForm, downloadJSON: e.target.checked })}
+                  className="w-4 h-4 text-indigo-600 rounded border-zinc-300 cursor-pointer"
+                />
+                <label htmlFor="chk-download-json" className="text-zinc-700 font-medium cursor-pointer">
+                  Automatically download offline JSON snapshot file to local drive
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100">
                 <button
                   type="button"
                   onClick={() => setIsArchiveModalOpen(false)}
-                  className="px-4 py-2 border border-zinc-300 text-zinc-700 hover:bg-zinc-100 rounded-xl font-semibold transition cursor-pointer"
+                  className="px-4 py-2 border border-zinc-300 text-zinc-700 rounded-xl hover:bg-zinc-100 transition cursor-pointer font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition cursor-pointer font-bold shadow-xs"
                 >
-                  <Archive className="w-3.5 h-3.5" />
-                  <span>{archiveForm.mode === 'archive_and_fresh' ? 'Archive & Launch New Session' : 'Save History Snapshot'}</span>
+                  Confirm & Archive Session
                 </button>
               </div>
             </form>
@@ -1075,20 +1318,20 @@ export const SystemSettingsView: React.FC = () => {
         </div>
       )}
 
-      {/* Modal 2: Snapshot Details & Breakdown Dialog */}
+      {/* Modal 2: Snapshot Detail Inspector Dialog */}
       {selectedArchiveDetail && (
         <div className="fixed inset-0 bg-zinc-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 z-50 overflow-y-auto animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-zinc-300 overflow-hidden my-auto max-h-[90vh] flex flex-col">
             <div className="px-5 py-4 bg-zinc-900 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <span className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-400">
-                  <FileText className="w-5 h-5" />
+                  <Archive className="w-5 h-5" />
                 </span>
                 <div>
                   <h3 className="font-bold text-sm sm:text-base">
                     {selectedArchiveDetail.name}
                   </h3>
-                  <p className="text-xs text-zinc-400">
+                  <p className="text-xs text-zinc-400 font-mono">
                     Session: {selectedArchiveDetail.session} • ID: {selectedArchiveDetail.id}
                   </p>
                 </div>
@@ -1103,7 +1346,6 @@ export const SystemSettingsView: React.FC = () => {
             </div>
 
             <div className="p-5 overflow-y-auto space-y-4 text-xs">
-              {/* Meta Info Strip */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 <div className="bg-zinc-50 border border-zinc-200 p-2.5 rounded-xl">
                   <div className="text-[10px] text-zinc-500 uppercase font-semibold">Candidates</div>
@@ -1131,7 +1373,6 @@ export const SystemSettingsView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Archive Info */}
               <div className="bg-zinc-50 border border-zinc-200 p-3 rounded-xl space-y-1.5">
                 <div className="flex flex-wrap items-center justify-between text-[11px]">
                   <span>Archived On: <strong className="text-zinc-900 font-mono">{formatDateTime(selectedArchiveDetail.archivedAt)}</strong></span>
@@ -1144,7 +1385,6 @@ export const SystemSettingsView: React.FC = () => {
                 )}
               </div>
 
-              {/* Programme Breakdown Table */}
               <div>
                 <div className="font-bold text-zinc-800 mb-1.5 flex items-center justify-between">
                   <span>Programme Breakdown in this Snapshot:</span>
@@ -1194,7 +1434,6 @@ export const SystemSettingsView: React.FC = () => {
               </div>
             </div>
 
-            {/* Footer Buttons */}
             <div className="px-5 py-3.5 bg-zinc-50 border-t border-zinc-200 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <button
@@ -1229,50 +1468,6 @@ export const SystemSettingsView: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Institutional Data Governance & Backup Section */}
-      <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
-        <div className="flex items-center gap-2 pb-3 border-b border-zinc-100 font-bold text-sm text-zinc-900">
-          <Calendar className="w-4 h-4 text-indigo-600" />
-          <span>Institutional Backup & Disaster Recovery</span>
-        </div>
-
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-zinc-50 border border-zinc-200 rounded-xl text-xs">
-          <div>
-            <div className="font-bold text-zinc-900">Export Institutional Database Archive</div>
-            <p className="text-zinc-500 mt-0.5 max-w-lg">
-              Download a complete snapshot containing all session intakes ({allIntakes.length} records), evaluators master ({evaluators.length}), course packets, and settings.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleExportAllJSON}
-            className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl font-semibold flex items-center gap-2 shrink-0 transition cursor-pointer shadow-xs"
-          >
-            <Download className="w-4 h-4" />
-            <span>Export Full JSON Archive</span>
-          </button>
-        </div>
-
-        {isAdmin && (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs">
-            <div>
-              <div className="font-bold text-rose-900">Reset to Institutional Factory Baseline</div>
-              <p className="text-rose-700/80 mt-0.5 max-w-lg">
-                Restore initial IGNOU SC-2033 mock intake records, evaluators directory, and default session configurations.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={resetAllData}
-              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold flex items-center gap-2 shrink-0 transition cursor-pointer shadow-xs"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Reset Database</span>
-            </button>
-          </div>
-        )}
-      </div>
     </div>
   );
 };
