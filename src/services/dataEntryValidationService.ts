@@ -422,10 +422,27 @@ export function validateAndSeparateCourses(
     const isExplicitPrac = explicitPracticalCourses?.includes(c);
     const isExplicitAsgn = explicitAssignmentCourses?.includes(c);
 
-    // Practical indicator check: courses containing 'L' (lab), 'P' (practical), or marked explicitly
-    const isLabOrPracCode = /L\d|P\d|LAB|PRAC/i.test(c);
+    // BRL (Bachelor in Retailing under BCOMF) courses are strictly theory TMA courses.
+    const isBrlCourse = /^BRL[-_]?\d+/i.test(c);
 
-    if (compSetting === 'Both' || (isExplicitPrac && isExplicitAsgn)) {
+    // Practical indicator check: true lab prefixes or explicit practical flags
+    const isLabOrPracCode = !isBrlCourse && (
+      /^(BCSL|MCSL|CITL|BPCL|MPCL|BBYCL|BCHCL|BPHCL|BZYCL|BGGCL|BGYCL|PGDCL)[-_]?\d+/i.test(c) ||
+      /^(BCSP|MCSP)[-_]?\d+/i.test(c) ||
+      /[-_]P$|\(L\)|\(P\)|[-_]LAB|[-_]L$/i.test(c) ||
+      ['BLIE-227', 'BLIE-229', 'MLII-101', 'MLII-102', 'MLII-103', 'MLII-104', 'DNHE-4', 'DECE-4'].includes(c)
+    );
+
+    // Strict priority: If user selected Assignment, it is ALWAYS Assignment
+    if (compSetting === 'Assignment') {
+      assignmentCourses.push(c);
+      separatedItems.push({
+        code: c,
+        component: 'Assignment (TMA)',
+        isPractical: false,
+        label: `${c} [Assignment (TMA)]`,
+      });
+    } else if (compSetting === 'Both' || (isExplicitPrac && isExplicitAsgn)) {
       // Must RECORD SEPARATELY: One TMA entry and one Practical entry
       assignmentCourses.push(c);
       practicalCourses.push(c);

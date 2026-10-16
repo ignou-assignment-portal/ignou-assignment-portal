@@ -750,7 +750,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               id = `intake-${enr}-${sess}-${courses || idx}-${idx}`;
             }
             seenIds.add(id);
-            return { ...item, id };
+
+            // Reclassify any BRL courses from practical to assignment (TMA)
+            const rawPrac: string[] = Array.isArray(item.practicalCourses) ? item.practicalCourses : [];
+            const rawAsgn: string[] = Array.isArray(item.assignmentCourses) ? item.assignmentCourses : [];
+            const brlPrac = rawPrac.filter((c: string) => /^BRL[-_]?\d+/i.test(c));
+            const sanitizedPrac = rawPrac.filter((c: string) => !/^BRL[-_]?\d+/i.test(c));
+            const sanitizedAsgn = Array.from(new Set([...rawAsgn, ...brlPrac]));
+
+            return {
+              ...item,
+              id,
+              practicalCourses: sanitizedPrac,
+              assignmentCourses: sanitizedAsgn,
+            };
           });
         }
       }
@@ -917,10 +930,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const data: CourseEvaluationRecord[] = JSON.parse(saved);
         if (Array.isArray(data) && data.length > 0) {
           const list = data.filter((rec) => !isDummyEvaluationId(rec.id, rec.intakeId, rec.enrollmentNo));
-          return list.map((rec) => ({
-            ...rec,
-            lockedBy: rec.lockedBy?.includes('Aggarwal') ? 'Dr. Sant K. Gupta (Coordinator)' : rec.lockedBy,
-          }));
+          return list.map((rec) => {
+            const isBrl = /^BRL[-_]?\d+/i.test(rec.courseCode || (rec as any).Course_Code || '');
+            const isPrac = !isBrl && Boolean(rec.isPractical || rec.componentType === 'Practical');
+            const compType: 'Assignment' | 'Practical' = isPrac ? 'Practical' : 'Assignment';
+            const cleanSubId = !isPrac && rec.subId?.includes('_PRAC_')
+              ? rec.subId.replace(/_PRAC_/g, '_')
+              : rec.subId;
+            const cleanId = !isPrac && rec.id?.includes('_PRAC_')
+              ? rec.id.replace(/_PRAC_/g, '_')
+              : rec.id;
+
+            return {
+              ...rec,
+              id: cleanId,
+              subId: cleanSubId,
+              Sub_ID: cleanSubId,
+              submissionKey: cleanSubId,
+              componentType: compType,
+              isPractical: isPrac,
+              Component: compType,
+              lockedBy: rec.lockedBy?.includes('Aggarwal') ? 'Dr. Sant K. Gupta (Coordinator)' : rec.lockedBy,
+            };
+          });
         }
       }
       return [];
@@ -1017,6 +1049,92 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Failed to save course titles registry to localStorage', e);
     }
   }, [courseTitlesRegistry]);
+
+  // One-time retroactive rectification for BRL series courses (BCOMF):
+  // Migrates any existing BRL-101 (and BRL-101 to BRL-115) records that were erroneously
+  // flagged as practical or assigned _PRAC_ IDs into standard Assignment (TMA) records.
+  useEffect(() => {
+    let hasIntakeChanges = false;
+    setIntakes((prev) => {
+      const updated = prev.map((item) => {
+        const rawPrac: string[] = Array.isArray(item.practicalCourses) ? item.practicalCourses : [];
+        const hasBrlInPrac = rawPrac.some((c) => /^BRL[-_]?\d+/i.test(c));
+        if (!hasBrlInPrac) return item;
+        hasIntakeChanges = true;
+        const brlPrac = rawPrac.filter((c) => /^BRL[-_]?\d+/i.test(c));
+        const sanitizedPrac = rawPrac.filter((c) => !/^BRL[-_]?\d+/i.test(c));
+        const rawAsgn: string[] = Array.isArray(item.assignmentCourses) ? item.assignmentCourses : [];
+        const sanitizedAsgn = Array.from(new Set([...rawAsgn, ...brlPrac]));
+        return {
+          ...item,
+          practicalCourses: sanitizedPrac,
+          assignmentCourses: sanitizedAsgn,
+        };
+      });
+      if (hasIntakeChanges) {
+        try {
+          localStorage.setItem(STORAGE_KEYS.INTAKES, JSON.stringify(updated));
+          localStorage.setItem('ignou_sc2033_intake', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      }
+      return prev;
+    });
+
+    let hasEvalChanges = false;
+    setCourseEvaluations((prev) => {
+      const updated = prev.map((rec) => {
+        const isBrl = /^BRL[-_]?\d+/i.test(rec.courseCode || (rec as any).Course_Code || '');
+        if (!isBrl || (!rec.isPractical && rec.componentType === 'Assignment' && !rec.subId?.includes('_PRAC_'))) {
+          return rec;
+        }
+        hasEvalChanges = true;
+        const cleanSubId = rec.subId?.replace(/_PRAC_/g, '_') || rec.subId;
+        const cleanId = rec.id?.replace(/_PRAC_/g, '_') || rec.id;
+        return {
+          ...rec,
+          id: cleanId,
+          subId: cleanSubId,
+          Sub_ID: cleanSubId,
+          submissionKey: cleanSubId,
+          componentType: 'Assignment' as const,
+          isPractical: false,
+          Component: 'Assignment' as const,
+        };
+      });
+      if (hasEvalChanges) {
+        try {
+          localStorage.setItem(STORAGE_KEYS.COURSE_EVALUATIONS, JSON.stringify(updated));
+          localStorage.setItem('ignou_sc2033_ledger', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      }
+      return prev;
+    });
+
+    setAssignmentSubmissions((prev) => {
+      let changed = false;
+      const updated = prev.map((sub) => {
+        const isBrl = /^BRL[-_]?\d+/i.test(sub.courseCode || (sub as any).Course_Code || '');
+        if (!isBrl || (!sub.isPractical && sub.componentType === 'Assignment')) {
+          return sub;
+        }
+        changed = true;
+        return {
+          ...sub,
+          componentType: 'Assignment' as const,
+          isPractical: false,
+        };
+      });
+      if (changed) {
+        try {
+          localStorage.setItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS, JSON.stringify(updated));
+        } catch {}
+        return updated;
+      }
+      return prev;
+    });
+  }, []);
 
   // Module: Academic Session Archival & History Snapshots State
   const [archives, setArchives] = useState<SessionArchiveRecord[]>(() => {
@@ -2081,10 +2199,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const assignmentSpecified = Array.isArray(data.assignmentCourses);
           const isDual = isDualComponentCourse(courseCode);
 
+          const isBrl = /^BRL[-_]?\d+/i.test(courseCode);
           let hasPractical = false;
           let hasAssignment = false;
 
-          if (practicalSpecified || assignmentSpecified) {
+          if (isBrl) {
+            hasPractical = false;
+            hasAssignment = true;
+          } else if (practicalSpecified || assignmentSpecified) {
             hasPractical = (data.practicalCourses || []).includes(courseCode);
             hasAssignment = (data.assignmentCourses || []).includes(courseCode);
             // If neither was explicitly placed in practical or assignment array, fall back to course definition
@@ -2223,17 +2345,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const intakeDate = data.submissionDate ? data.submissionDate.trim() : new Date().toISOString().split('T')[0];
 
-      const practicalList = (data.practicalCourses || []).map((c) => c.trim().toUpperCase());
-      const assignmentList = (data.assignmentCourses || []).map((c) => c.trim().toUpperCase());
+      // Sanitize practical and assignment lists: BRL courses are strictly Assignment (TMA)
+      const sanitizedPracticalList = (data.practicalCourses || [])
+        .map((c) => c.trim().toUpperCase())
+        .filter((c) => !/^BRL[-_]?\d+/i.test(c));
+      const brlCoursesInIntake = cleanCourses.filter((c) => /^BRL[-_]?\d+/i.test(c));
+      const sanitizedAssignmentList = Array.from(
+        new Set([
+          ...(data.assignmentCourses || []).map((c) => c.trim().toUpperCase()),
+          ...brlCoursesInIntake,
+        ])
+      );
 
       const practicalSpecified = Array.isArray(data.practicalCourses);
       const assignmentSpecified = Array.isArray(data.assignmentCourses);
 
       const computedPracticalList = practicalSpecified
-        ? practicalList
-        : cleanCourses.filter((c) => isPracticalCourse(c));
+        ? sanitizedPracticalList
+        : cleanCourses.filter((c) => !/^BRL[-_]?\d+/i.test(c) && isPracticalCourse(c));
       const computedAssignmentList = assignmentSpecified
-        ? assignmentList
+        ? sanitizedAssignmentList
         : cleanCourses.filter((c) => !computedPracticalList.includes(c));
 
       // Strict Validation: Enforces Rule 1 (Scope), Rule 2 (Multi-course allowance), Rule 3 (No duplicates)
@@ -2553,12 +2684,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ];
 
       const newPartNo = existingParts.length + 1;
-      const newPractical = (params.practicalCourses || []).map((c) => c.trim().toUpperCase());
-      const newAssignment = (params.assignmentCourses || []).map((c) => c.trim().toUpperCase());
+      const isBrl = (c: string) => /^BRL[-_]?\d+/i.test(c);
+      const newPractical = (params.practicalCourses || [])
+        .map((c) => c.trim().toUpperCase())
+        .filter((c) => !isBrl(c));
+      const brlNew = cleanNewCourses.filter(isBrl);
+      const newAssignment = Array.from(
+        new Set([
+          ...(params.assignmentCourses || []).map((c) => c.trim().toUpperCase()),
+          ...brlNew,
+        ])
+      );
 
       const computedNewPractical = newPractical.length > 0
         ? newPractical
-        : cleanNewCourses.filter((c) => isPracticalCourse(c));
+        : cleanNewCourses.filter((c) => !isBrl(c) && isPracticalCourse(c));
       const computedNewAssignment = newAssignment.length > 0
         ? newAssignment
         : cleanNewCourses.filter((c) => !computedNewPractical.includes(c));
@@ -4283,18 +4423,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
             if (!cleanCourseList.includes(clean)) cleanCourseList.push(clean);
 
-            const hasPracTag = /\b(Practical|P)\b/i.test(rawStr);
-            const hasAsgnTag = /\b(TMA|Assignment|Asgn)\b/i.test(rawStr);
+            const isBrl = /^BRL[-_]?\d+/i.test(clean);
+            const hasPracTag = !isBrl && /\b(Practical|P)\b/i.test(rawStr);
+            const hasAsgnTag = isBrl || /\b(TMA|Assignment|Asgn)\b/i.test(rawStr);
 
-            if (hasPracTag && hasAsgnTag) {
+            if (isBrl || (hasAsgnTag && !hasPracTag)) {
+              if (!assignmentCourses.includes(clean)) assignmentCourses.push(clean);
+            } else if (hasPracTag && hasAsgnTag) {
               if (!practicalCourses.includes(clean)) practicalCourses.push(clean);
               if (!assignmentCourses.includes(clean)) assignmentCourses.push(clean);
               intakePracticalCourseSet.add(`${enrollment}_${clean}_${session}`);
             } else if (
               hasPracTag ||
               (isRecordOverallPractical && !hasAsgnTag) ||
-              (Array.isArray(r.practicalCourses) && r.practicalCourses.includes(clean)) ||
-              isPracticalCourse(clean)
+              (Array.isArray(r.practicalCourses) && r.practicalCourses.includes(clean) && !isBrl) ||
+              (!isBrl && isPracticalCourse(clean))
             ) {
               if (!practicalCourses.includes(clean)) practicalCourses.push(clean);
               intakePracticalCourseSet.add(`${enrollment}_${clean}_${session}`);
@@ -4307,6 +4450,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (Array.isArray(r.practicalCourses)) {
             r.practicalCourses.forEach((pc: string) => {
               const cleanPc = String(pc).trim().toUpperCase();
+              if (/^BRL[-_]?\d+/i.test(cleanPc)) {
+                if (!assignmentCourses.includes(cleanPc)) assignmentCourses.push(cleanPc);
+                return;
+              }
               if (cleanPc && !practicalCourses.includes(cleanPc)) practicalCourses.push(cleanPc);
               intakePracticalCourseSet.add(`${enrollment}_${cleanPc}_${session}`);
             });
@@ -4471,19 +4618,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ledgerDate = new Date().toISOString().split('T')[0];
           }
 
-          const hasPracTag = /\b(Practical|P)\b/i.test(rawCourse) || subId.includes('_PRAC_');
-          const isPractical =
+          const isBrl = /^BRL[-_]?\d+/i.test(cleanCourse);
+          const hasAsgnTag = isBrl || /\b(TMA|Assignment|Asgn)\b/i.test(rawCourse) || r.componentType === 'Assignment' || r.Component === 'Assignment';
+          const hasPracTag = !isBrl && (/\b(Practical|P)\b/i.test(rawCourse) || subId.includes('_PRAC_'));
+
+          let isPractical = false;
+          if (isBrl || (hasAsgnTag && !hasPracTag)) {
+            isPractical = false;
+          } else if (
             hasPracTag ||
             r.isPractical === true ||
             r.componentType === 'Practical' ||
             r.Component === 'Practical' ||
             intakePracticalCourseSet.has(`${enrollment}_${cleanCourse}_${session}`) ||
-            isPracticalCourse(cleanCourse);
+            (!isBrl && isPracticalCourse(cleanCourse))
+          ) {
+            isPractical = true;
+          }
 
           const compType: 'Assignment' | 'Practical' = isPractical ? 'Practical' : 'Assignment';
+          const normalizedSubId = (!isPractical && subId.includes('_PRAC_'))
+            ? subId.replace(/_PRAC_/g, '_')
+            : subId;
 
           return {
-            subId,
+            subId: normalizedSubId,
             session,
             enrollmentNo: enrollment,
             candidateName: candidate,
@@ -4497,7 +4656,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             isPractical,
             Component: compType,
             // Dual-key fallbacks
-            Sub_ID: subId,
+            Sub_ID: normalizedSubId,
             Session: session,
             Enrollment_No: enrollment,
             Candidate_Name: candidate,
@@ -4508,8 +4667,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             Grade: grade,
             Status: status,
             // Component compatibility keys
-            id: subId,
-            submissionKey: subId,
+            id: normalizedSubId,
+            submissionKey: normalizedSubId,
             intakeId: resolvedIntakeId,
             tokenNo: resolvedTokenNo,
             studentName: candidate,

@@ -784,11 +784,16 @@ export const IntakeDesk: React.FC = () => {
     const skippedAlreadyInBatch: string[] = [];
 
     for (const clean of splitCourses) {
+      const isBrl = /^BRL[-_]?\d+/i.test(clean);
       const isDual = isDualComponentCourse(clean);
-      const isPrac = isPracticalCourse(clean);
+      const isPrac = !isBrl && isPracticalCourse(clean);
+      // Absolute Precedence: User selected category / initialType takes priority.
+      // All BRL courses (BRL-101 to BRL-115) are strictly Assignment (TMA).
       const defaultComp: 'Assignment' | 'Practical' | 'Both' =
         initialType ||
-        (defaultIntakeComponent === 'Practical'
+        (isBrl
+          ? 'Assignment'
+          : defaultIntakeComponent === 'Practical'
           ? (isDual ? 'Practical' : 'Practical')
           : (isDual ? 'Assignment' : isPrac ? 'Practical' : 'Assignment'));
 
@@ -1400,9 +1405,12 @@ export const IntakeDesk: React.FC = () => {
     const computedPracticals: string[] = [];
     const computedAssignments: string[] = [];
     coursesArray.forEach((c) => {
+      const isBrl = /^BRL[-_]?\d+/i.test(c);
       const isDual = isDualComponentCourse(c);
-      const isPrac = isPracticalCourse(c);
-      const ct = courseComponentTypes[c] || (defaultIntakeComponent === 'Practical' ? 'Practical' : (isDual ? 'Both' : isPrac ? 'Practical' : 'Assignment'));
+      const isPrac = !isBrl && isPracticalCourse(c);
+      const ct = isBrl
+        ? 'Assignment'
+        : courseComponentTypes[c] || (defaultIntakeComponent === 'Practical' ? 'Practical' : (isDual ? 'Both' : isPrac ? 'Practical' : 'Assignment'));
       if (ct === 'Both') {
         computedAssignments.push(c);
         computedPracticals.push(c);

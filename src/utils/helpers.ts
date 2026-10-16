@@ -277,7 +277,7 @@ export function isPracticalCourse(courseCode?: string, title?: string, component
   if (componentType) {
     const ct = String(componentType).trim().toLowerCase();
     if (ct === 'practical') return true;
-    if (ct === 'assignment' || ct === 'theory') return false;
+    if (ct === 'assignment' || ct === 'theory' || ct === 'tma') return false;
   }
 
   const c = String(courseCode || '').trim().toUpperCase();
@@ -285,11 +285,17 @@ export function isPracticalCourse(courseCode?: string, title?: string, component
 
   if (!c && !t) return false;
 
-  // 1. Explicit IGNOU Lab / Practical code prefixes or suffixes
-  // e.g. BCSL-013, MCSL-016, BBYCL-132, BCHCL-132, CITL-001, BPCL-007, MPCL-007
-  if (/^[A-Z]{2,5}L[-_]?\d+/i.test(c)) return true;
-  // e.g. BLIS-224P, BLIE-227, BCSP-064, MCSP-232
-  if (/^[A-Z]{2,5}P[-_]?\d+/i.test(c)) return true;
+  // BRL (Bachelor in Retailing under BCOMF / Retail Operations) courses (BRL-101 to BRL-115)
+  // are strictly theory courses evaluated through Tutor Marked Assignments (TMA).
+  if (/^BRL[-_]?\d+/i.test(c)) return false;
+
+  // 1. Explicit IGNOU Lab / Practical code prefixes
+  // Computer Science: BCSL, MCSL, CITL, PGDCL
+  // Sciences: BBYCL (Botany), BCHCL (Chemistry), BPHCL (Physics), BZYCL (Zoology), BGGCL (Geography), BGYCL (Geology)
+  // Psychology: BPCL, MPCL
+  if (/^(BCSL|MCSL|CITL|BPCL|MPCL|BBYCL|BCHCL|BPHCL|BZYCL|BGGCL|BGYCL|PGDCL)[-_]?\d+/i.test(c)) return true;
+  // Project / Practical courses: BCSP, MCSP, etc.
+  if (/^(BCSP|MCSP)[-_]?\d+/i.test(c)) return true;
   if (/[-_]P$/i.test(c) || /\(L\)$/i.test(c) || /\(P\)$/i.test(c) || /[-_]LAB$/i.test(c) || /[-_]L$/i.test(c)) return true;
   
   // Specific common IGNOU practical codes

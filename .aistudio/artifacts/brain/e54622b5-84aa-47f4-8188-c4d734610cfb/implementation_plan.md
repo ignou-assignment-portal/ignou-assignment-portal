@@ -1,144 +1,106 @@
-# Professional Workspace Redesign & Study Centre Configuration Restructuring
+# BCOMF Course BRL-101 TMA Classification & Retroactive Rectification Plan
 
-Streamline the IGNOU Study Centre 2033 web application into an executive, high-density professional portal by removing visual clutter, technical widgets, and settings controls from the top header into a structured multi-tab Study Centre Configuration center (General, Appearance, Rates, and Data Sync).
+Fix the classification defect where BCOMF course BRL-101 (and the BRL series) was erroneously treated as a Practical course due to generic lab regex patterns matching the "L" in BRL, establish strict user-selection component precedence over automated course inference, and automatically reclassify all existing BRL-101 practical records into Tutor Marked Assignments (TMAs).
+
+### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> **Confirmed Decisions from Clarification**:
-> - **Header Relocation**: Theme selector, layout toggles (compact/full-width), and data sync monitoring controls are relocated out of the persistent header into Study Centre Configuration.
-> - **Top Header Bar**: Streamlined into an executive 3-zone bar containing institutional branding, instant student search (`Ctrl+K`), academic cycle isolation selector, and user profile / role credentials.
-> - **Study Centre Configuration Structure**: Organized into four clean tabs:
->   1. **General**: Centre details (SC-2033, RC-20 Kohima, S.D. Jain Girls' College), coordinator contact, and Gatekeeper terminal security PINs.
->   2. **Appearance**: Theme selection cards, layout density (compact vs default), and workspace width preferences (fluid full-width vs standard container).
->   3. **Rates & Norms**: IGNOU statutory evaluation rates (₹27.50/script), conveyance allowances, coordination charges, and financial mandates.
->   4. **Data Sync & Governance**: Google Sheets live sync monitors, manual evaluators/sheet sync triggers, session rollover archives, JSON exports, and disaster recovery.
+> The following architectural decisions were confirmed during the interactive clarification session:
+
+- **Confirmed Decision 1**: Automatically reclassify existing BRL-101 intake and evaluation entries to TMA assignments across active sessions, local state, and storage.
+- **Confirmed Decision 2**: Systematically classify all BRL series courses (`BRL-101` through `BRL-115`) under BCOMF as standard theory TMA courses, excluding them from any lab/practical regex matching.
+- **Confirmed Decision 3**: Enforce absolute component precedence where explicit user selection (`Assignment` / `TMA` vs. `Practical`) at the Intake Desk strictly overrides automated course-code heuristic detection.
 
 ---
 
-## 1. Overview & Core Concept
+### 1. Overview & Core Concept
 
-- **What It Does**: Transforms the application from a busy, control-crowded screen into an uncluttered, authoritative academic operations workspace. The persistent top bar focuses strictly on active operational tasks (who is logged in, what cycle is being processed, and looking up student files), while administrative options and system health monitors reside in a dedicated, tabbed Study Centre Configuration suite.
-- **Target Audience / Persona**: 
-  - **Desk Officials**: Front-desk operators processing high-volume student assignment submissions requiring zero distractions, fast search, and crisp cycle visibility.
-  - **Centre Coordinator (Dr. Sant K. Gupta)**: Administrator reviewing evaluator bills, configuring university remuneration rates, adjusting layout/theme preferences, and managing academic session rollovers.
-- **Key Value**: Eliminates visual noise and cognitive overload, adheres to SaaS dashboard design standards (no unwired icons, no telemetry tickers in the header), and groups operational governance into an intuitive administrative center.
+- **What It Does**: Resolves a classification mismatch in the IGNOU assignment management engine. In IGNOU, `BRL` stands for Bachelor in Retailing (a foundational domain within BCOMF / BBA Retail Operations), where courses such as `BRL-101` (Overview of Retailing), `BRL-102`, and `BRL-103` are 100-mark theory papers evaluated through Tutor Marked Assignments (TMA). Because the legacy helper checked `/^[A-Z]{2,5}L[-_]?\d+/i`, the system matched `BR` + `L` + `-101` and wrongly inferred it as a laboratory practical course. This plan removes `BRL` from lab heuristics, updates the master curriculum for BCOMF, respects desk official component selection as authoritative, and migrates existing entries.
+- **Target Audience / Persona**: Desk Officials and Study Centre Coordinators at IGNOU SC-2033 registering incoming candidate assignment scripts and managing evaluator course-wise allotments.
+- **Key Value**: Guarantees accurate academic record keeping, prevents theory TMA scripts from ending up in lab/viva rosters or practical payment batches, and eliminates manual data corrections.
 
 ---
 
-## 2. User Experience & Visual Design
+### 2. User Experience & Visual Design
 
-### Key User Flows
-1. **Executive Header Navigation**:
-   - The user sees a clean, authoritative 1-row header:
-     - **Left (Brand Zone)**: IGNOU Study Centre 2033 insignia, "Assignment Operations Cell", and host institution indicator.
-     - **Center/Middle (Utility Zone)**: Instant Student Lookup button with `Ctrl+K` shortcut indicator, providing quick access to candidate status and evaluation history.
-     - **Right (Context & Account Zone)**: Active Academic Cycle badge with single-click dropdown switcher, user role status (Coordinator / Desk Official) with switch button, and Lock/Sign Out action.
-   - No distracting pulsing status dots, no floating layout switches, and no color theme palettes cluttering the workspace top.
-2. **Accessing Study Centre Configuration**:
-   - The user navigates to **System Settings / Study Centre Configuration** via the left navigation drawer.
-   - The view presents a tabbed layout:
-     - **Tab 1: General**: Edit centre identification, regional centre affiliation, host college details, coordinator contact info, and terminal gatekeeper PINs.
-     - **Tab 2: Appearance**: Choose visual themes (Corporate Navy, Slate Minimal, Academic Emerald, Royal Purple, etc.) with real-time preview, toggle compact header mode, and toggle fluid full-width layout.
-     - **Tab 3: Rates & Norms**: Set evaluation remuneration rate (₹27.50/script default), conveyance allowance, coordination charges, and administrator security credentials.
-     - **Tab 4: Data Sync & Governance**: Live Google Sheets sync engine status, last sync timestamp, "Sync Evaluators Directory" trigger, "Force Sync Intake Sheet" trigger, session rollover archival history, and full JSON database backup.
-
-### Visual Identity & Theme
-- **Aesthetic Direction**: Executive institutional SaaS portal—disciplined, restrained, high-legibility. Deep navy and slate foundation (`bg-slate-900` / `bg-zinc-900` accents, crisp white and slate-50 surfaces, and emerald/indigo semantic accents).
-- **Color Palette & Mood**:
-  - Dominant Neutral (60%): Canvas background (`#F8FAFC` in light mode, `#090D16` in dark mode).
-  - Structural Surfaces (30%): White cards with hairline border (`border-zinc-200 / dark:border-zinc-800`), clean 1px dividers, zero heavy drop shadows.
-  - Accent Budget (10%): Royal indigo (`#4338CA`) for primary actions and active tabs; muted emerald (`#059669`) for active status indicators.
-- **Typography & Hierarchy**:
-  - System display face: `Plus Jakarta Sans` / clean sans-serif for headers and labels.
-  - Tabular numerals (`tabular-nums font-mono`) for all counts, timestamps, session labels, and currency figures.
-  - Zero-pill metadata: unboxed textual status with subtle middot (`·`) separators instead of nested pill badges.
+- **Key User Flows**:
+  1. *Intake Registration*: When a desk official types or selects `PROGRAMME: BCOMF` and enters course `BRL-101`, the course badge instantly tags as `[Assignment (TMA)]` with blue theory styling rather than purple lab styling.
+  2. *Intake Desk Component Override*: If a desk official explicitly selects `Assignment (TMA)`, the validation engine guarantees it stays TMA even if a course code has ambiguous characters.
+  3. *Ledger & Register Views*: Existing submissions of `BRL-101` currently listed under the "Practical" tab in Course Evaluation Master and Intake Register immediately transition to the "Assignment (TMA)" tab.
+  4. *Receipt Generation*: Official student intake receipts generated for BRL-101 display "Component: Assignment (TMA)" with standard assignment submission norms.
+- **Visual Identity & Theme**:
+  - Theory TMA badges retain clean slate/blue tones (`bg-blue-50 text-blue-700 border-blue-200` in light mode; `bg-blue-950/40 text-blue-300 border-blue-800` in dark mode).
+  - Practical courses remain clearly distinct with emerald/purple accents (`bg-purple-50 text-purple-700 border-purple-200`).
+- **Interactive Feedback & Motion**:
+  - Auto-fill notification toast when BCOMF or BRL courses are selected: `"Course BRL-101 verified as Theory TMA (BCOMF)"`.
+  - Seamless tab count updates in Course Evaluation Master (TMA count increments, Practical count decrements).
 
 ---
 
-## 3. Key Product Decisions & Trade-Offs
+### 3. Key Product Decisions & Trade-Offs
 
-### Decision 1: Relocating Theme & Layout Toggles
-- **Chosen Approach**: Move `ThemeSelector` and layout switches (Compact Header & Full-Width toggles) into the **Appearance** tab of Study Centre Configuration.
-- **Why**: Theme and layout changes are infrequent user preferences. Having them permanently occupying horizontal header space caused crowding, especially on laptops and tablets, pushing critical session and search controls into hidden overflow.
-- **Alternatives Considered**: Keeping a small gear icon in the header. Rejected because it violates the Top Bar Contract (which mandates a clean 3-zone layout with no decorative gear clutter).
-
-### Decision 2: Relocating DataSyncMonitor & Evaluator Sync
-- **Chosen Approach**: Place `DataSyncMonitor` and the Evaluators Sync button inside the **Data Sync & Governance** tab of Study Centre Configuration.
-- **Why**: Continuous sync telemetry tickers in the header distract desk officials during student intake. The Data Sync tab offers dedicated space to display sync health, parity state with Google Sheets, error logs, and one-click manual refresh actions.
-- **Alternatives Considered**: Collapsible popup modal in the header. Rejected in favor of a cohesive configuration hub.
-
-### Decision 3: Tabbed Architecture in Study Centre Configuration
-- **Chosen Approach**: Replace the continuous vertical scroll of `SystemSettingsView.tsx` with a segmented 4-tab control (`General`, `Appearance`, `Rates`, `Data Sync`).
-- **Why**: The settings view was over 1,200 lines long, requiring extensive scrolling past theme pickers and centre forms to reach archival and backup functions. Tabs provide immediate, zero-scroll access to specific administrative domains.
+- **Decision 1: Explicit BRL Discipline Exclusion in `helpers.ts` & `dataEntryValidationService.ts`**:
+  - *Chosen Approach*: Specifically check for `^BRL[-_]?\d+` as an explicit theory course prefix that returns `false` from `isPracticalCourse()`, and tighten the lab regex from `/^[A-Z]{2,5}L[-_]?\d+/i` to only match recognized IGNOU lab disciplines (`BCSL`, `MCSL`, `CITL`, `BPCL`, `MPCL`, `BBYCL`, `BCHCL`, `BPHCL`, `BZYCL`, `BGGCL`, `BGYCL`).
+  - *Why*: Prevents false positives for any academic acronyms that legitimately end with the letter "L" (e.g., `BRL` for Retailing).
+  - *Alternatives Considered*: Only checking `BRL-101` in an array was rejected because `BRL-102` through `BRL-115` would remain vulnerable to the same bug.
+- **Decision 2: Strict Component Precedence Over Heuristic Detection**:
+  - *Chosen Approach*: If an incoming submission or record carries an explicit `componentType` or `Component` of `'Assignment'` or `'TMA'` (or `hasAsgnTag`), `isPracticalCourse()` is never permitted to override it to `'Practical'`.
+  - *Why*: The desk official's explicit operational input must always supersede code-based name guesses.
+- **Decision 3: Retroactive Hydration & Ledger Rectification**:
+  - *Chosen Approach*: During state initialization in `AppContext.tsx` (`cleanIntake` and `cleanLedger`), reclassify existing records for `BRL` courses that were assigned `_PRAC_` keys or `isPractical: true` back into standard `Assignment` records. Clean `intakePracticalCourseSet` so it does not contain BRL courses unless explicitly tagged with `Practical`.
+  - *Why*: Ensures the fix corrects existing erroneous data in memory and localStorage without requiring desk officials to delete and re-enter previous submissions.
 
 ---
 
-## 4. Technical Architecture & Data Strategy
+### 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-### Component Architecture & Layout
+#### System Architecture & Classification Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                       HEADER COMPONENT                                          │
-│ ┌─────────────────────────┐   ┌───────────────────────────┐   ┌───────────────────────────────┐ │
-│ │ Zone 1: Branding        │   │ Zone 2: Global Search     │   │ Zone 3: Cycle & Profile       │ │
-│ │ [SC-2033 Insignia]      │   │ [Student Lookup  Ctrl+K]  │   │ [Active Cycle: July 2026 ▼]   │ │
-│ │ IGNOU SC-2033           │   │                           │   │ [Coordinator / Desk Role]     │ │
-│ │ Ops Cell • S.D. Jain    │   │                           │   │ [Lock / Sign Out]             │ │
-│ └─────────────────────────┘   └───────────────────────────┘   └───────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────────────────────────┘
-                                                │
-                                                ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                      STUDY CENTRE CONFIGURATION (SystemSettingsView)                           │
-│ ┌───────────────────┬───────────────────┬───────────────────────┬─────────────────────────────┐ │
-│ │ 🏢 General        │ 🎨 Appearance     │ 💰 Rates & Norms      │ 🔄 Data Sync & Governance   │ │
-│ └───────────────────┴───────────────────┴───────────────────────┴─────────────────────────────┘ │
-│ ┌─────────────────────────────────────────────────────────────────────────────────────────────┐ │
-│ │ Tab 1 (General):                                                                            │ │
-│ │   - Study Centre Code, Host Institution, Regional Centre, Coordinator Contact               │ │
-│ │   - Gatekeeper Terminal PINs (Desk PIN 1001, Admin PIN 2033)                                │ │
-│ ├─────────────────────────────────────────────────────────────────────────────────────────────┤ │
-│ │ Tab 2 (Appearance):                                                                         │ │
-│ │   - Visual Theme Palette (ThemeSelector card layout)                                        │ │
-│ │   - Layout Toggles: Header Compactness Mode, Full-Width Fluid Workspace                     │ │
-│ ├─────────────────────────────────────────────────────────────────────────────────────────────┤ │
-│ │ Tab 3 (Rates & Norms):                                                                      │ │
-│ │   - IGNOU Evaluation Rate (₹27.50 / script), Conveyance Allowance, Coordination Charges     │ │
-│ │   - Financial Mandates and Remuneration Guidelines                                          │ │
-│ ├─────────────────────────────────────────────────────────────────────────────────────────────┤ │
-│ │ Tab 4 (Data Sync & Governance):                                                             │ │
-│ │   - Google Sheets DataSyncMonitor Engine & Parity Inspector                                 │ │
-│ │   - One-Click Triggers: Sync Evaluators Directory & Refresh Google Sheets Intake Data        │ │
-│ │   - Session Closeout Archival Engine & Historical Snapshots Ledger                          │ │
-│ │   - Forensic Audit Trail Export & Institutional JSON Backup                                 │ │
-│ └─────────────────────────────────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Intake Registration Desk                        │
+│   Desk Official inputs Enrollment No, Programme: BCOMF, Course: BRL-101│
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                   Course Classification Engine                         │
+│                                                                        │
+│  1. Check Explicit Selection:                                          │
+│     Did user select "Assignment (TMA)"? ──────► KEEP AS TMA (Strict)   │
+│                                                                        │
+│  2. Check Discipline Exclusion:                                        │
+│     Matches ^BRL[-_]?\d+? ───────────────────► CLASSIFY AS TMA         │
+│                                                                        │
+│  3. Check Known Lab Disciplines:                                       │
+│     BCSL, MCSL, CITL, BPCL, BBYCL, etc.? ────► CLASSIFY AS PRACTICAL   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                  ┌─────────────────┴─────────────────┐
+                  ▼                                   ▼
+┌───────────────────────────────────┐   ┌────────────────────────────────┐
+│        Assignment (TMA)           │   │           Practical            │
+│  - Sub_ID: SUB_ENR_BRL101_TERM    │   │  - Sub_ID: SUB_ENR_CRS_PRAC_...│
+│  - Component: "Assignment"        │   │  - Component: "Practical"      │
+│  - isPractical: false             │   │  - isPractical: true           │
+│  - Target Tab: TMA Assignments    │   │  - Target Tab: Practical / Lab │
+└───────────────────────────────────┘   └────────────────────────────────┘
 ```
 
-### State Management & Wiring
-- **AppContext State Preserved**:
-  - `isHeaderCompact` & `toggleHeaderCompact`: Controlled seamlessly from the Appearance tab.
-  - `isContentFullWidth` & `toggleContentFullWidth`: Controlled seamlessly from the Appearance tab.
-  - `theme` & `setTheme`: Configured via `ThemeSelector` rendered in the Appearance tab.
-  - `isSyncingSheets`, `syncGoogleSheets`, `isSyncingEvaluators`, `syncEvaluatorsDirectory`, `lastSheetSync`: Wired directly into the Data Sync & Governance tab.
-- **Session & Search Accessibility**:
-  - Student Search Modal (`openSearchModal`) remains instantly accessible via header button or `Ctrl+K`.
-  - Session Selector dropdown remains in the header to switch or initialize academic cycles.
-  - Role switcher stays accessible for rapid testing or PIN-authorized administration.
+#### Files to Update During Execution Phase
 
----
-
-## 5. Verification Plan
-
-1. **Header Inspection**:
-   - Verify top header renders cleanly without horizontal overflow.
-   - Verify absence of theme selector, layout toggles, and sync tickers in the header bar.
-   - Verify Search trigger, Session dropdown, Role badge/switcher, and Sign Out button operate smoothly.
-2. **Configuration Tabs Verification**:
-   - Switch between **General**, **Appearance**, **Rates**, and **Data Sync** tabs.
-   - **General Tab**: Verify institutional details and PIN updates save to `localStorage` and `AppContext`.
-   - **Appearance Tab**: Change themes (e.g. Navy, Emerald) and toggle Compact Header / Full Width modes; confirm immediate visual response.
-   - **Rates Tab**: Update remuneration rate and verify persistence in billing calculations.
-   - **Data Sync Tab**: Verify Google Sheets sync status displays properly; click "Sync Evaluators" and confirm live refresh feedback.
-3. **Applet Compilation**:
-   - Run `compile_applet` to ensure zero TypeScript or Vite build errors.
+1. `src/utils/helpers.ts`:
+   - Update `isPracticalCourse`: Exclude `BRL` prefix (`/^BRL[-_]?\d+/i => false`).
+   - Narrow lab prefix matching to true IGNOU lab disciplines (`BCSL`, `MCSL`, `CITL`, `BPCL`, `MPCL`, `BBYCL`, `BCHCL`, `BPHCL`, `BZYCL`, etc.).
+   - Support `componentType === 'assignment' || componentType === 'tma'` as immediate return `false`.
+2. `src/services/dataEntryValidationService.ts`:
+   - Fix regex `/L\d|P\d|LAB|PRAC/i` so it does not trigger on `BRL` courses.
+   - Respect explicit `courseComponents[c] === 'Assignment'` over `isLabOrPracCode`.
+3. `src/context/AppContext.tsx`:
+   - In `cleanIntake` (line ~4293): Ensure `hasAsgnTag` prevents `isPracticalCourse(clean)` from routing to practicals.
+   - In `cleanLedger` (line ~4475): Ensure `r.componentType === 'Assignment'` or `r.Component === 'Assignment'` or `hasAsgnTag` takes precedence over `isPracticalCourse()`.
+   - Add automated migration pass for existing `BRL` courses in `intakes` and `courseEvaluations` to clean up old `_PRAC_` keys and reset `isPractical: false`.
+4. `src/data/ignouMasterData.ts`:
+   - Add `BCOMF` (Bachelor of Commerce in Financial and Cost Accounting / Retailing) with courses `BRL-101`, `BRL-102`, `BRL-103`, `BRL-104`, `BRL-105` as standard theory courses.
+5. `src/components/IntakeDesk.tsx`:
+   - Ensure default component calculation does not evaluate `isPracticalCourse` if the user is in standard TMA intake mode.

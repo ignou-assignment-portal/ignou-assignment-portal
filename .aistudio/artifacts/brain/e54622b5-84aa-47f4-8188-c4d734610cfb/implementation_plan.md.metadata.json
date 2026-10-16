@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan for streamlining the web app interface into an executive, professional workspace. Removes clutter, theme pickers, layout toggles, and data sync monitors from the top header bar into structured tabs in Study Centre Configuration (General, Appearance, Rates, and Data Sync), leaving a clean, high-performance top bar with branding, student search, academic cycle selection, and profile/role controls.",
-  "updatedAt": "2026-10-15T13:08:06.228377399Z",
+  "summary": "Implementation plan to fix BCOMF BRL-101 and BRL series courses misclassification, ensuring TMA submissions are accurately classified as Assignment (TMA) and never forced into practical, with automatic reclassification of existing BRL entries.",
+  "updatedAt": "2026-10-16T10:17:26.918664254Z",
   "requestFeedback": true,
   "userFacing": true
 }
