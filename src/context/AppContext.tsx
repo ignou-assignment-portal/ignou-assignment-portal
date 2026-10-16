@@ -573,11 +573,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const saved = localStorage.getItem('ignou_sc2033_audit_trail') || localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Purge mock rejection audit-008 or dummy test rejection entries for 2401928371
+          return parsed.filter((log: any) => log.id !== 'audit-008' && !(log.action === 'INTAKE_REJECTED' && log.targetIdentifier === '2401928371' && log.id?.startsWith('audit-00')));
+        }
       }
-      return INITIAL_AUDIT_LOGS;
+      return INITIAL_AUDIT_LOGS.filter((log) => log.id !== 'audit-008');
     } catch {
-      return INITIAL_AUDIT_LOGS;
+      return INITIAL_AUDIT_LOGS.filter((log) => log.id !== 'audit-008');
     }
   });
 
@@ -1131,6 +1134,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           localStorage.setItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS, JSON.stringify(updated));
         } catch {}
         return updated;
+      }
+      return prev;
+    });
+
+    setAuditLogs((prev) => {
+      const filtered = prev.filter((log) => log.id !== 'audit-008' && !(log.action === 'INTAKE_REJECTED' && log.targetIdentifier === '2401928371' && log.id?.startsWith('audit-00')));
+      if (filtered.length !== prev.length) {
+        try {
+          localStorage.setItem('ignou_sc2033_audit_trail', JSON.stringify(filtered));
+          localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(filtered));
+        } catch {}
+        return filtered;
       }
       return prev;
     });

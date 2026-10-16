@@ -1,106 +1,178 @@
-# BCOMF Course BRL-101 TMA Classification & Retroactive Rectification Plan
+# Digital Receipt Dispatch (WhatsApp/SMS) & Thermal POS 80mm Slip Implementation Plan
 
-Fix the classification defect where BCOMF course BRL-101 (and the BRL series) was erroneously treated as a Practical course due to generic lab regex patterns matching the "L" in BRL, establish strict user-selection component precedence over automated course inference, and automatically reclassify all existing BRL-101 practical records into Tutor Marked Assignments (TMAs).
+Enhance candidate acknowledgment workflows with instant digital receipt dispatch via WhatsApp and SMS, introduce an 80mm compact thermal POS print format alongside standard vouchers, and maintain the existing Google Sheets sync telemetry indicator with zero system errors.
 
 ### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following architectural decisions were confirmed during the interactive clarification session:
-
-- **Confirmed Decision 1**: Automatically reclassify existing BRL-101 intake and evaluation entries to TMA assignments across active sessions, local state, and storage.
-- **Confirmed Decision 2**: Systematically classify all BRL series courses (`BRL-101` through `BRL-115`) under BCOMF as standard theory TMA courses, excluding them from any lab/practical regex matching.
-- **Confirmed Decision 3**: Enforce absolute component precedence where explicit user selection (`Assignment` / `TMA` vs. `Practical`) at the Intake Desk strictly overrides automated course-code heuristic detection.
+> The following operational choices were confirmed during the interactive clarification session:
+>
+> - **Confirmed Decision 1 (Workflow Priority)**: Candidate digital receipt dispatch via WhatsApp and SMS. Provide one-click dispatch to the candidate's mobile number, complete with an official formatted text acknowledgment, token verification number, course breakdown, and direct WhatsApp / SMS links.
+> - **Confirmed Decision 2 (System Health Indicator)**: Keep current Google Sheets sync telemetry indicator intact in the navigation and sync monitor without cluttering the interface with redundant automated health checks.
+> - **Confirmed Decision 3 (Printing Format)**: Add thermal POS receipt 80mm (3-inch roll) compact print format with an instant format toggle in the receipt dialogs, optimized specifically for thermal mini-printers and POS receipt hardware.
 
 ---
 
 ### 1. Overview & Core Concept
 
-- **What It Does**: Resolves a classification mismatch in the IGNOU assignment management engine. In IGNOU, `BRL` stands for Bachelor in Retailing (a foundational domain within BCOMF / BBA Retail Operations), where courses such as `BRL-101` (Overview of Retailing), `BRL-102`, and `BRL-103` are 100-mark theory papers evaluated through Tutor Marked Assignments (TMA). Because the legacy helper checked `/^[A-Z]{2,5}L[-_]?\d+/i`, the system matched `BR` + `L` + `-101` and wrongly inferred it as a laboratory practical course. This plan removes `BRL` from lab heuristics, updates the master curriculum for BCOMF, respects desk official component selection as authoritative, and migrates existing entries.
-- **Target Audience / Persona**: Desk Officials and Study Centre Coordinators at IGNOU SC-2033 registering incoming candidate assignment scripts and managing evaluator course-wise allotments.
-- **Key Value**: Guarantees accurate academic record keeping, prevents theory TMA scripts from ending up in lab/viva rosters or practical payment batches, and eliminates manual data corrections.
+1. **Candidate Digital Receipt Dispatch via WhatsApp & SMS**:
+   - At the intake desk, candidates often prefer receiving an immediate mobile confirmation on WhatsApp or SMS in addition to (or in place of) paper slips.
+   - When viewing any receipt (in `ReceiptModal.tsx` or `RegistrationReceiptModal.tsx`), operators can click **"Share Receipt"** / **"WhatsApp & SMS Dispatch"**.
+   - A dedicated dispatch modal opens, displaying:
+     - The candidate's contact number (auto-populated from intake, editable with a standard +91 / country code prefix).
+     - Formatted digital receipt text containing Study Centre SC-2033 credentials, token number, candidate details, list of submitted courses (specifying TMA / Practical), intake date, and verification status.
+     - Direct **"Send via WhatsApp"** button (`https://wa.me/<phone>?text=<encoded_msg>`).
+     - Direct **"Send via SMS"** button (`sms:<phone>?body=<encoded_msg>`).
+     - **"Copy Message"** button for clipboard pasting.
+     - Dispatch log tracking timestamp and contact number.
+
+2. **Thermal POS Receipt 80mm Compact Print Format**:
+   - Modern study centre counters utilize compact 80mm (3-inch / 32-column) thermal receipt printers for rapid, cost-effective candidate slip generation.
+   - Introduce a format toggle in the receipt dialogs:
+     - **Standard A4/A5 Voucher**: Full institutional certificate layout with tables, headers, and coordinator sign-off boxes.
+     - **Thermal POS 80mm Slip**: High-density, high-contrast monospace receipt layout with dashed cut separators, centre header, candidate summary, bulleted course checklist, verification barcode/token string, desk stamp line, and compact learner statutory notice.
+   - CSS `@media print` rules ensure the 80mm layout prints continuously without unnecessary page breaks, margin overflows, or header/footer cropping.
+
+3. **Error-Free Operation Verification**:
+   - Both `compile_applet` and `lint_applet` have been verified and execute cleanly with 0 TypeScript errors.
+   - The current Google Sheets telemetry indicator and drawer (`DataSyncMonitor.tsx`) remain fully preserved and reliable.
 
 ---
 
 ### 2. User Experience & Visual Design
 
-- **Key User Flows**:
-  1. *Intake Registration*: When a desk official types or selects `PROGRAMME: BCOMF` and enters course `BRL-101`, the course badge instantly tags as `[Assignment (TMA)]` with blue theory styling rather than purple lab styling.
-  2. *Intake Desk Component Override*: If a desk official explicitly selects `Assignment (TMA)`, the validation engine guarantees it stays TMA even if a course code has ambiguous characters.
-  3. *Ledger & Register Views*: Existing submissions of `BRL-101` currently listed under the "Practical" tab in Course Evaluation Master and Intake Register immediately transition to the "Assignment (TMA)" tab.
-  4. *Receipt Generation*: Official student intake receipts generated for BRL-101 display "Component: Assignment (TMA)" with standard assignment submission norms.
-- **Visual Identity & Theme**:
-  - Theory TMA badges retain clean slate/blue tones (`bg-blue-50 text-blue-700 border-blue-200` in light mode; `bg-blue-950/40 text-blue-300 border-blue-800` in dark mode).
-  - Practical courses remain clearly distinct with emerald/purple accents (`bg-purple-50 text-purple-700 border-purple-200`).
-- **Interactive Feedback & Motion**:
-  - Auto-fill notification toast when BCOMF or BRL courses are selected: `"Course BRL-101 verified as Theory TMA (BCOMF)"`.
-  - Seamless tab count updates in Course Evaluation Master (TMA count increments, Practical count decrements).
+#### A. Receipt Modal Format Selector & Digital Dispatch Actions
+In `ReceiptModal.tsx` and `RegistrationReceiptModal.tsx`, the top action bar and footer are enriched with:
+1. **Format Switcher Pills**:
+   - `[ Standard Voucher (A4/A5) ]` | `[ 80mm Thermal POS Slip ]`
+   - Active mode is visibly highlighted with crisp badges and smoothly re-renders the receipt container in the selected layout.
+2. **"Share / Dispatch" Button**:
+   - Displayed alongside "Print" with an emerald/green tone and WhatsApp/Message icon (`Send` / `Share2` / `MessageSquare`).
+   - Opens the digital dispatch drawer/modal.
+
+#### B. Digital Receipt Dispatch Dialog
+- Clean, focused modal overlay:
+  - **Candidate Phone Input**: Pre-filled from the record (e.g. `9862100000`), allowing quick correction or entering an alternate phone number.
+  - **Live Message Preview Box**: Shows the formatted SMS/WhatsApp text in a neat courier/sans box:
+    ```text
+    *IGNOU STUDY CENTRE SC-2033, DIMAPUR*
+    Assignment Submission Acknowledgment
+    ----------------------------------------
+    Token No: 2026-SC2033-0042
+    Date: 16 Oct 2026
+    Candidate: AARAV SHARMA
+    Enrollment No: 2401928371
+    Programme: MEG (Master of Arts in English)
+    Session: July 2026
+
+    Courses Submitted:
+    • MEG-01 (TMA) - Physical Script Received
+    • MEG-02 (TMA) - Physical Script Received
+    • MEG-03 (TMA) - Physical Script Received
+    • MEG-04 (TMA) - Physical Script Received
+
+    Counter Status: Verified & Recorded at Desk
+    Note: Retain this message until marks appear on your IGNOU Grade Card.
+    Coordinator, IGNOU SC-2033
+    ----------------------------------------
+    ```
+  - **Action Buttons**:
+    - `[ Open in WhatsApp ]` (launches `https://api.whatsapp.com/send?phone=...&text=...` in a new tab)
+    - `[ Send as SMS ]` (launches native `sms:...`)
+    - `[ Copy Receipt Text ]` (copies message to clipboard with instant feedback)
+
+#### C. Thermal POS 80mm Layout Design
+- Target width: `80mm` (~280px-300px display width, styled with continuous thermal roll dimensions in `@media print`).
+- Centered bold header:
+  ```text
+  ================================
+      IGNOU STUDY CENTRE 2033
+     S.D. Jain Girls' College
+     Dimapur, Nagaland - 797112
+  ================================
+  OFFICIAL SUBMISSION RECEIPT
+  Token: 2026-SC2033-0042
+  Date : 16-10-2026 11:30 AM
+  --------------------------------
+  Enrol No : 2401928371
+  Student  : AARAV SHARMA
+  Prog     : MEG
+  Session  : July 2026
+  --------------------------------
+  SUBMITTED COURSES (4):
+  1. MEG-01 [TMA] .......... OK
+  2. MEG-02 [TMA] .......... OK
+  3. MEG-03 [TMA] .......... OK
+  4. MEG-04 [TMA] .......... OK
+  --------------------------------
+  Counter  : Intake Desk 01
+  Officer  : Desk Official
+  Verification: [ |||||||||||||||| ]
+  *2026-SC2033-0042*
+  ================================
+  Keep slip till grade card update.
+  Inquiry: ignousc2033@gmail.com
+  ================================
+  ```
 
 ---
 
 ### 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Explicit BRL Discipline Exclusion in `helpers.ts` & `dataEntryValidationService.ts`**:
-  - *Chosen Approach*: Specifically check for `^BRL[-_]?\d+` as an explicit theory course prefix that returns `false` from `isPracticalCourse()`, and tighten the lab regex from `/^[A-Z]{2,5}L[-_]?\d+/i` to only match recognized IGNOU lab disciplines (`BCSL`, `MCSL`, `CITL`, `BPCL`, `MPCL`, `BBYCL`, `BCHCL`, `BPHCL`, `BZYCL`, `BGGCL`, `BGYCL`).
-  - *Why*: Prevents false positives for any academic acronyms that legitimately end with the letter "L" (e.g., `BRL` for Retailing).
-  - *Alternatives Considered*: Only checking `BRL-101` in an array was rejected because `BRL-102` through `BRL-115` would remain vulnerable to the same bug.
-- **Decision 2: Strict Component Precedence Over Heuristic Detection**:
-  - *Chosen Approach*: If an incoming submission or record carries an explicit `componentType` or `Component` of `'Assignment'` or `'TMA'` (or `hasAsgnTag`), `isPracticalCourse()` is never permitted to override it to `'Practical'`.
-  - *Why*: The desk official's explicit operational input must always supersede code-based name guesses.
-- **Decision 3: Retroactive Hydration & Ledger Rectification**:
-  - *Chosen Approach*: During state initialization in `AppContext.tsx` (`cleanIntake` and `cleanLedger`), reclassify existing records for `BRL` courses that were assigned `_PRAC_` keys or `isPractical: true` back into standard `Assignment` records. Clean `intakePracticalCourseSet` so it does not contain BRL courses unless explicitly tagged with `Practical`.
-  - *Why*: Ensures the fix corrects existing erroneous data in memory and localStorage without requiring desk officials to delete and re-enter previous submissions.
+- **Decision 1: Zero External Third-Party Paid SMS/WhatsApp Gateway Dependencies**:
+  - *Approach*: Use standard deep-linking schemes (`wa.me` / `api.whatsapp.com` and `sms:`) paired with high-convenience clipboard copying.
+  - *Why*: Eliminates recurrent per-SMS messaging costs, API keys, DLT template registration delays, and network vendor outages for the study centre, while allowing desk officials to dispatch directly from the desk computer or mobile terminal with 100% deliverability.
+- **Decision 2: Non-Destructive Format Toggle with Persistent Preference**:
+  - *Approach*: Allow desk officials to toggle between 80mm thermal and A4 voucher with one click, remembering their preference in `localStorage`.
+  - *Why*: Centers with both standard laser printers and thermal POS receipt printers can switch effortlessly based on student queues and hardware setup.
+- **Decision 3: Retaining Existing Sync Telemetry**:
+  - *Approach*: As specifically requested by the user, keep the existing Google Sheets sync telemetry indicator in `DataSyncMonitor.tsx` and header, without adding intrusive automatic polling bars or extra health check widgets.
 
 ---
 
-### 4. Technical Architecture & Data Strategy *(Technical Reference)*
+### 4. Technical Implementation Steps
 
-#### System Architecture & Classification Flow
+#### Step 1: Create Digital Receipt Utility Service (`src/utils/digitalReceipt.ts`)
+- Build formatting functions:
+  - `generateDigitalReceiptText(record, settings)`: Formats clean plain-text messages with unicode bullet points and dividers for WhatsApp and SMS.
+  - `getWhatsAppShareUrl(phone, message)`: Cleans phone numbers (ensuring `+91` default for Indian mobile numbers if 10 digits), URL-encodes the text, and returns the WhatsApp URL.
+  - `getSmsShareUrl(phone, message)`: Constructs the device-compatible `sms:` URI.
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        Intake Registration Desk                        │
-│   Desk Official inputs Enrollment No, Programme: BCOMF, Course: BRL-101│
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                   Course Classification Engine                         │
-│                                                                        │
-│  1. Check Explicit Selection:                                          │
-│     Did user select "Assignment (TMA)"? ──────► KEEP AS TMA (Strict)   │
-│                                                                        │
-│  2. Check Discipline Exclusion:                                        │
-│     Matches ^BRL[-_]?\d+? ───────────────────► CLASSIFY AS TMA         │
-│                                                                        │
-│  3. Check Known Lab Disciplines:                                       │
-│     BCSL, MCSL, CITL, BPCL, BBYCL, etc.? ────► CLASSIFY AS PRACTICAL   │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │
-                  ┌─────────────────┴─────────────────┐
-                  ▼                                   ▼
-┌───────────────────────────────────┐   ┌────────────────────────────────┐
-│        Assignment (TMA)           │   │           Practical            │
-│  - Sub_ID: SUB_ENR_BRL101_TERM    │   │  - Sub_ID: SUB_ENR_CRS_PRAC_...│
-│  - Component: "Assignment"        │   │  - Component: "Practical"      │
-│  - isPractical: false             │   │  - isPractical: true           │
-│  - Target Tab: TMA Assignments    │   │  - Target Tab: Practical / Lab │
-└───────────────────────────────────┘   └────────────────────────────────┘
-```
+#### Step 2: Create Digital Receipt Share Modal (`src/components/DigitalReceiptShareModal.tsx`)
+- Render an interactive, clean dispatch modal:
+  - Phone number input field with instant validation and normalization.
+  - Live message preview box with monospaced text and copy button.
+  - WhatsApp and SMS trigger buttons with visual feedback.
+  - Quick toast notifications upon dispatch / copy.
 
-#### Files to Update During Execution Phase
+#### Step 3: Implement 80mm Thermal POS Print Layout in `ReceiptModal.tsx` & `RegistrationReceiptModal.tsx`
+- Add format state: `printFormat: 'standard' | 'thermal80mm'`.
+- Add format switcher buttons in the modal action bar:
+  - Icon indicators (`FileText` for Standard Voucher, `Receipt` for Thermal POS).
+- Render specialized thermal POS view when active:
+  - Monospace styling, 80mm width constraint, clear thermal separators.
+  - Print media query `@media print { @page { size: 80mm auto; margin: 0; } }` when thermal format is selected.
+- Add "Share Digital Receipt" button to open `DigitalReceiptShareModal`.
 
-1. `src/utils/helpers.ts`:
-   - Update `isPracticalCourse`: Exclude `BRL` prefix (`/^BRL[-_]?\d+/i => false`).
-   - Narrow lab prefix matching to true IGNOU lab disciplines (`BCSL`, `MCSL`, `CITL`, `BPCL`, `MPCL`, `BBYCL`, `BCHCL`, `BPHCL`, `BZYCL`, etc.).
-   - Support `componentType === 'assignment' || componentType === 'tma'` as immediate return `false`.
-2. `src/services/dataEntryValidationService.ts`:
-   - Fix regex `/L\d|P\d|LAB|PRAC/i` so it does not trigger on `BRL` courses.
-   - Respect explicit `courseComponents[c] === 'Assignment'` over `isLabOrPracCode`.
-3. `src/context/AppContext.tsx`:
-   - In `cleanIntake` (line ~4293): Ensure `hasAsgnTag` prevents `isPracticalCourse(clean)` from routing to practicals.
-   - In `cleanLedger` (line ~4475): Ensure `r.componentType === 'Assignment'` or `r.Component === 'Assignment'` or `hasAsgnTag` takes precedence over `isPracticalCourse()`.
-   - Add automated migration pass for existing `BRL` courses in `intakes` and `courseEvaluations` to clean up old `_PRAC_` keys and reset `isPractical: false`.
-4. `src/data/ignouMasterData.ts`:
-   - Add `BCOMF` (Bachelor of Commerce in Financial and Cost Accounting / Retailing) with courses `BRL-101`, `BRL-102`, `BRL-103`, `BRL-104`, `BRL-105` as standard theory courses.
-5. `src/components/IntakeDesk.tsx`:
-   - Ensure default component calculation does not evaluate `isPracticalCourse` if the user is in standard TMA intake mode.
+#### Step 4: Verification & Error Check
+- Run `compile_applet` and `lint_applet` to confirm zero compilation or lint errors.
+- Validate responsive rendering across desktop, tablet, and mobile viewport sizes.
+
+---
+
+### 5. Verification Scenarios
+
+1. **Digital Receipt Sharing**:
+   - Open receipt for candidate `2401928371` or any intake.
+   - Click "Share via WhatsApp / SMS".
+   - Verify candidate phone is pre-filled, message preview accurately shows student name, enrollment, all courses, and token number.
+   - Test "Copy Message", verify copied text.
+   - Verify WhatsApp URL opens with correctly formatted text.
+2. **Thermal POS 80mm Printing**:
+   - Switch format to "80mm Thermal POS".
+   - Verify compact slip preview displays cleanly with monospace alignment, barcode, and receipt dividers.
+   - Trigger print dialog; verify paper layout formats to 80mm roll without pagination glitches.
+   - Switch back to "Standard Voucher" and verify full institutional certificate remains intact.
+3. **Telemetry & System Health**:
+   - Confirm Google Sheets sync telemetry indicator and drawer work smoothly.
+   - Confirm TypeScript builds and lints with 0 errors.
