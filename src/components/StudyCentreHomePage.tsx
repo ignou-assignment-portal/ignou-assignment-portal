@@ -1184,24 +1184,93 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
                   </p>
                 </div>
 
-                {/* Coordinator Contact */}
-                <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-2xl space-y-2 sm:col-span-2">
-                  <div className="flex items-center gap-2 text-indigo-950 font-bold text-xs">
-                    <Phone className="w-4 h-4 text-indigo-700" />
-                    <span>Coordinator Helpline & Office</span>
+                {/* Study Centre Officials & Administrative Staff Directory */}
+                <div className="sm:col-span-2 space-y-3 pt-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-indigo-700 shrink-0" />
+                      <h3 className="text-xs font-black text-slate-900 tracking-tight uppercase">
+                        Study Centre Officials & Staff
+                      </h3>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">SC-2033 Administration</span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-zinc-700 font-medium pt-1">
-                    <div>
-                      <strong className="block text-zinc-500 text-[10px] uppercase">Coordinator:</strong>
-                      <span className="font-bold text-zinc-900">{settings.coordinatorName || 'Dr. Sant K. Gupta'}</span>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* 1. Co-ordinator */}
+                    <div className="p-4 bg-slate-50/80 hover:bg-slate-50 border border-slate-200 rounded-2xl space-y-2 transition shadow-2xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-900 border border-indigo-200">
+                          Co-ordinator
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">Executive Head</span>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-slate-950">Dr. Sant Kumar Gupta</h4>
+                        <div className="text-xs text-slate-700 font-medium font-mono mt-1">
+                          M: 9436013686
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <strong className="block text-zinc-500 text-[10px] uppercase">Helpline Phone:</strong>
-                      <span className="font-bold text-zinc-900">{settings.coordinatorPhone || '+91 9436013686'}</span>
+
+                    {/* 2. Asst Co-ordinator */}
+                    <div className="p-4 bg-slate-50/80 hover:bg-slate-50 border border-slate-200 rounded-2xl space-y-2 transition shadow-2xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-50 text-sky-900 border border-sky-200">
+                          Asst Co-ordinator
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">Academic Operations</span>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-slate-950">Shri Raju Deb</h4>
+                        <div className="text-xs text-slate-700 font-medium font-mono mt-1">
+                          M: 9856827642, 8787768196
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <strong className="block text-zinc-500 text-[10px] uppercase">Official Email:</strong>
-                      <span className="font-bold text-zinc-900 truncate block">{settings.coordinatorEmail || 'sant.k.gupta@gmail.com'}</span>
+
+                    {/* 3. Clerical Assistants */}
+                    <div className="p-4 bg-slate-50/80 hover:bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5 sm:col-span-2 transition shadow-2xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-teal-50 text-teal-900 border border-teal-200">
+                          Clerical Assistants
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">Counter Intake & Register Desk</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
+                          <div className="text-xs font-bold text-slate-900">Shri Binay Shankar Singh</div>
+                          <div className="text-xs text-slate-700 font-mono font-medium">M: 8787500493</div>
+                        </div>
+                        <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
+                          <div className="text-xs font-bold text-slate-900">Ms Ariale</div>
+                          <div className="text-xs text-slate-700 font-mono font-medium">M: 8974460993</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 4. Support Staff - Peons */}
+                    <div className="p-4 bg-slate-50/80 hover:bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5 sm:col-span-2 transition shadow-2xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 border border-slate-200">
+                          Peons
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">Script Handling & Dispatch Support</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                        <div className="p-2.5 bg-white border border-slate-200 rounded-xl flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+                          <span className="text-xs font-bold text-slate-900">Shri Shambu Gautam</span>
+                        </div>
+                        <div className="p-2.5 bg-white border border-slate-200 rounded-xl flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+                          <span className="text-xs font-bold text-slate-900">Smti Parmila Mahato</span>
+                        </div>
+                        <div className="p-2.5 bg-white border border-slate-200 rounded-xl flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+                          <span className="text-xs font-bold text-slate-900">Smti Bimala Gautam</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
