@@ -21,6 +21,7 @@ import { StudentSearchModal } from './components/StudentSearchModal';
 import { AdminPinModal } from './components/AdminPinModal';
 import { GatekeeperLockScreen } from './components/GatekeeperLockScreen';
 import { StudyCentreHomePage } from './components/StudyCentreHomePage';
+import { QuickActionBar } from './components/QuickActionBar';
 import { Toast } from './components/Toast';
 
 interface DashboardContentProps {
@@ -54,7 +55,7 @@ const DashboardContent: React.FC<DashboardContentProps> = ({ onViewHome }) => {
   }, [userRole, isUrlLockedDeskMode, activeTab]);
 
   return (
-    <div className="min-h-screen bg-zinc-100 text-zinc-900 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
       {/* Institutional Top Header */}
       <Header onViewHome={onViewHome} />
 
@@ -65,6 +66,9 @@ const DashboardContent: React.FC<DashboardContentProps> = ({ onViewHome }) => {
 
         {/* Workspace Content Area */}
         <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">
+          {/* Counter Productivity Quick Action Bar */}
+          <QuickActionBar activeTab={activeTab} setActiveTab={setActiveTab} />
+
           <main className={`flex-1 w-full mx-auto p-3 sm:p-5 space-y-5 transition-all duration-200 ${
             isContentFullWidth ? 'max-w-none px-4 sm:px-6' : 'max-w-7xl px-4 sm:p-6'
           }`}>

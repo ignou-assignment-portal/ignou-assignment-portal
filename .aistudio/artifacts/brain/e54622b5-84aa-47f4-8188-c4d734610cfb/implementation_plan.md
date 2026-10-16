@@ -1,178 +1,155 @@
-# Digital Receipt Dispatch (WhatsApp/SMS) & Thermal POS 80mm Slip Implementation Plan
+# Executive Refinement: Academic Portal Aesthetics, 4-Stage Guided Process Navigation & Counter Quick Action Bar
 
-Enhance candidate acknowledgment workflows with instant digital receipt dispatch via WhatsApp and SMS, introduce an 80mm compact thermal POS print format alongside standard vouchers, and maintain the existing Google Sheets sync telemetry indicator with zero system errors.
+Transform the IGNOU SC-2033 operations portal into a refined, high-performance academic portal featuring a clean slate design language, an enhanced 4-stage guided process sidebar with live status badges, and a counter productivity quick action bar with instant candidate lookup and recent intake shortcuts.
 
 ### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following operational choices were confirmed during the interactive clarification session:
+> The following architectural and design decisions were confirmed during the interactive clarification session:
 >
-> - **Confirmed Decision 1 (Workflow Priority)**: Candidate digital receipt dispatch via WhatsApp and SMS. Provide one-click dispatch to the candidate's mobile number, complete with an official formatted text acknowledgment, token verification number, course breakdown, and direct WhatsApp / SMS links.
-> - **Confirmed Decision 2 (System Health Indicator)**: Keep current Google Sheets sync telemetry indicator intact in the navigation and sync monitor without cluttering the interface with redundant automated health checks.
-> - **Confirmed Decision 3 (Printing Format)**: Add thermal POS receipt 80mm (3-inch roll) compact print format with an instant format toggle in the receipt dialogs, optimized specifically for thermal mini-printers and POS receipt hardware.
+> - **Confirmed Decision 1 (Visual Direction)**: Refined academic portal with clean borders, structured typography, and subtle slate accents (`slate-900` text, `slate-200` micro-borders, and `slate-50` backdrop fills), creating a prestigious, authoritative institutional workspace.
+> - **Confirmed Decision 2 (Navigation Structure)**: Enhanced sidebar featuring a guided 4-stage statutory workflow progression (`Stage 1: Student Intake` → `Stage 2: Evaluation Master` → `Stage 3: SED Award Sheets` → `Stage 4: Remuneration Billing`) connected with step-flow visual indicators, active script count badges, and clearly segmented secondary registers.
+> - **Confirmed Decision 3 (Speed & Usability)**: Counter Quick Action Bar integrated directly into the workspace header, providing instant student search (Ctrl+K), quick intake initiation, and a live strip of recent candidate intakes processed today with one-click receipt and edit actions.
 
 ---
 
 ### 1. Overview & Core Concept
 
-1. **Candidate Digital Receipt Dispatch via WhatsApp & SMS**:
-   - At the intake desk, candidates often prefer receiving an immediate mobile confirmation on WhatsApp or SMS in addition to (or in place of) paper slips.
-   - When viewing any receipt (in `ReceiptModal.tsx` or `RegistrationReceiptModal.tsx`), operators can click **"Share Receipt"** / **"WhatsApp & SMS Dispatch"**.
-   - A dedicated dispatch modal opens, displaying:
-     - The candidate's contact number (auto-populated from intake, editable with a standard +91 / country code prefix).
-     - Formatted digital receipt text containing Study Centre SC-2033 credentials, token number, candidate details, list of submitted courses (specifying TMA / Practical), intake date, and verification status.
-     - Direct **"Send via WhatsApp"** button (`https://wa.me/<phone>?text=<encoded_msg>`).
-     - Direct **"Send via SMS"** button (`sms:<phone>?body=<encoded_msg>`).
-     - **"Copy Message"** button for clipboard pasting.
-     - Dispatch log tracking timestamp and contact number.
-
-2. **Thermal POS Receipt 80mm Compact Print Format**:
-   - Modern study centre counters utilize compact 80mm (3-inch / 32-column) thermal receipt printers for rapid, cost-effective candidate slip generation.
-   - Introduce a format toggle in the receipt dialogs:
-     - **Standard A4/A5 Voucher**: Full institutional certificate layout with tables, headers, and coordinator sign-off boxes.
-     - **Thermal POS 80mm Slip**: High-density, high-contrast monospace receipt layout with dashed cut separators, centre header, candidate summary, bulleted course checklist, verification barcode/token string, desk stamp line, and compact learner statutory notice.
-   - CSS `@media print` rules ensure the 80mm layout prints continuously without unnecessary page breaks, margin overflows, or header/footer cropping.
-
-3. **Error-Free Operation Verification**:
-   - Both `compile_applet` and `lint_applet` have been verified and execute cleanly with 0 TypeScript errors.
-   - The current Google Sheets telemetry indicator and drawer (`DataSyncMonitor.tsx`) remain fully preserved and reliable.
+- **Purpose**:
+  Upgrade the user experience for study centre coordinators and counter desk officials. The current application contains rich operational capabilities across all examination stages, but can be significantly enhanced in visual elegance, workflow clarity, and repetitive counter throughput.
+- **Key Enhancements**:
+  1. **Visual Styling Modernization**:
+     - Standardize layout on a refined academic theme: subtle slate borders (`border-slate-200`), clean card surfaces (`bg-white` with `bg-slate-50/70` section heads), refined typography with tabular numerals for enrollment numbers and token codes, and institutional accents (navy and gold IGNOU SC-2033 emblems).
+  2. **Guided 4-Stage Process Navigation**:
+     - Upgrade `Sidebar.tsx` to visually present the university examination cycle as an interconnected 4-stage pipeline.
+     - Step badges (`1`, `2`, `3`, `4`) with subtle vertical connector accents demonstrate progression from student submission intake to final remuneration billing.
+     - Live counter badges display dynamic counts (e.g. `24 Today`, `18 Ungraded`, `3 Locked`, `₹3,240`).
+     - Clear segregation between **Core Statutory Stages**, **Operational Registers**, and **Administration**.
+  3. **Counter Quick Action Bar & Recent Intakes Strip**:
+     - Create a persistent or collapsible `QuickActionBar` component placed prominently at the top of the workspace.
+     - Features:
+       - **Fast Search Input**: Instant enrollment/name lookup modal with keyboard shortcut support.
+       - **Quick New Intake Trigger**: One-click jump to Intake Desk with auto-focus on enrollment input.
+       - **Recent Intakes Strip**: Horizontal chip stream displaying the last 4-5 intakes processed today (Token No, Candidate Name, Programme, Courses Count) with instant click-to-view receipt and edit.
+       - **Cycle Telemetry & Counter Stats**: Compact pill showing Today's Intakes, Pending Evaluations, and Google Sheets sync status.
 
 ---
 
 ### 2. User Experience & Visual Design
 
-#### A. Receipt Modal Format Selector & Digital Dispatch Actions
-In `ReceiptModal.tsx` and `RegistrationReceiptModal.tsx`, the top action bar and footer are enriched with:
-1. **Format Switcher Pills**:
-   - `[ Standard Voucher (A4/A5) ]` | `[ 80mm Thermal POS Slip ]`
-   - Active mode is visibly highlighted with crisp badges and smoothly re-renders the receipt container in the selected layout.
-2. **"Share / Dispatch" Button**:
-   - Displayed alongside "Print" with an emerald/green tone and WhatsApp/Message icon (`Send` / `Share2` / `MessageSquare`).
-   - Opens the digital dispatch drawer/modal.
+#### A. Refined Academic Portal Theme
+- **Color Hierarchy**:
+  - Primary text: `slate-900` / `zinc-900` for high contrast and legibility.
+  - Secondary text: `slate-500` / `slate-600` for metadata, timestamps, and guidelines.
+  - Accent / Authority: Deep institutional indigo (`indigo-900`/`indigo-600`) and warm amber (`amber-500`) representing IGNOU identity.
+  - Border & Structure: Refined `border-slate-200` (replacing heavy or mismatched borders) with clean 8px/12px radius cards.
+  - Surface differentiation: Slate-toned micro-headers (`bg-slate-50` / `bg-slate-100/70`) that immediately anchor table columns and card titles.
 
-#### B. Digital Receipt Dispatch Dialog
-- Clean, focused modal overlay:
-  - **Candidate Phone Input**: Pre-filled from the record (e.g. `9862100000`), allowing quick correction or entering an alternate phone number.
-  - **Live Message Preview Box**: Shows the formatted SMS/WhatsApp text in a neat courier/sans box:
-    ```text
-    *IGNOU STUDY CENTRE SC-2033, DIMAPUR*
-    Assignment Submission Acknowledgment
-    ----------------------------------------
-    Token No: 2026-SC2033-0042
-    Date: 16 Oct 2026
-    Candidate: AARAV SHARMA
-    Enrollment No: 2401928371
-    Programme: MEG (Master of Arts in English)
-    Session: July 2026
-
-    Courses Submitted:
-    • MEG-01 (TMA) - Physical Script Received
-    • MEG-02 (TMA) - Physical Script Received
-    • MEG-03 (TMA) - Physical Script Received
-    • MEG-04 (TMA) - Physical Script Received
-
-    Counter Status: Verified & Recorded at Desk
-    Note: Retain this message until marks appear on your IGNOU Grade Card.
-    Coordinator, IGNOU SC-2033
-    ----------------------------------------
-    ```
-  - **Action Buttons**:
-    - `[ Open in WhatsApp ]` (launches `https://api.whatsapp.com/send?phone=...&text=...` in a new tab)
-    - `[ Send as SMS ]` (launches native `sms:...`)
-    - `[ Copy Receipt Text ]` (copies message to clipboard with instant feedback)
-
-#### C. Thermal POS 80mm Layout Design
-- Target width: `80mm` (~280px-300px display width, styled with continuous thermal roll dimensions in `@media print`).
-- Centered bold header:
+#### B. Enhanced Guided 4-Stage Sidebar
+- **Stage Progression Rail**:
   ```text
-  ================================
-      IGNOU STUDY CENTRE 2033
-     S.D. Jain Girls' College
-     Dimapur, Nagaland - 797112
-  ================================
-  OFFICIAL SUBMISSION RECEIPT
-  Token: 2026-SC2033-0042
-  Date : 16-10-2026 11:30 AM
-  --------------------------------
-  Enrol No : 2401928371
-  Student  : AARAV SHARMA
-  Prog     : MEG
-  Session  : July 2026
-  --------------------------------
-  SUBMITTED COURSES (4):
-  1. MEG-01 [TMA] .......... OK
-  2. MEG-02 [TMA] .......... OK
-  3. MEG-03 [TMA] .......... OK
-  4. MEG-04 [TMA] .......... OK
-  --------------------------------
-  Counter  : Intake Desk 01
-  Officer  : Desk Official
-  Verification: [ |||||||||||||||| ]
-  *2026-SC2033-0042*
-  ================================
-  Keep slip till grade card update.
-  Inquiry: ignousc2033@gmail.com
-  ================================
+  ┌────────────────────────────────────────────────────────┐
+  │  ACADEMIC EXAMINATION CYCLE                            │
+  │                                                        │
+  │  [①] STAGE 1: INTAKE & DESK               [ 142 Total ]│
+  │   │  Candidate submission & token receipts             │
+  │   │                                                    │
+  │  [②] STAGE 2: COURSE EVALUATION MASTER     [ 18 Pending]│
+  │   │  Evaluator assignment & marks entry                │
+  │   │                                                    │
+  │  [③] STAGE 3: SED AWARD SHEETS             [ 3 Locked ] │
+  │   │  3-Part gazette award generation                   │
+  │   │                                                    │
+  │  [④] STAGE 4: REMUNERATION BILLING         [ ₹ Rate ]   │
+  │      Claim vouchers & bank disbursements               │
+  │                                                        │
+  │  ────────────────────────────────────────────────────  │
+  │  REGISTERS & TRACKING                                  │
+  │  • Course Ledger View                     • Packets    │
+  │  • Submissions Tracker                    • Evaluators │
+  └────────────────────────────────────────────────────────┘
   ```
+- Clear visual indicators differentiate Desk Official available tabs from Coordinator-restricted tabs, avoiding confusion.
+
+#### C. Counter Quick Action Bar
+- Placed directly below the institutional header and above active workspace views:
+  - **Left Section**:
+    - `+ New Candidate Intake` (Prominent button that focuses intake counter)
+    - `Fast Student Lookup` (Ctrl+K trigger with clean search icon)
+  - **Center Section (Recent Counter Intakes)**:
+    - Scrollable stream of today's recent candidates:
+      `[ #0042 • Aarav Sharma (MEG - 4 crs) ]` `[ #0041 • Priya Das (BCOMF - 3 crs) ]`
+    - Clicking any chip immediately opens the official receipt dialog for that submission without needing to navigate to the register.
+  - **Right Section (Counter Health & Telemetry)**:
+    - Today's Counter Intake Count
+    - Intact Google Sheets Sync Indicator (`DataSyncMonitor` drawer trigger)
 
 ---
 
 ### 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Zero External Third-Party Paid SMS/WhatsApp Gateway Dependencies**:
-  - *Approach*: Use standard deep-linking schemes (`wa.me` / `api.whatsapp.com` and `sms:`) paired with high-convenience clipboard copying.
-  - *Why*: Eliminates recurrent per-SMS messaging costs, API keys, DLT template registration delays, and network vendor outages for the study centre, while allowing desk officials to dispatch directly from the desk computer or mobile terminal with 100% deliverability.
-- **Decision 2: Non-Destructive Format Toggle with Persistent Preference**:
-  - *Approach*: Allow desk officials to toggle between 80mm thermal and A4 voucher with one click, remembering their preference in `localStorage`.
-  - *Why*: Centers with both standard laser printers and thermal POS receipt printers can switch effortlessly based on student queues and hardware setup.
-- **Decision 3: Retaining Existing Sync Telemetry**:
-  - *Approach*: As specifically requested by the user, keep the existing Google Sheets sync telemetry indicator in `DataSyncMonitor.tsx` and header, without adding intrusive automatic polling bars or extra health check widgets.
+- **Decision 1: Persistent Top Action Bar vs Full-Page Hub**:
+  - *Chosen Approach*: Lightweight, sticky or responsive Quick Action Bar situated at the top of the workspace.
+  - *Why*: Allows desk operators to quickly access recent submissions, launch searches, or check counter stats from *any* active tab without losing their current place in evaluation or register tracking.
+- **Decision 2: Retaining Full Data & State Compatibility**:
+  - *Chosen Approach*: The UI enhancements build on existing context data (`allIntakes`, `sessionIntakes`, `sessionCourseEvaluations`, `openReceiptModal`, `settings`) without altering data models or database schemas.
+  - *Why*: Guarantees zero risk of data regression or breaking changes to existing sync scripts and storage.
+- **Decision 3: Preserving Google Sheets Sync Telemetry**:
+  - *Chosen Approach*: Retain the proven `DataSyncMonitor` telemetry trigger inside the Quick Action Bar and sidebar, adhering strictly to the user's requirement to preserve current sync behavior.
 
 ---
 
-### 4. Technical Implementation Steps
+### 4. Technical Architecture & Implementation Steps
 
-#### Step 1: Create Digital Receipt Utility Service (`src/utils/digitalReceipt.ts`)
-- Build formatting functions:
-  - `generateDigitalReceiptText(record, settings)`: Formats clean plain-text messages with unicode bullet points and dividers for WhatsApp and SMS.
-  - `getWhatsAppShareUrl(phone, message)`: Cleans phone numbers (ensuring `+91` default for Indian mobile numbers if 10 digits), URL-encodes the text, and returns the WhatsApp URL.
-  - `getSmsShareUrl(phone, message)`: Constructs the device-compatible `sms:` URI.
+#### Step 1: Create Counter Quick Action Bar (`src/components/QuickActionBar.tsx`)
+- Implement a streamlined component that:
+  - Consumes `sessionIntakes`, `openReceiptModal`, `openSearchModal`, `allCourseEvaluations`, and `syncStatus`.
+  - Computes:
+    - Intakes processed today (`new Date().toISOString().split('T')[0]`).
+    - Recent 4-5 intakes ordered by timestamp/creation time.
+    - Pending evaluations count for the active cycle.
+  - Renders action triggers:
+    - `New Intake` button (switches tab to `INTAKE_DESK` and focuses enrollment field).
+    - `Find Student (Ctrl+K)` search button.
+    - Recent intake chips with candidate name, token number, programme, and click handler to `openReceiptModal(intake)`.
+    - Compact counter status summary chips.
 
-#### Step 2: Create Digital Receipt Share Modal (`src/components/DigitalReceiptShareModal.tsx`)
-- Render an interactive, clean dispatch modal:
-  - Phone number input field with instant validation and normalization.
-  - Live message preview box with monospaced text and copy button.
-  - WhatsApp and SMS trigger buttons with visual feedback.
-  - Quick toast notifications upon dispatch / copy.
+#### Step 2: Elevate `Sidebar.tsx` with 4-Stage Guided Process Progression
+- Restructure navigation items into explicit academic stages:
+  - Stage 1: Student Intake & Desk
+  - Stage 2: Course Evaluation Master
+  - Stage 3: Regional Centre SED Award Sheets
+  - Stage 4: Evaluator Remuneration Billing
+- Add visual step indicators (`①`, `②`, `③`, `④`), progress connecting line styling, and live status badges.
+- Standardize colors using the refined slate palette (`slate-900`, `slate-700`, `slate-200`, `slate-50`).
+- Ensure full mobile drawer compatibility and smooth collapse rail (72px) behavior.
 
-#### Step 3: Implement 80mm Thermal POS Print Layout in `ReceiptModal.tsx` & `RegistrationReceiptModal.tsx`
-- Add format state: `printFormat: 'standard' | 'thermal80mm'`.
-- Add format switcher buttons in the modal action bar:
-  - Icon indicators (`FileText` for Standard Voucher, `Receipt` for Thermal POS).
-- Render specialized thermal POS view when active:
-  - Monospace styling, 80mm width constraint, clear thermal separators.
-  - Print media query `@media print { @page { size: 80mm auto; margin: 0; } }` when thermal format is selected.
-- Add "Share Digital Receipt" button to open `DigitalReceiptShareModal`.
+#### Step 3: Polish `Header.tsx` and Overall Application Container (`App.tsx`)
+- Refine the institutional top bar in `Header.tsx` with clean academic styling:
+  - Sharp university identifier: `INDIRA GANDHI NATIONAL OPEN UNIVERSITY • SC-2033`.
+  - Harmonize fonts, borders, and session cycle switcher dropdown.
+- Integrate `QuickActionBar` at the top of the main content area in `App.tsx` across desktop and responsive mobile views.
+- Ensure the layout remains fluid, crisp, and high-density for counter monitors.
 
-#### Step 4: Verification & Error Check
-- Run `compile_applet` and `lint_applet` to confirm zero compilation or lint errors.
-- Validate responsive rendering across desktop, tablet, and mobile viewport sizes.
+#### Step 4: Verification & Build Validation
+- Run `compile_applet` and `lint_applet` to guarantee 0 TypeScript/ESLint errors.
+- Verify responsive layout across desktop (1920x1080, 1440x900), tablet (768px), and mobile (375px) viewports.
 
 ---
 
 ### 5. Verification Scenarios
 
-1. **Digital Receipt Sharing**:
-   - Open receipt for candidate `2401928371` or any intake.
-   - Click "Share via WhatsApp / SMS".
-   - Verify candidate phone is pre-filled, message preview accurately shows student name, enrollment, all courses, and token number.
-   - Test "Copy Message", verify copied text.
-   - Verify WhatsApp URL opens with correctly formatted text.
-2. **Thermal POS 80mm Printing**:
-   - Switch format to "80mm Thermal POS".
-   - Verify compact slip preview displays cleanly with monospace alignment, barcode, and receipt dividers.
-   - Trigger print dialog; verify paper layout formats to 80mm roll without pagination glitches.
-   - Switch back to "Standard Voucher" and verify full institutional certificate remains intact.
-3. **Telemetry & System Health**:
-   - Confirm Google Sheets sync telemetry indicator and drawer work smoothly.
-   - Confirm TypeScript builds and lints with 0 errors.
+1. **Guided Navigation**:
+   - Verify sidebar clearly displays the 4 stages with step numbers `1` through `4` and connector accents.
+   - Verify active count badges accurately reflect session data.
+   - Verify clicking each stage smoothly navigates to the respective workspace.
+2. **Quick Action Bar & Recent Intakes**:
+   - Verify the top quick action bar renders the last processed intakes.
+   - Click a recent intake chip: confirm the official receipt modal opens instantly.
+   - Click "+ New Intake": confirm it switches to Intake Desk and focuses the input.
+   - Click "Search Student": confirm the search modal opens cleanly.
+3. **Refined Slate Aesthetics**:
+   - Check visual contrast, clean borders (`border-slate-200`), and typography across tables and cards.
+   - Confirm Google Sheets sync telemetry indicator remains fully functional and accessible.
+4. **Code Quality**:
+   - Run compilation and linting to ensure clean pass with 0 errors.
