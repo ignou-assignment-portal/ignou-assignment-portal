@@ -18,6 +18,7 @@ import {
   SessionArchiveRecord,
   AppTheme,
   AuditLogEntry,
+  StudentRegistrationRecord,
 } from '../types';
 import { THEMES, THEME_STORAGE_KEY, getInitialTheme, applyThemeToDOM } from '../utils/theme';
 import {
@@ -31,6 +32,7 @@ import {
   INITIAL_COURSE_EVALUATIONS,
   IGNOU_PROGRAMMES,
   INITIAL_AUDIT_LOGS,
+  INITIAL_STUDENT_REGISTRATIONS,
 } from '../data/ignouMasterData';
 import {
   EXTENDED_IGNOU_PROGRAMMES,
@@ -311,6 +313,15 @@ interface AppContextType {
   clearAuditLogs: () => void;
   exportAuditLogsCSV: () => void;
   exportAuditLogsJSON: () => void;
+
+  // Admissions & Re-Registration (Fresh 1st Year & Re-Reg 2nd/3rd Year)
+  studentRegistrations: StudentRegistrationRecord[];
+  freshAdmissions: StudentRegistrationRecord[];
+  reRegistrations: StudentRegistrationRecord[];
+  addStudentRegistration: (record: Omit<StudentRegistrationRecord, 'id' | 'createdAt' | 'updatedAt'>) => StudentRegistrationRecord;
+  batchImportStudentRegistrations: (records: StudentRegistrationRecord[], overwriteDuplicates?: boolean) => { added: number; updated: number; skipped: number };
+  updateStudentRegistration: (id: string, updates: Partial<StudentRegistrationRecord>) => void;
+  deleteStudentRegistration: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -333,6 +344,7 @@ const STORAGE_KEYS = {
   COURSE_TITLES_REGISTRY: 'ignou_sc2033_course_titles_registry',
   ARCHIVES: 'ignou_sc2033_archives',
   AUDIT_LOGS: 'ignou_sc2033_audit_trail',
+  STUDENT_REGISTRATIONS: 'ignou_sc2033_student_registrations',
 };
 
 export const parseEvaluatorsMaster = (rawList: any[]): Evaluator[] => {
@@ -1052,6 +1064,109 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Failed to save course titles registry to localStorage', e);
     }
   }, [courseTitlesRegistry]);
+
+  // Student Registrations Database State (Fresh Admissions 1st Year & Re-Registrations 2nd/3rd Year)
+  const [studentRegistrations, setStudentRegistrations] = useState<StudentRegistrationRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.STUDENT_REGISTRATIONS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+      return INITIAL_STUDENT_REGISTRATIONS;
+    } catch {
+      return INITIAL_STUDENT_REGISTRATIONS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.STUDENT_REGISTRATIONS, JSON.stringify(studentRegistrations));
+    } catch (e) {
+      console.warn('Failed to save student registrations to localStorage', e);
+    }
+  }, [studentRegistrations]);
+
+  const freshAdmissions = useMemo(() => {
+    return studentRegistrations.filter((r) => r.cadre === 'FRESH');
+  }, [studentRegistrations]);
+
+  const reRegistrations = useMemo(() => {
+    return studentRegistrations.filter((r) => r.cadre === 'RE_REGISTRATION');
+  }, [studentRegistrations]);
+
+  const addStudentRegistration = useCallback((record: Omit<StudentRegistrationRecord, 'id' | 'createdAt' | 'updatedAt'>): StudentRegistrationRecord => {
+    const newRecord: StudentRegistrationRecord = {
+      ...record,
+      id: `REG-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setStudentRegistrations((prev) => [newRecord, ...prev]);
+    logAuditEvent({
+      action: 'SETTINGS_UPDATED',
+      category: 'AUTHENTICATION',
+      actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+      role: currentRole,
+      session: record.session,
+      targetIdentifier: record.enrollmentNo,
+      summary: `Registered student ${record.studentName} (${record.enrollmentNo}) for ${record.cadre === 'FRESH' ? 'Fresh Admission' : 'Re-Registration'} in ${record.programmeCode}`,
+      status: 'SUCCESS',
+    });
+    return newRecord;
+  }, [currentRole, settings.coordinatorName, logAuditEvent]);
+
+  const batchImportStudentRegistrations = useCallback((newRecords: StudentRegistrationRecord[], overwriteDuplicates: boolean = true) => {
+    let addedCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+
+    setStudentRegistrations((prev) => {
+      const map = new Map<string, StudentRegistrationRecord>();
+      prev.forEach((r) => map.set(r.enrollmentNo.trim().toUpperCase(), r));
+
+      newRecords.forEach((r) => {
+        const key = r.enrollmentNo.trim().toUpperCase();
+        if (map.has(key)) {
+          if (overwriteDuplicates) {
+            map.set(key, { ...r, updatedAt: new Date().toISOString() });
+            updatedCount++;
+          } else {
+            skippedCount++;
+          }
+        } else {
+          map.set(key, r);
+          addedCount++;
+        }
+      });
+
+      return Array.from(map.values());
+    });
+
+    logAuditEvent({
+      action: 'SETTINGS_UPDATED',
+      category: 'AUTHENTICATION',
+      actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+      role: currentRole,
+      session: currentSession,
+      summary: `Batch imported ${newRecords.length} student registration records (${addedCount} new, ${updatedCount} updated, ${skippedCount} skipped)`,
+      status: 'SUCCESS',
+    });
+
+    return { added: addedCount, updated: updatedCount, skipped: skippedCount };
+  }, [currentRole, settings.coordinatorName, currentSession, logAuditEvent]);
+
+  const updateStudentRegistration = useCallback((id: string, updates: Partial<StudentRegistrationRecord>) => {
+    setStudentRegistrations((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r))
+    );
+  }, []);
+
+  const deleteStudentRegistration = useCallback((id: string) => {
+    setStudentRegistrations((prev) => prev.filter((r) => r.id !== id));
+  }, []);
 
   // One-time retroactive rectification for BRL series courses (BCOMF):
   // Migrates any existing BRL-101 (and BRL-101 to BRL-115) records that were erroneously
@@ -5556,6 +5671,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         clearAuditLogs,
         exportAuditLogsCSV,
         exportAuditLogsJSON,
+        // Admissions & Re-Registration (Fresh 1st Year & Re-Reg 2nd/3rd Year)
+        studentRegistrations,
+        freshAdmissions,
+        reRegistrations,
+        addStudentRegistration,
+        batchImportStudentRegistrations,
+        updateStudentRegistration,
+        deleteStudentRegistration,
       }}
     >
       {children}
