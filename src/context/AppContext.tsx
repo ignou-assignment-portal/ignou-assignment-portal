@@ -49,7 +49,7 @@ import {
   isPracticalCourse,
   isDualComponentCourse,
 } from '../utils/helpers';
-import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, executeQueuedMutation, SCRIPT_URL, normalizeSessionName, norm } from '../services/sheetsService';
+import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, postSyncAdmissions, executeQueuedMutation, SCRIPT_URL, normalizeSessionName, norm } from '../services/sheetsService';
 import {
   subscribeSyncQueue,
   processPendingQueue,
@@ -322,6 +322,8 @@ interface AppContextType {
   batchImportStudentRegistrations: (records: StudentRegistrationRecord[], overwriteDuplicates?: boolean) => { added: number; updated: number; skipped: number };
   updateStudentRegistration: (id: string, updates: Partial<StudentRegistrationRecord>) => void;
   deleteStudentRegistration: (id: string) => void;
+  isSyncingAdmissions: boolean;
+  syncAdmissionsWithGoogleSheets: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -1104,7 +1106,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    setStudentRegistrations((prev) => [newRecord, ...prev]);
+    setStudentRegistrations((prev) => {
+      const key = getRegistrationCompositeKey(newRecord);
+      const filtered = prev.filter((r) => getRegistrationCompositeKey(r) !== key);
+      return [newRecord, ...filtered];
+    });
     logAuditEvent({
       action: 'SETTINGS_UPDATED',
       category: 'AUTHENTICATION',
@@ -1118,6 +1124,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newRecord;
   }, [currentRole, settings.coordinatorName, logAuditEvent]);
 
+  const getRegistrationCompositeKey = (r: StudentRegistrationRecord | Partial<StudentRegistrationRecord>): string => {
+    const cleanEnr = (r.enrollmentNo || '').trim().toUpperCase();
+    const cleanSess = (r.session || '').trim().toUpperCase().replace(/\s+/g, ' ');
+    const cleanYr = (r.academicYear || '1st Year').trim().toUpperCase();
+    const cleanCadre = (r.cadre || 'FRESH').trim().toUpperCase();
+    return `${cleanEnr}__${cleanSess}__${cleanYr}__${cleanCadre}`;
+  };
+
   const batchImportStudentRegistrations = useCallback((newRecords: StudentRegistrationRecord[], overwriteDuplicates: boolean = true) => {
     let addedCount = 0;
     let updatedCount = 0;
@@ -1125,13 +1139,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setStudentRegistrations((prev) => {
       const map = new Map<string, StudentRegistrationRecord>();
-      prev.forEach((r) => map.set(r.enrollmentNo.trim().toUpperCase(), r));
+      // Key by Enrollment, Session, Academic Year, and Cadre so multi-session registrations coexist
+      prev.forEach((r) => map.set(getRegistrationCompositeKey(r), r));
 
       newRecords.forEach((r) => {
-        const key = r.enrollmentNo.trim().toUpperCase();
+        const key = getRegistrationCompositeKey(r);
         if (map.has(key)) {
           if (overwriteDuplicates) {
-            map.set(key, { ...r, updatedAt: new Date().toISOString() });
+            const existing = map.get(key)!;
+            map.set(key, { ...existing, ...r, id: existing.id || r.id, updatedAt: new Date().toISOString() });
             updatedCount++;
           } else {
             skippedCount++;
@@ -4957,6 +4973,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
+        // Also handle studentRegistrations if present in Google Sheets response
+        if (data.studentRegistrations && data.studentRegistrations.length > 0) {
+          batchImportStudentRegistrations(data.studentRegistrations, true);
+        }
+
         if (!isSilent) {
           showToast(syncMsg, 'success');
         }
@@ -5009,6 +5030,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsSyncingEvaluators(false);
     }
   }, [showToast]);
+
+  const [isSyncingAdmissions, setIsSyncingAdmissions] = useState<boolean>(false);
+
+  const syncAdmissionsWithGoogleSheets = useCallback(async () => {
+    setIsSyncingAdmissions(true);
+    try {
+      const res = await postSyncAdmissions(studentRegistrations);
+      if (res.status === 'success') {
+        showToast(`Synced ${studentRegistrations.length} admissions record(s) with Google Sheets`, 'success');
+      } else {
+        showToast(res.message || 'Admissions sync queued in background', 'info');
+      }
+    } catch (err: any) {
+      console.warn('Admissions sync error:', err);
+      showToast('Admissions sync queued in offline pipeline', 'warning');
+    } finally {
+      setIsSyncingAdmissions(false);
+    }
+  }, [studentRegistrations, showToast]);
 
   // 1. On Load: Call doGet() to hydrate IntakeRegister and CourseLedger state from Google Sheets
   useEffect(() => {
@@ -5679,6 +5719,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         batchImportStudentRegistrations,
         updateStudentRegistration,
         deleteStudentRegistration,
+        isSyncingAdmissions,
+        syncAdmissionsWithGoogleSheets,
       }}
     >
       {children}

@@ -22,6 +22,7 @@ import {
   AlertCircle,
   ExternalLink,
   BookOpen,
+  RefreshCw,
 } from 'lucide-react';
 
 export const AdmissionsView: React.FC = () => {
@@ -33,6 +34,8 @@ export const AdmissionsView: React.FC = () => {
     allProgrammes,
     isAdmin,
     verifyAndSetAdminRole,
+    isSyncingAdmissions,
+    syncAdmissionsWithGoogleSheets,
     showToast,
   } = useApp();
 
@@ -206,6 +209,17 @@ export const AdmissionsView: React.FC = () => {
             >
               <Download className="w-3.5 h-3.5 text-slate-500" />
               <span>Export</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={syncAdmissionsWithGoogleSheets}
+              disabled={isSyncingAdmissions}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-bold transition shadow-2xs cursor-pointer disabled:opacity-50"
+              title="Synchronize admissions & re-registrations with Google Sheets"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-emerald-700 ${isSyncingAdmissions ? 'animate-spin' : ''}`} />
+              <span>{isSyncingAdmissions ? 'Syncing...' : 'Sync Sheets'}</span>
             </button>
           </div>
         </div>

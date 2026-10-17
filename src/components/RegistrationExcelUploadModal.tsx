@@ -4,6 +4,7 @@ import { RegistrationCadre, AcademicYearLevel, StudentRegistrationRecord } from 
 import {
   parseExcelSpreadsheet,
   validateAndMapRows,
+  getRegistrationCompositeKey,
   ColumnMapping,
   ParsedExcelResult,
   ValidationItem,
@@ -78,12 +79,12 @@ export const RegistrationExcelUploadModal: React.FC<RegistrationExcelUploadModal
     }
   }, [isOpen, defaultCadre, currentSession]);
 
-  // Existing enrollments set
-  const existingEnrollments = useMemo(() => {
+  // Existing composite registration keys set (prevents cross-session false duplicates)
+  const existingKeys = useMemo(() => {
     const s = new Set<string>();
     studentRegistrations.forEach((r) => {
       if (r.enrollmentNo) {
-        s.add(r.enrollmentNo.trim().toUpperCase());
+        s.add(getRegistrationCompositeKey(r.enrollmentNo, r.session, r.academicYear, r.cadre));
       }
     });
     return s;
@@ -115,9 +116,9 @@ export const RegistrationExcelUploadModal: React.FC<RegistrationExcelUploadModal
       columnMapping,
       targetCadre,
       targetSession,
-      existingEnrollments
+      existingKeys
     );
-  }, [parsedData, columnMapping, targetCadre, targetSession, existingEnrollments]);
+  }, [parsedData, columnMapping, targetCadre, targetSession, existingKeys]);
 
   const validCount = validationItems.filter((item) => item.isValid).length;
   const errorCount = validationItems.filter((item) => !item.isValid).length;

@@ -1,200 +1,115 @@
-# Admissions & Re-Registration Module (Fresh & 2nd/3rd Year) Blueprint
+# Admissions Multi-Session Composite Keying, Home Page Fresh Status & Google Sheets Sync Blueprint
 
-Comprehensive architectural blueprint and implementation plan for the **Admissions & Re-Registration** module at IGNOU Study Centre 2033. Features **separate independent registers** for **Fresh Admissions (1st Year)** and **Re-Registrations (2nd & 3rd Year)** across **January and July** admission sessions, powered by an intelligent Excel/CSV batch spreadsheet ingestion wizard.
+Architectural plan to eliminate re-registration duplicate collision across academic cycles (guaranteeing proper coexistence of Jan 2025: 39, July 2025: 94, and Jan 2026: 26), introduce the **Fresh Admission Status** public portal with interactive Jan/July session tabs and instant roll search on the Home Page before Institutional Profile, and establish bidirectional Google Sheets synchronization for Admissions.
+
+---
 
 ### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following operational and architectural choices were confirmed during the interactive clarification session:
+> The following operational solutions were selected during the interactive clarification session:
 >
-> - **Confirmed Decision 1 (Module Title)**: Official naming in sidebar navigation and counter bar will be **"Admissions & Re-Registration"**.
-> - **Confirmed Decision 2 (Register Structure)**: **Separate independent registers for Fresh Admissions and Re-Registrations**. Rather than mixing them into one table, the module will feature two dedicated, sovereign registers:
->   1. **Fresh Admissions Register**: For 1st Year new entrants in January & July cycles.
->   2. **Re-Registration Register**: For continuing 2nd Year & 3rd Year (and semester-wise) students in January & July cycles.
-> - **Confirmed Decision 3 (Spreadsheet Ingestion)**: **Auto-detect registration type from spreadsheet columns** (e.g. `Type`, `Year`, `Semester`, `Category`), or allow the desk official to explicitly pick the target register during upload.
-> - **Confirmed Decision 4 (Counter Decoupling)**: Fresh Admissions and Re-Registration rosters remain **independent with on-demand counter lookup**, ensuring assignment intake operations remain 100% focused, fast, and unblocked.
+> - **Confirmed Decision 1 (Composite Identity Key)**: Re-registration duplicate checking will be keyed on a composite tuple: `[Enrollment No] + [Session] + [Academic Year] + [Cadre]`. In IGNOU distance education, a single student legitimately carries the same 9–10 digit Enrolment Number across their 1st Year, 2nd Year, and 3rd Year across Jan 2025, July 2025, and Jan 2026 sessions. Keying globally by Enrollment alone was causing the Jan 2026 import to overwrite Jan 2025 records.
+> - **Confirmed Decision 2 (Home Page Placement & Layout)**: A dedicated **Fresh Admission Status** section will be positioned immediately before the **Institutional Profile** (`#about-centre`) section on the Home Page. It will feature:
+>   - Segmented interactive session tabs for **January Session** and **July Session** (current academic year).
+>   - Global Search input for learners to search by 9-10 digit Enrolment Number, Candidate Name, or Course Code.
+>   - Academic course roster showing confirmed admission status and registered courses.
+> - **Confirmed Decision 3 (Google Sheets Sync Extension)**: Admissions and Re-Registration records will synchronize with Google Sheets alongside existing Intakes and Evaluators tabs, supporting both pull hydration (`doGet`) and push updates (`doPost`).
 
 ---
 
-### 1. Data Models & Architectural Schemas
+### 1. Root Cause Analysis: Re-Registration Import Duplication
 
-#### Core Record Interface (`StudentRegistrationRecord`)
+#### Problem Identification
+In `src/context/AppContext.tsx` (lines 1126–1145) and `src/components/RegistrationExcelUploadModal.tsx` (lines 81–90):
 ```typescript
-export type RegistrationCadre = 'FRESH' | 'RE_REGISTRATION';
-export type AcademicYearLevel = '1st Year' | '2nd Year' | '3rd Year' | 'Semester';
-
-export interface StudentRegistrationRecord {
-  id: string;                         // e.g. 'ADM-FRESH-2026-0042' or 'RR-YR2-2026-0018'
-  cadre: RegistrationCadre;           // 'FRESH' (1st Year) | 'RE_REGISTRATION' (2nd/3rd Year)
-  academicYear: AcademicYearLevel;     // '1st Year' | '2nd Year' | '3rd Year' | 'Semester'
-  semesterNo?: number;                // e.g. 1 to 6 (for BCA/MCA/semester programmes)
-  enrollmentNo: string;               // 9-10 digit IGNOU Enrollment Number
-  studentName: string;                // Full Candidate Name
-  programmeCode: string;              // e.g. MEG, BCOMF, BAG, BCA, MPS, BSCG
-  programmeName?: string;             // Dynamic Programme Description
-  session: string;                    // e.g. 'July 2026' or 'January 2026'
-  sessionCycle: 'January' | 'July';   // Standard IGNOU cycle
-  sessionYear: number;                // e.g. 2026
-  courseCodes: string[];              // Registered courses array for this specific year
-  studentPhone: string;               // Mobile Number
-  studentEmail: string;               // Email Address
-  registrationDate: string;           // YYYY-MM-DD
-  status: 'Confirmed' | 'Provisional' | 'Cancelled';
-  feeReference?: string;              // Challan / Online Transaction Ref (Optional)
-  studyCentreCode: string;            // '2033'
-  regionalCentreCode: string;         // 'RC-20' (Kohima)
-  remarks?: string;
-  createdAt: string;                  // ISO Timestamp
-  updatedAt: string;                  // ISO Timestamp
-}
+// ❌ PREVIOUS FLAWED DEDUPLICATION:
+const map = new Map<string, StudentRegistrationRecord>();
+prev.forEach((r) => map.set(r.enrollmentNo.trim().toUpperCase(), r));
 ```
+- The previous implementation indexed records strictly by `enrollmentNo`.
+- When an administrator imported **January 2025** re-registrations (39 students), then imported **January 2026** re-registrations (26 students):
+  - Any continuing student enrolled in both sessions (e.g., Year 2 in Jan 2025 and Year 3 in Jan 2026) was flagged as an existing duplicate and either overwritten or skipped.
+  - As a result, the session counts for Jan 2025 (39), July 2025 (94), and Jan 2026 (26) were mutated and distorted.
 
-#### Dual Register Persistence:
-- Stored persistently in `localStorage` under `ignou_sc2033_student_registrations`.
-- Clean helper accessors in `AppContext.tsx`:
-  - `freshAdmissions`: filtered subset where `cadre === 'FRESH'` (1st Year).
-  - `reRegistrations`: filtered subset where `cadre === 'RE_REGISTRATION'` (2nd/3rd Year).
-- Dedicated CRUD actions with validation, duplicate checking, and Google Sheets sync compatibility.
-
----
-
-### 2. User Experience & Interactive Design
-
-#### Master View Layout (`AdmissionsView.tsx`)
-1. **Top Register Selector & Cadre Switcher**:
-   ```text
-   ┌────────────────────────────────────────────────────────────────────────┐
-   │  ADMISSIONS & RE-REGISTRATION CELL • SC-2033                           │
-   │                                                                        │
-   │  [ ① Fresh Admissions (1st Year) - 148 ]  [ ② Re-Registration (2nd & 3rd Year) - 96 ] │
-   └────────────────────────────────────────────────────────────────────────┘
-   ```
-   - Two large, clean sovereign tabs matching the refined academic slate aesthetic.
-   - Activating a tab switches the entire register context, summary metrics, filters, and records table.
-
-2. **Register 1: Fresh Admissions (1st Year)**:
-   - Focuses strictly on new learners admitted in 1st Year.
-   - Metrics: Total 1st Year Fresh Entrants, July Cycle Count, January Cycle Count, Top 1st Year Programmes.
-   - Filter pills: Session (`All`, `July 2026`, `January 2026`, `July 2025`, `January 2025`), Programme (`BCOMF`, `MEG`, `BAG`, etc.).
-   - Actions: `+ New Fresh Admission`, `Import Fresh Excel`, `Export Roster`.
-
-3. **Register 2: Re-Registration (2nd & 3rd Year)**:
-   - Focuses on continuing learners re-registering for 2nd or 3rd year.
-   - Metrics: Total Re-Registered Learners, 2nd Year Count, 3rd Year Count, Session Breakdown (`July 2026` vs `January 2026`).
-   - Filter pills: Year Level (`All Years`, `2nd Year`, `3rd Year`, `Semester`), Session (`July 2026`, `January 2026`), Programme.
-   - Actions: `+ New Re-Registration`, `Import Re-Reg Excel`, `Export Roster`.
-
-4. **Structured Table Presentation**:
-   - Clean slate micro-borders (`border-slate-200`) and high-contrast typography.
-   - S.No., Enrollment No. (monospace with copy icon), Candidate Name, Programme badge, Academic Year badge (`1st Year`, `2nd Year`, `3rd Year`), Admission Session (`July 2026` / `January 2026`), Registered Course Pills, Contact Details (phone & email), Status badge (`Confirmed`), and Actions (View Card, Edit, Delete with Coordinator PIN 2033).
+#### The Architectural Fix
+- **Composite Storage Key**:
+  ```typescript
+  const getRegistrationKey = (r: StudentRegistrationRecord | Partial<StudentRegistrationRecord>) =>
+    `${(r.enrollmentNo || '').trim().toUpperCase()}__${(r.session || '').trim().toUpperCase()}__${r.academicYear || '1st Year'}__${r.cadre || 'FRESH'}`;
+  ```
+- **Session-Aware Spreadsheet Ingestion**:
+  In `validateAndMapRows`, duplicate warning checks will only trigger if the student already exists *within the target session and year*, allowing the same student to maintain distinct historical records across multiple sessions.
 
 ---
 
-### 3. Intelligent Excel/CSV Spreadsheet Ingestion Wizard
+### 2. Architecture & Domain Layout Constitution
 
-#### 3-Step Wizard Flow:
-```text
-┌────────────────────────────────────────────────────────────────────────┐
-│             EXCEL BATCH INGESTION WIZARD (3 STEPS)                     │
-├────────────────────────────────────────────────────────────────────────┤
-│  STEP 1: Upload File & Target Register Detection                       │
-│  - Target Register: [ (•) Fresh Admissions  ( ) Re-Registration ]      │
-│  - Default Session: [ July 2026 ▼ ]                                    │
-│  - Drag & Drop .xlsx, .xls, .csv                                       │
-├────────────────────────────────────────────────────────────────────────┤
-│  STEP 2: Intelligent Column Auto-Mapping                               │
-│  • Enrollment Number  <──> [ "Enrolment No" / "ENRNO" ]                │
-│  • Candidate Name     <──> [ "Student Name" / "CANDIDATE_NAME" ]       │
-│  • Programme Code     <──> [ "Prog" / "PROGRAMME" ]                    │
-│  • Year / Cadre       <──> [ "Year" / "2nd Yr" / "FRESH" (Optional) ]  │
-│  • Courses Registered <──> [ "Courses" / "SUBJECTS" ]                  │
-│  • Mobile Number      <──> [ "Mobile" / "PHONE" ]                      │
-│  • Email Address      <──> [ "Email" / "EMAIL_ID" ]                    │
-├────────────────────────────────────────────────────────────────────────┤
-│  STEP 3: Parity & Quality Verification Preview                         │
-│  - Total Records Detected: 84                                          │
-│  - Valid Records: 84 (100% Pass)                                       │
-│  - Duplicates in Roster: 0                                             │
-│  - Live 5-row table preview showing mapped fields                      │
-│                                                                        │
-│  [ Cancel ]                                     [ Confirm & Import ]   │
-└────────────────────────────────────────────────────────────────────────┘
-```
+Following the `frontend-design` constitutional rules and institutional editorial guidelines:
+
+1. **Zero-Pill Discipline**: Metadata (Enrolment Number, Admission Date, Academic Session, Contact) is rendered as clean unboxed text separated by typographic middots (`·`) rather than nested pill badges.
+2. **Segmented Interactive Tabs**: January Session vs. July Session filter is rendered as an accessible segmented button control with clean active/inactive surfaces.
+3. **Institutional Editorial Hierarchy**:
+   - Section kicker: `text-xs uppercase tracking-widest text-slate-500 font-mono`
+   - Headline: `text-2xl sm:text-3xl font-black text-slate-950 tracking-tight`
+   - Data rows: tabular numerals (`tabular-nums font-mono`) with high-contrast copyable roll numbers.
+4. **Placement Before Institutional Profile**:
+   Mounted as Section 5.5 in `StudyCentreHomePage.tsx`, between `#tracker` (Submissions Tracker) and `#about-centre` (Institutional Profile).
 
 ---
 
-### 4. Navigation & Counter Bar Integration
+### 3. Phase-by-Phase Execution Plan
 
-1. **Sidebar Navigation (`Sidebar.tsx`)**:
-   - Navigation item:
-     - Label: **"Admissions & Re-Reg"**
-     - Subtitle: **"Fresh (Yr 1) & Re-Reg (Yr 2/3)"**
-     - Icon: `GraduationCap`
-     - Badge: Dynamic total student count (e.g. `244 Total`)
-     - Role: Accessible to both `ADMIN` (Coordinator) and `OFFICIAL` (Desk)
-2. **Counter Quick Action Bar (`QuickActionBar.tsx`)**:
-   - Quick shortcut button:
-     - `[ Admissions & Re-Reg (244) ]` allowing counter operators to open the registry with one click when looking up a student's course entitlement.
-3. **Global Student Search Modal (`StudentSearchModal.tsx`)**:
-   - Integrated tab or badge in search results showing if a student is enrolled in Fresh 1st Year or Re-Registered 2nd/3rd Year, with their registered course list.
+#### Phase 1: Fix Deduplication Engine & Multi-Session Keying
+- **`src/context/AppContext.tsx`**:
+  - Update `batchImportStudentRegistrations`: Key the deduplication map by `compositeKey = enrollmentNo + session + academicYear + cadre`.
+  - Update `addStudentRegistration`: Prevent accidental overwriting of different sessions.
+  - Update `updateStudentRegistration` & `deleteStudentRegistration` to target exact composite ID.
+- **`src/services/registrationExcelService.ts`**:
+  - Update `validateAndMapRows`: Accept `existingSessionKeys: Set<string>` instead of global enrollment set, ensuring validation warnings only fire when a duplicate exists in the *same* session and year.
+- **`src/components/RegistrationExcelUploadModal.tsx`**:
+  - Compute existing keys filtered by target session and cadre.
 
----
+#### Phase 2: Home Page "Fresh Admission Status" with Global Search
+- **`src/components/StudyCentreHomePage.tsx`**:
+  - Create `<section id="fresh-admissions" className="py-12 sm:py-16 bg-white border-b border-zinc-200">`.
+  - Insert immediately before `<section id="about-centre"` (Institutional Profile).
+  - Add state for selected session (`January 2026` vs `July 2026` or current year cycles) and search query (`admissionSearchQuery`).
+  - Render summary statistics: Total Fresh Admissions for session, unique programmes, and courses.
+  - Render responsive table/card list of admitted students:
+    - S.No, Enrolment Number, Candidate Name, Programme, Courses Allotted (pills), Confirmation Status.
+  - Include quick search input with instant matching across Enrolment No, Name, Programme, and Course Codes.
+  - Empty state with clear guidance if no records match search query.
 
-### 5. Technical Implementation Steps
+#### Phase 3: Google Sheets Synchronization for Admissions
+- **`src/services/sheetsService.ts`**:
+  - Update `doGet()` to parse `json.freshAdmissions`, `json.reRegistrations`, or `json.studentRegistrations` from Apps Script payload.
+  - Add `postSyncAdmissions(records: StudentRegistrationRecord[])` to send registration records to Google Sheets via `action: "SYNC_ADMISSIONS"`.
+- **`src/context/AppContext.tsx`**:
+  - Integrate registration records into `syncGoogleSheets` hydration.
+  - Add `isSyncingAdmissions` state and `syncAdmissionsWithGoogleSheets()` method.
+- **`src/components/AdmissionsView.tsx`**:
+  - Add "Sync with Google Sheets" button next to "Import Excel" and "Export Roster" with live sync status badge.
+- **`server.ts`**:
+  - Extend `sheets_store.json` schema to include `studentRegistrations: []`.
+  - Ensure `/api/sheets` GET and POST preserve student registration data.
 
-#### Step 1: Install Excel Parsing Library
-- Run `install_applet_package` for `xlsx` (SheetJS) to enable client-side Excel reading and parsing.
-
-#### Step 2: Types & Context Extensions
-- In `src/types.ts`: Define `StudentRegistrationRecord`, `RegistrationCadre`, and `AcademicYearLevel`.
-- In `src/context/AppContext.tsx`:
-  - Add state `studentRegistrations: StudentRegistrationRecord[]`.
-  - Add CRUD handlers (`addStudentRegistration`, `batchImportStudentRegistrations`, `updateStudentRegistration`, `deleteStudentRegistration`).
-  - Add computed selectors `freshAdmissions` and `reRegistrations`.
-
-#### Step 3: Implement Ingestion Engine & Service
-- Create `src/services/registrationExcelService.ts`:
-  - Excel/CSV parsing algorithms.
-  - Column matching rules for IGNOU admission sheets.
-  - Course string sanitization (e.g. `"MEG-01, MEG-02, MEG-03"` -> `['MEG-01', 'MEG-02', 'MEG-03']`).
-  - Duplicate detection.
-
-#### Step 4: Create UI Components
-- Create `src/components/AdmissionsView.tsx`:
-  - Top tab switcher between **Fresh Admissions** and **Re-Registration**.
-  - Metric summary cards for each register.
-  - Search, filter bar, pagination, and export tools.
-  - Structured data tables with copyable roll numbers and course pills.
-- Create `src/components/RegistrationExcelUploadModal.tsx`:
-  - 3-step wizard with file upload, column mapping, and preview table.
-- Create `src/components/AddRegistrationModal.tsx`:
-  - Manual entry modal supporting both Fresh 1st Year and 2nd/3rd Year Re-Registrations.
-
-#### Step 5: Navigation & Workspace Wiring
-- Add `ADMISSIONS` to `TabType` in `Sidebar.tsx`.
-- Add quick action button in `QuickActionBar.tsx`.
-- Mount `AdmissionsView` in `App.tsx` when `activeTab === 'ADMISSIONS'`.
-
-#### Step 6: Quality Assurance & Build Verification
-- Run `compile_applet` and `lint_applet` to confirm zero compilation or lint errors.
-- Test both Fresh and Re-Registration workflows with sample data.
+#### Phase 4: Verification & Automated Lint/Compile
+- Run `compile_applet` and `lint_applet` to ensure 100% build integrity.
+- Verify session counts: Jan 2025 (39), July 2025 (94), Jan 2026 (26).
 
 ---
 
-### 6. Verification Scenarios
+### 4. Verification Scenarios & Operational Acceptance
 
-1. **Dual Independent Registers**:
-   - Open Admissions & Re-Registration view.
-   - Switch between "Fresh Admissions (1st Year)" and "Re-Registration (2nd & 3rd Year)".
-   - Verify each register shows its own independent data, counts, and filters.
-2. **Excel Import for Fresh Admission**:
-   - Upload sample Fresh Admission Excel file.
-   - Confirm target register is Fresh Admissions, review column mapping, and verify records import into 1st Year.
-3. **Excel Import for Re-Registration**:
-   - Upload sample Re-Registration file (e.g. 2nd or 3rd year students).
-   - Confirm records appear under Re-Registration register with correct academic year badges (`2nd Year` / `3rd Year`).
-4. **Session Filtering**:
-   - Filter by "July 2026" and "January 2026" in both registers.
-   - Verify records filter accurately.
-5. **Desk Usability**:
-   - Confirm counter officials can look up any student's courses on demand without interfering with assignment intake operations.
+1. **Multi-Session Re-Registration Import**:
+   - Import test dataset for Jan 2025 (39 records).
+   - Import test dataset for July 2025 (94 records).
+   - Import test dataset for Jan 2026 (26 records).
+   - Verify all 3 sessions maintain their exact respective counts (39, 94, 26) without collision or overwriting.
+2. **Home Page Fresh Admission Status**:
+   - Open Home page, navigate to section before Institutional Profile.
+   - Switch between January Session and July Session tabs.
+   - Enter Enrolment Number or Name in Global Search; verify instant filtering and clear results display.
+3. **Google Sheets Sync**:
+   - Trigger Google Sheets sync and verify admissions records are hydrated into local state and synced to master sheet.

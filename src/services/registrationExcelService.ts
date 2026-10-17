@@ -202,6 +202,23 @@ export function inferAcademicYear(val: any, defaultCadre: RegistrationCadre): Ac
 }
 
 /**
+ * Generates composite unique key for a registration entry
+ * A student can be enrolled in multiple sessions (e.g. Jan 2025, July 2025, Jan 2026) and academic years (1st, 2nd, 3rd)
+ */
+export function getRegistrationCompositeKey(
+  enrollmentNo: string,
+  session: string,
+  academicYear?: string,
+  cadre?: string
+): string {
+  const cleanEnr = (enrollmentNo || '').trim().toUpperCase();
+  const cleanSess = (session || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  const cleanYr = (academicYear || '1st Year').trim().toUpperCase();
+  const cleanCadre = (cadre || 'FRESH').trim().toUpperCase();
+  return `${cleanEnr}__${cleanSess}__${cleanYr}__${cleanCadre}`;
+}
+
+/**
  * Maps raw rows into validated candidate registration items
  */
 export function validateAndMapRows(
@@ -209,7 +226,7 @@ export function validateAndMapRows(
   mapping: ColumnMapping,
   defaultCadre: RegistrationCadre,
   defaultSession: string,
-  existingEnrollments: Set<string>
+  existingKeys: Set<string>
 ): ValidationItem[] {
   const sessionCycle = defaultSession.toLowerCase().includes('jan') ? 'January' : 'July';
   const yearMatch = defaultSession.match(/\d{4}/);
@@ -249,8 +266,9 @@ export function validateAndMapRows(
       warnings.push('Enrollment number is shorter than 9 digits');
     }
 
-    if (existingEnrollments.has(cleanEnroll)) {
-      warnings.push('Student already exists in roster (will be updated or skipped based on import preference)');
+    const compositeKey = getRegistrationCompositeKey(cleanEnroll, sessionVal || defaultSession, academicYear, cadre);
+    if (existingKeys.has(compositeKey)) {
+      warnings.push('Record already exists in this session & year (will be updated or skipped based on preference)');
     }
 
     if (!studentName) {

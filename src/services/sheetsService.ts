@@ -66,6 +66,7 @@ export interface HydrationResult {
   intakes?: any[];
   courseLedger?: any[];
   evaluatorsMaster?: any[];
+  studentRegistrations?: any[];
   source: 'google_sheets' | 'local_cache' | 'offline_fallback';
   message?: string;
 }
@@ -194,12 +195,14 @@ export async function doGet(): Promise<HydrationResult> {
       const rawIntakes = json.intakeRegister || json.intakes || json.Intake_Register || [];
       const rawLedger = json.courseLedger || json.course_ledger || json.Course_Ledger || [];
       const rawEvaluators = json.evaluatorsMaster || json.evaluators_master || json.Evaluators_Master || json.evaluators || [];
-      if (rawIntakes.length > 0 || rawLedger.length > 0 || rawEvaluators.length > 0) {
+      const rawRegistrations = json.studentRegistrations || json.student_registrations || json.admissions || json.Admissions || [];
+      if (rawIntakes.length > 0 || rawLedger.length > 0 || rawEvaluators.length > 0 || rawRegistrations.length > 0) {
         return {
           success: true,
           intakes: rawIntakes,
           courseLedger: rawLedger,
           evaluatorsMaster: rawEvaluators,
+          studentRegistrations: rawRegistrations,
           source: 'google_sheets',
           message: 'Hydrated successfully from Google Sheets.',
         };
@@ -220,11 +223,13 @@ export async function doGet(): Promise<HydrationResult> {
       const rawIntakes = data.intakeRegister || data.intakes || data.Intake_Register || [];
       const rawLedger = data.courseLedger || data.course_ledger || data.Course_Ledger || [];
       const rawEvaluators = data.evaluatorsMaster || data.evaluators_master || data.Evaluators_Master || data.evaluators || [];
+      const rawRegistrations = data.studentRegistrations || data.student_registrations || data.admissions || data.Admissions || [];
       return {
         success: true,
         intakes: rawIntakes,
         courseLedger: rawLedger,
         evaluatorsMaster: rawEvaluators,
+        studentRegistrations: rawRegistrations,
         source: 'google_sheets',
         message: 'Hydrated via direct Google Apps Script call.',
       };
@@ -1246,4 +1251,30 @@ function createFallbackClaimBillPdfBlob(details: {
 
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   return URL.createObjectURL(blob);
+}
+
+/**
+ * Pushes admissions and re-registrations records to Google Sheets
+ */
+export async function postSyncAdmissions(records: any[]): Promise<ApiResponse> {
+  const payload = {
+    action: "SYNC_ADMISSIONS",
+    payload: {
+      timestamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      records,
+      count: records.length,
+    },
+    records,
+  };
+
+  const sent = await sendScriptPost(payload, {
+    queueOnFailure: true,
+    summary: `Sync ${records.length} admission & re-registration record(s) with Google Sheets`,
+    type: 'ADD_INTAKE',
+  });
+
+  return {
+    status: sent ? 'success' : 'fallback',
+    message: sent ? 'Admissions synchronized to Google Sheets.' : 'Admissions sync queued in background.',
+  };
 }
