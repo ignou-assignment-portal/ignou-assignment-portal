@@ -111,7 +111,7 @@ export const AdmissionsView: React.FC = () => {
     });
   }, [activeDataset, sessionFilter, yearFilter, programmeFilter, searchQuery]);
 
-  // Summary Metrics
+  // Summary Metrics & Multi-Session Cohort Verification
   const metrics = useMemo(() => {
     const total = activeDataset.length;
     const julyCount = activeDataset.filter((r) => (r.session || '').toLowerCase().includes('july')).length;
@@ -119,7 +119,38 @@ export const AdmissionsView: React.FC = () => {
     const yr2Count = activeDataset.filter((r) => r.academicYear === '2nd Year').length;
     const yr3Count = activeDataset.filter((r) => r.academicYear === '3rd Year').length;
 
-    return { total, julyCount, janCount, yr2Count, yr3Count };
+    // Specific Multi-Session Cohort Totals (Target: Jan 2025: 39, July 2025: 94, Jan 2026: 26)
+    const jan2025Count = activeDataset.filter((r) => {
+      const s = (r.session || '').toLowerCase();
+      return s.includes('jan') && s.includes('2025');
+    }).length;
+
+    const july2025Count = activeDataset.filter((r) => {
+      const s = (r.session || '').toLowerCase();
+      return s.includes('jul') && s.includes('2025');
+    }).length;
+
+    const jan2026Count = activeDataset.filter((r) => {
+      const s = (r.session || '').toLowerCase();
+      return s.includes('jan') && s.includes('2026');
+    }).length;
+
+    const july2026Count = activeDataset.filter((r) => {
+      const s = (r.session || '').toLowerCase();
+      return s.includes('jul') && s.includes('2026');
+    }).length;
+
+    return {
+      total,
+      julyCount,
+      janCount,
+      yr2Count,
+      yr3Count,
+      jan2025Count,
+      july2025Count,
+      jan2026Count,
+      july2026Count,
+    };
   }, [activeDataset]);
 
   const handleCopyEnrollment = (enr: string) => {
@@ -427,6 +458,83 @@ export const AdmissionsView: React.FC = () => {
               ))}
             </select>
           </div>
+        </div>
+
+        {/* Quick Multi-Session Filter Buttons */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">Quick Session:</span>
+          <button
+            type="button"
+            onClick={() => setSessionFilter('ALL')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border ${
+              sessionFilter === 'ALL'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
+            }`}
+          >
+            All Sessions ({activeDataset.length})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSessionFilter('January 2025')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border ${
+              sessionFilter === 'January 2025'
+                ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                : 'bg-indigo-50 text-indigo-900 hover:bg-indigo-100 border-indigo-200'
+            }`}
+          >
+            Jan 2025 ({metrics.jan2025Count})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSessionFilter('July 2025')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border ${
+              sessionFilter === 'July 2025'
+                ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                : 'bg-indigo-50 text-indigo-900 hover:bg-indigo-100 border-indigo-200'
+            }`}
+          >
+            July 2025 ({metrics.july2025Count})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSessionFilter('January 2026')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border ${
+              sessionFilter === 'January 2026'
+                ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                : 'bg-indigo-50 text-indigo-900 hover:bg-indigo-100 border-indigo-200'
+            }`}
+          >
+            Jan 2026 ({metrics.jan2026Count})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSessionFilter('July 2026')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border ${
+              sessionFilter === 'July 2026'
+                ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                : 'bg-indigo-50 text-indigo-900 hover:bg-indigo-100 border-indigo-200'
+            }`}
+          >
+            July 2026 ({metrics.july2026Count})
+          </button>
+        </div>
+
+        {/* Multi-Tab Google Sheets Sync Notification */}
+        <div className="p-2.5 bg-emerald-50/70 border border-emerald-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between text-xs text-emerald-950 gap-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>
+              <strong>Multi-Tab Google Sheets Sync:</strong> Separate sheets (<code>Fresh Jan 2025</code>, <code>RR Jan 2025</code>, <code>Fresh July 2025</code>, <code>RR July 2025</code>, <code>Fresh Jan 2026</code>, <code>RR Jan 2026</code>) sync conflict-free by composite key.
+            </span>
+          </div>
+          <span className="text-[10px] font-mono bg-emerald-100 text-emerald-900 font-bold px-2 py-0.5 rounded-md border border-emerald-300 self-start sm:self-auto shrink-0">
+            Google Sheets Master
+          </span>
         </div>
 
         {/* Filter stats pill */}

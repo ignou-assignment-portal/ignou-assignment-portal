@@ -40,6 +40,7 @@ export const RegistrationExcelUploadModal: React.FC<RegistrationExcelUploadModal
     availableSessions,
     studentRegistrations,
     batchImportStudentRegistrations,
+    syncAdmissionsWithGoogleSheets,
     showToast,
   } = useApp();
 
@@ -47,6 +48,7 @@ export const RegistrationExcelUploadModal: React.FC<RegistrationExcelUploadModal
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [targetCadre, setTargetCadre] = useState<RegistrationCadre>(defaultCadre);
   const [targetSession, setTargetSession] = useState<string>(currentSession || 'July 2026');
+  const [autoDetectedNote, setAutoDetectedNote] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [parseError, setParseError] = useState<string | null>(null);
 
@@ -74,6 +76,7 @@ export const RegistrationExcelUploadModal: React.FC<RegistrationExcelUploadModal
       setSelectedFile(null);
       setTargetCadre(defaultCadre);
       setTargetSession(currentSession || 'July 2026');
+      setAutoDetectedNote(null);
       setParseError(null);
       setParsedData(null);
     }
@@ -100,6 +103,21 @@ export const RegistrationExcelUploadModal: React.FC<RegistrationExcelUploadModal
       const result = await parseExcelSpreadsheet(file);
       setParsedData(result);
       setColumnMapping(result.detectedMapping);
+
+      const detectedHints: string[] = [];
+      if (result.detectedCadre) {
+        setTargetCadre(result.detectedCadre);
+        detectedHints.push(result.detectedCadre === 'FRESH' ? 'Fresh Admissions' : 'Re-Registration');
+      }
+      if (result.detectedSession) {
+        setTargetSession(result.detectedSession);
+        detectedHints.push(result.detectedSession);
+      }
+
+      if (detectedHints.length > 0) {
+        setAutoDetectedNote(`Detected from file: ${detectedHints.join(' · ')}`);
+      }
+
       setStep(2);
     } catch (err: any) {
       setParseError(err.message || 'Failed to read spreadsheet file. Ensure it is a valid .xlsx, .xls, or .csv file.');
@@ -137,9 +155,17 @@ export const RegistrationExcelUploadModal: React.FC<RegistrationExcelUploadModal
     const { added, updated, skipped } = batchImportStudentRegistrations(validRecords, overwriteDuplicates);
     const cadreLabel = targetCadre === 'FRESH' ? 'Fresh Admissions' : 'Re-Registrations';
     showToast(
-      `Import complete: ${added} added, ${updated} updated, ${skipped} skipped in ${cadreLabel}.`,
+      `Import complete: ${added} added, ${updated} updated, ${skipped} skipped in ${cadreLabel}. Automatically synchronizing to Google Sheets...`,
       'success'
     );
+
+    // Automatically trigger Google Sheets sync in the background
+    try {
+      syncAdmissionsWithGoogleSheets();
+    } catch (e) {
+      console.warn('Auto Google Sheets sync error:', e);
+    }
+
     onClose();
   };
 
@@ -281,18 +307,25 @@ export const RegistrationExcelUploadModal: React.FC<RegistrationExcelUploadModal
 
                 {/* Admission Session Selector */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1">
-                    Default Admission Session <span className="text-rose-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-800">
+                      Target Admission Session <span className="text-rose-500">*</span>
+                    </label>
+                    {autoDetectedNote && (
+                      <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                        {autoDetectedNote}
+                      </span>
+                    )}
+                  </div>
                   <select
                     value={targetSession}
                     onChange={(e) => setTargetSession(e.target.value)}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
                   >
+                    <option value="January 2025">January 2025 (Re-Reg: 39 Target)</option>
+                    <option value="July 2025">July 2025 (Re-Reg: 94 Target)</option>
+                    <option value="January 2026">January 2026 (Re-Reg: 26 Target)</option>
                     <option value="July 2026">July 2026 (Active Monsoon Cycle)</option>
-                    <option value="January 2026">January 2026 (Winter Cycle)</option>
-                    <option value="July 2025">July 2025 (Previous Cycle)</option>
-                    <option value="January 2025">January 2025 (Previous Cycle)</option>
                     {availableSessions
                       .filter((s) => !['July 2026', 'January 2026', 'July 2025', 'January 2025'].includes(s))
                       .map((s) => (
@@ -301,8 +334,25 @@ export const RegistrationExcelUploadModal: React.FC<RegistrationExcelUploadModal
                         </option>
                       ))}
                   </select>
+                  {/* Quick Select Session Buttons */}
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    {['January 2025', 'July 2025', 'January 2026', 'July 2026'].map((sess) => (
+                      <button
+                        key={sess}
+                        type="button"
+                        onClick={() => setTargetSession(sess)}
+                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition cursor-pointer border ${
+                          targetSession === sess
+                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200'
+                        }`}
+                      >
+                        {sess}
+                      </button>
+                    ))}
+                  </div>
                   <p className="text-[10px] text-slate-500 mt-1">
-                    If the spreadsheet does not contain a session column, this cycle will be assigned.
+                    If spreadsheet does not contain a session column, this session is assigned. Multi-session registrations coexist without duplicates.
                   </p>
                 </div>
               </div>

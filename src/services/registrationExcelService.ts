@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { StudentRegistrationRecord, RegistrationCadre, AcademicYearLevel } from '../types';
+import { normalizeSessionName } from './sheetsService';
 
 export interface ColumnMapping {
   enrollmentKey: string;
@@ -19,6 +20,8 @@ export interface ParsedExcelResult {
   headers: string[];
   rawRows: Record<string, any>[];
   detectedMapping: ColumnMapping;
+  detectedCadre?: RegistrationCadre;
+  detectedSession?: string;
 }
 
 export interface ValidationItem {
@@ -159,12 +162,37 @@ export async function parseExcelSpreadsheet(file: File): Promise<ParsedExcelResu
     ]),
   };
 
+  // Detect session and cadre from filename or active sheet name
+  let detectedCadre: RegistrationCadre | undefined = undefined;
+  let detectedSession: string | undefined = undefined;
+
+  const combinedName = `${file.name || ''} ${activeSheet || ''}`.toLowerCase();
+  if (combinedName.includes('rr') || combinedName.includes('re-reg') || combinedName.includes('rereg') || combinedName.includes('2nd') || combinedName.includes('3rd')) {
+    detectedCadre = 'RE_REGISTRATION';
+  } else if (combinedName.includes('fresh') || combinedName.includes('1st') || combinedName.includes('new')) {
+    detectedCadre = 'FRESH';
+  }
+
+  if (combinedName.includes('jan') && combinedName.includes('2025')) {
+    detectedSession = 'January 2025';
+  } else if (combinedName.includes('jul') && combinedName.includes('2025')) {
+    detectedSession = 'July 2025';
+  } else if (combinedName.includes('jan') && combinedName.includes('2026')) {
+    detectedSession = 'January 2026';
+  } else if (combinedName.includes('jul') && combinedName.includes('2026')) {
+    detectedSession = 'July 2026';
+  } else if (combinedName.includes('jan') && combinedName.includes('2027')) {
+    detectedSession = 'January 2027';
+  }
+
   return {
     sheetNames,
     activeSheet,
     headers,
     rawRows,
     detectedMapping,
+    detectedCadre,
+    detectedSession,
   };
 }
 
@@ -212,10 +240,10 @@ export function getRegistrationCompositeKey(
   cadre?: string
 ): string {
   const cleanEnr = (enrollmentNo || '').trim().toUpperCase();
-  const cleanSess = (session || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  const normalizedSess = normalizeSessionName(session || 'July 2026').trim().toUpperCase();
   const cleanYr = (academicYear || '1st Year').trim().toUpperCase();
   const cleanCadre = (cadre || 'FRESH').trim().toUpperCase();
-  return `${cleanEnr}__${cleanSess}__${cleanYr}__${cleanCadre}`;
+  return `${cleanEnr}__${normalizedSess}__${cleanYr}__${cleanCadre}`;
 }
 
 /**
@@ -228,9 +256,10 @@ export function validateAndMapRows(
   defaultSession: string,
   existingKeys: Set<string>
 ): ValidationItem[] {
-  const sessionCycle = defaultSession.toLowerCase().includes('jan') ? 'January' : 'July';
-  const yearMatch = defaultSession.match(/\d{4}/);
-  const sessionYear = yearMatch ? parseInt(yearMatch[0], 10) : new Date().getFullYear();
+  const normalizedDefaultSession = normalizeSessionName(defaultSession || 'July 2026');
+
+  // Track within-file duplicates to avoid duplicate counting within the exact same upload
+  const fileSeenKeys = new Set<string>();
 
   return rows.map((row, idx) => {
     const rawEnroll = mapping.enrollmentKey ? String(row[mapping.enrollmentKey] || '').trim() : '';
@@ -255,7 +284,11 @@ export function validateAndMapRows(
     }
 
     const academicYear = inferAcademicYear(mapping.yearKey ? row[mapping.yearKey] : '', cadre);
-    const sessionVal = mapping.sessionKey && row[mapping.sessionKey] ? String(row[mapping.sessionKey]).trim() : defaultSession;
+    const rawSessionVal = mapping.sessionKey && row[mapping.sessionKey] ? String(row[mapping.sessionKey]).trim() : '';
+    const resolvedSession = rawSessionVal ? normalizeSessionName(rawSessionVal) : normalizedDefaultSession;
+    const sessionCycle = resolvedSession.toLowerCase().includes('jan') ? 'January' : 'July';
+    const yearMatch = resolvedSession.match(/\d{4}/);
+    const sessionYear = yearMatch ? parseInt(yearMatch[0], 10) : new Date().getFullYear();
 
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -266,9 +299,15 @@ export function validateAndMapRows(
       warnings.push('Enrollment number is shorter than 9 digits');
     }
 
-    const compositeKey = getRegistrationCompositeKey(cleanEnroll, sessionVal || defaultSession, academicYear, cadre);
+    const compositeKey = getRegistrationCompositeKey(cleanEnroll, resolvedSession, academicYear, cadre);
+    if (fileSeenKeys.has(compositeKey)) {
+      warnings.push('Duplicate entry in current spreadsheet for this session & year');
+    } else {
+      fileSeenKeys.add(compositeKey);
+    }
+
     if (existingKeys.has(compositeKey)) {
-      warnings.push('Record already exists in this session & year (will be updated or skipped based on preference)');
+      warnings.push('Record already exists in this session & year (will be merged based on preference)');
     }
 
     if (!studentName) {
@@ -284,13 +323,13 @@ export function validateAndMapRows(
     }
 
     const record: Partial<StudentRegistrationRecord> = {
-      id: `REG-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+      id: `REG-${cleanEnroll}-${resolvedSession.replace(/\s+/g, '')}-${academicYear.replace(/\s+/g, '')}-${cadre}`,
       cadre,
       academicYear,
       enrollmentNo: cleanEnroll,
       studentName: studentName.toUpperCase(),
       programmeCode: rawProg,
-      session: sessionVal || defaultSession,
+      session: resolvedSession,
       sessionCycle,
       sessionYear,
       courseCodes,

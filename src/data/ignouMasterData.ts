@@ -515,132 +515,172 @@ export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
   },
 ];
 
-export const INITIAL_STUDENT_REGISTRATIONS: StudentRegistrationRecord[] = [
-  {
-    id: 'REG-2026-0001',
-    cadre: 'FRESH',
-    academicYear: '1st Year',
-    enrollmentNo: '2401928371',
-    studentName: 'Aarav Sharma',
-    programmeCode: 'MEG',
-    programmeName: 'Master of Arts (English)',
-    session: 'July 2026',
-    sessionCycle: 'July',
-    sessionYear: 2026,
-    courseCodes: ['MEG-01', 'MEG-02', 'MEG-03', 'MEG-04'],
-    studentPhone: '9862100001',
-    studentEmail: 'aarav.sharma@gmail.com',
-    registrationDate: '2026-07-15',
-    status: 'Confirmed',
-    studyCentreCode: '2033',
-    regionalCentreCode: 'RC-20',
-    createdAt: '2026-07-15T10:00:00.000Z',
-    updatedAt: '2026-07-15T10:00:00.000Z',
-  },
-  {
-    id: 'REG-2026-0002',
-    cadre: 'FRESH',
-    academicYear: '1st Year',
-    enrollmentNo: '2401928372',
-    studentName: 'Priya Das',
-    programmeCode: 'BCOMF',
-    programmeName: 'Bachelor of Commerce (Finance & Retailing Operations)',
-    session: 'July 2026',
-    sessionCycle: 'July',
-    sessionYear: 2026,
-    courseCodes: ['BRL-101', 'BRL-102', 'BRL-103', 'BRL-104'],
-    studentPhone: '9862100002',
-    studentEmail: 'priya.das@gmail.com',
-    registrationDate: '2026-07-18',
-    status: 'Confirmed',
-    studyCentreCode: '2033',
-    regionalCentreCode: 'RC-20',
-    createdAt: '2026-07-18T11:20:00.000Z',
-    updatedAt: '2026-07-18T11:20:00.000Z',
-  },
-  {
-    id: 'REG-2026-0003',
-    cadre: 'FRESH',
-    academicYear: '1st Year',
-    enrollmentNo: '2401928373',
-    studentName: 'Temjen Ao',
-    programmeCode: 'BAG',
-    programmeName: 'Bachelor of Arts (General)',
-    session: 'January 2026',
-    sessionCycle: 'January',
-    sessionYear: 2026,
-    courseCodes: ['BEGC-131', 'BHDG-132', 'BSOC-131', 'BPSC-131'],
-    studentPhone: '9862100003',
-    studentEmail: 'temjen.ao@gmail.com',
-    registrationDate: '2026-01-20',
-    status: 'Confirmed',
-    studyCentreCode: '2033',
-    regionalCentreCode: 'RC-20',
-    createdAt: '2026-01-20T09:30:00.000Z',
-    updatedAt: '2026-01-20T09:30:00.000Z',
-  },
-  {
-    id: 'REG-2026-0004',
-    cadre: 'RE_REGISTRATION',
-    academicYear: '2nd Year',
-    enrollmentNo: '2301827461',
-    studentName: 'Limasangla Jamir',
-    programmeCode: 'BCOMF',
-    programmeName: 'Bachelor of Commerce (Finance & Retailing Operations)',
-    session: 'July 2026',
-    sessionCycle: 'July',
-    sessionYear: 2026,
-    courseCodes: ['BRL-105', 'BRL-106', 'BRL-107', 'BRL-108'],
-    studentPhone: '9862100004',
-    studentEmail: 'limasangla@gmail.com',
-    registrationDate: '2026-07-12',
-    status: 'Confirmed',
-    studyCentreCode: '2033',
-    regionalCentreCode: 'RC-20',
-    createdAt: '2026-07-12T14:15:00.000Z',
-    updatedAt: '2026-07-12T14:15:00.000Z',
-  },
-  {
-    id: 'REG-2026-0005',
-    cadre: 'RE_REGISTRATION',
-    academicYear: '3rd Year',
-    enrollmentNo: '2201726550',
-    studentName: 'Kevisenuo Angami',
-    programmeCode: 'BAG',
-    programmeName: 'Bachelor of Arts (General)',
-    session: 'July 2026',
-    sessionCycle: 'July',
-    sessionYear: 2026,
-    courseCodes: ['BEGG-171', 'BPCG-171', 'BPAG-171'],
-    studentPhone: '9862100005',
-    studentEmail: 'kevisenuo@gmail.com',
-    registrationDate: '2026-07-10',
-    status: 'Confirmed',
-    studyCentreCode: '2033',
-    regionalCentreCode: 'RC-20',
-    createdAt: '2026-07-10T12:00:00.000Z',
-    updatedAt: '2026-07-10T12:00:00.000Z',
-  },
-  {
-    id: 'REG-2026-0006',
-    cadre: 'RE_REGISTRATION',
-    academicYear: '2nd Year',
-    enrollmentNo: '2301827499',
-    studentName: 'Imkongsunep Longkumer',
-    programmeCode: 'MEG',
-    programmeName: 'Master of Arts (English)',
-    session: 'January 2026',
-    sessionCycle: 'January',
-    sessionYear: 2026,
-    courseCodes: ['MEG-05', 'MEG-06', 'MEG-07', 'MEG-08'],
-    studentPhone: '9862100006',
-    studentEmail: 'imkongsunep@gmail.com',
-    registrationDate: '2026-01-22',
-    status: 'Confirmed',
-    studyCentreCode: '2033',
-    regionalCentreCode: 'RC-20',
-    createdAt: '2026-01-22T15:45:00.000Z',
-    updatedAt: '2026-01-22T15:45:00.000Z',
-  },
-];
+function buildRegistrations(): StudentRegistrationRecord[] {
+  const records: StudentRegistrationRecord[] = [];
+  const names = [
+    'Temjen Ao', 'Limasangla Jamir', 'Kevisenuo Angami', 'Imkongsunep Longkumer',
+    'Sentila Imchen', 'Neiphrezo Kire', 'Arenla Pongen', 'Vezuto Chuzho',
+    'Tiasunep Aier', 'Bendangwati Jamir', 'Visakhono Nakhro', 'Keneisenuo Belho',
+    'Wapangtoshi Ao', 'Atula Chang', 'Kikovi Zhimomi', 'Viliezo Paphino',
+    'Chubalemla Imsong', 'Kekhriengulie Rutsa', 'Asungla Imchen', 'Nchumbemo Lotha',
+    'Mhonbeni Murry', 'Yanpvuo Kikon', 'Rovigwelhou Peseyie', 'Khriesanyü Sekhose',
+    'Tsukjemwati Ao', 'Moanaro Longkumer', 'Akumla Jamir', 'Thejavilie Chielie',
+    'Purnungba Aier', 'Inato Chishi', 'Hukato Swu', 'Khetoli Sema',
+    'Avitoli Kinimi', 'Kivikali Zhimomi', 'Benthungo Ezung', 'Mhabemo Odyuo',
+    'Renboni Tsopoe', 'Wobenlo Patton', 'Ayingthung Humtsoe', 'Liyanthung Lotha',
+    'Aarav Sharma', 'Priya Das', 'Santosh Paul', 'Anjali Gupta', 'Rahul Deb',
+    'Sneha Roy', 'Bikash Mahato', 'Pooja Ghosh', 'Raju Deb', 'Binay S. Singh'
+  ];
+
+  const progs = [
+    { code: 'BAG', courses: ['BEGC-131', 'BHDG-132', 'BSOC-131', 'BPSC-131'], name: 'Bachelor of Arts (General)' },
+    { code: 'BCOMF', courses: ['BRL-101', 'BRL-102', 'BRL-103', 'BRL-104'], name: 'B.Com (Finance & Retailing Operations)' },
+    { code: 'MEG', courses: ['MEG-01', 'MEG-02', 'MEG-03', 'MEG-04'], name: 'Master of Arts (English)' },
+    { code: 'MPS', courses: ['MPS-01', 'MPS-02', 'MPS-03', 'MPS-04'], name: 'Master of Arts (Political Science)' },
+    { code: 'MAH', courses: ['MHI-01', 'MHI-02', 'MHI-04', 'MHI-05'], name: 'Master of Arts (History)' },
+  ];
+
+  const rrProgs = [
+    { code: 'BAG', coursesYr2: ['BEGC-133', 'BHDG-134', 'BSOC-133'], coursesYr3: ['BEGG-171', 'BPCG-171', 'BPAG-171'], name: 'Bachelor of Arts (General)' },
+    { code: 'BCOMF', coursesYr2: ['BRL-105', 'BRL-106', 'BRL-107'], coursesYr3: ['BRL-111', 'BRL-112', 'BRL-113'], name: 'B.Com (Finance & Retailing Operations)' },
+    { code: 'MEG', coursesYr2: ['MEG-05', 'MEG-06', 'MEG-07'], coursesYr3: ['MEG-11', 'MEG-14'], name: 'Master of Arts (English)' },
+    { code: 'MPS', coursesYr2: ['MPSE-01', 'MPSE-03', 'MPSE-04'], coursesYr3: ['MPSE-07', 'MPSE-08'], name: 'Master of Arts (Political Science)' },
+  ];
+
+  // 1. Re-Registration Jan 2025: EXACTLY 39 records
+  for (let i = 1; i <= 39; i++) {
+    const prog = rrProgs[(i - 1) % rrProgs.length];
+    const isYr3 = i % 3 === 0;
+    records.push({
+      id: `REG-RR-JAN25-${String(i).padStart(3, '0')}`,
+      cadre: 'RE_REGISTRATION',
+      academicYear: isYr3 ? '3rd Year' : '2nd Year',
+      enrollmentNo: `230182${String(7000 + i).padStart(4, '0')}`,
+      studentName: names[(i - 1) % names.length],
+      programmeCode: prog.code,
+      programmeName: prog.name,
+      session: 'January 2025',
+      sessionCycle: 'January',
+      sessionYear: 2025,
+      courseCodes: isYr3 ? prog.coursesYr3 : prog.coursesYr2,
+      studentPhone: `98621${String(10000 + i).slice(-5)}`,
+      studentEmail: `learner.jan25.${i}@gmail.com`,
+      registrationDate: '2025-01-15',
+      status: 'Confirmed',
+      studyCentreCode: '2033',
+      regionalCentreCode: 'RC-20',
+      createdAt: '2025-01-15T10:00:00.000Z',
+      updatedAt: '2025-01-15T10:00:00.000Z',
+    });
+  }
+
+  // 2. Re-Registration July 2025: EXACTLY 94 records
+  for (let i = 1; i <= 94; i++) {
+    const prog = rrProgs[(i - 1) % rrProgs.length];
+    const isYr3 = i % 2 === 0;
+    records.push({
+      id: `REG-RR-JUL25-${String(i).padStart(3, '0')}`,
+      cadre: 'RE_REGISTRATION',
+      academicYear: isYr3 ? '3rd Year' : '2nd Year',
+      enrollmentNo: `230192${String(8000 + i).padStart(4, '0')}`,
+      studentName: names[(i + 5) % names.length],
+      programmeCode: prog.code,
+      programmeName: prog.name,
+      session: 'July 2025',
+      sessionCycle: 'July',
+      sessionYear: 2025,
+      courseCodes: isYr3 ? prog.coursesYr3 : prog.coursesYr2,
+      studentPhone: `98622${String(10000 + i).slice(-5)}`,
+      studentEmail: `learner.jul25.${i}@gmail.com`,
+      registrationDate: '2025-07-20',
+      status: 'Confirmed',
+      studyCentreCode: '2033',
+      regionalCentreCode: 'RC-20',
+      createdAt: '2025-07-20T10:00:00.000Z',
+      updatedAt: '2025-07-20T10:00:00.000Z',
+    });
+  }
+
+  // 3. Re-Registration Jan 2026: EXACTLY 26 records
+  for (let i = 1; i <= 26; i++) {
+    const prog = rrProgs[(i - 1) % rrProgs.length];
+    const isYr3 = i % 2 === 0;
+    records.push({
+      id: `REG-RR-JAN26-${String(i).padStart(3, '0')}`,
+      cadre: 'RE_REGISTRATION',
+      academicYear: isYr3 ? '3rd Year' : '2nd Year',
+      enrollmentNo: `240182${String(7000 + i).padStart(4, '0')}`,
+      studentName: names[(i + 12) % names.length],
+      programmeCode: prog.code,
+      programmeName: prog.name,
+      session: 'January 2026',
+      sessionCycle: 'January',
+      sessionYear: 2026,
+      courseCodes: isYr3 ? prog.coursesYr3 : prog.coursesYr2,
+      studentPhone: `98623${String(10000 + i).slice(-5)}`,
+      studentEmail: `learner.jan26.${i}@gmail.com`,
+      registrationDate: '2026-01-18',
+      status: 'Confirmed',
+      studyCentreCode: '2033',
+      regionalCentreCode: 'RC-20',
+      createdAt: '2026-01-18T10:00:00.000Z',
+      updatedAt: '2026-01-18T10:00:00.000Z',
+    });
+  }
+
+  // 4. Fresh Admissions for January 2026 & July 2026
+  for (let i = 1; i <= 45; i++) {
+    const prog = progs[(i - 1) % progs.length];
+    records.push({
+      id: `REG-FR-JAN26-${String(i).padStart(3, '0')}`,
+      cadre: 'FRESH',
+      academicYear: '1st Year',
+      enrollmentNo: `260110${String(1000 + i).padStart(4, '0')}`,
+      studentName: names[(i + 3) % names.length],
+      programmeCode: prog.code,
+      programmeName: prog.name,
+      session: 'January 2026',
+      sessionCycle: 'January',
+      sessionYear: 2026,
+      courseCodes: prog.courses,
+      studentPhone: `98624${String(10000 + i).slice(-5)}`,
+      studentEmail: `fresh.jan26.${i}@gmail.com`,
+      registrationDate: '2026-01-10',
+      status: 'Confirmed',
+      studyCentreCode: '2033',
+      regionalCentreCode: 'RC-20',
+      createdAt: '2026-01-10T10:00:00.000Z',
+      updatedAt: '2026-01-10T10:00:00.000Z',
+    });
+  }
+
+  for (let i = 1; i <= 65; i++) {
+    const prog = progs[(i - 1) % progs.length];
+    records.push({
+      id: `REG-FR-JUL26-${String(i).padStart(3, '0')}`,
+      cadre: 'FRESH',
+      academicYear: '1st Year',
+      enrollmentNo: `260120${String(2000 + i).padStart(4, '0')}`,
+      studentName: names[(i + 7) % names.length],
+      programmeCode: prog.code,
+      programmeName: prog.name,
+      session: 'July 2026',
+      sessionCycle: 'July',
+      sessionYear: 2026,
+      courseCodes: prog.courses,
+      studentPhone: `98625${String(10000 + i).slice(-5)}`,
+      studentEmail: `fresh.jul26.${i}@gmail.com`,
+      registrationDate: '2026-07-08',
+      status: 'Confirmed',
+      studyCentreCode: '2033',
+      regionalCentreCode: 'RC-20',
+      createdAt: '2026-07-08T10:00:00.000Z',
+      updatedAt: '2026-07-08T10:00:00.000Z',
+    });
+  }
+
+  return records;
+}
+
+export const INITIAL_STUDENT_REGISTRATIONS: StudentRegistrationRecord[] = buildRegistrations();
 

@@ -1068,13 +1068,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [courseTitlesRegistry]);
 
   // Student Registrations Database State (Fresh Admissions 1st Year & Re-Registrations 2nd/3rd Year)
+  const getRegistrationCompositeKey = (r: StudentRegistrationRecord | Partial<StudentRegistrationRecord>): string => {
+    const cleanEnr = (r.enrollmentNo || '').trim().toUpperCase();
+    const cleanSess = normalizeSessionName(r.session || 'July 2026').trim().toUpperCase();
+    const cleanYr = (r.academicYear || '1st Year').trim().toUpperCase();
+    const cleanCadre = (r.cadre || 'FRESH').trim().toUpperCase();
+    return `${cleanEnr}__${cleanSess}__${cleanYr}__${cleanCadre}`;
+  };
+
   const [studentRegistrations, setStudentRegistrations] = useState<StudentRegistrationRecord[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.STUDENT_REGISTRATIONS);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          if (parsed.length <= 6) {
+            return INITIAL_STUDENT_REGISTRATIONS;
+          }
+          const map = new Map<string, StudentRegistrationRecord>();
+          // Seed baseline cohorts (Jan 2025: 39, July 2025: 94, Jan 2026: 26)
+          INITIAL_STUDENT_REGISTRATIONS.forEach((r) => {
+            map.set(getRegistrationCompositeKey(r), r);
+          });
+          // Merge user-saved records on top with composite keys
+          parsed.forEach((r: any) => {
+            const normalizedSession = normalizeSessionName(r.session || 'July 2026');
+            const cleanRec = { ...r, session: normalizedSession };
+            const key = getRegistrationCompositeKey(cleanRec);
+            map.set(key, cleanRec);
+          });
+          return Array.from(map.values());
         }
       }
       return INITIAL_STUDENT_REGISTRATIONS;
@@ -1100,8 +1123,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [studentRegistrations]);
 
   const addStudentRegistration = useCallback((record: Omit<StudentRegistrationRecord, 'id' | 'createdAt' | 'updatedAt'>): StudentRegistrationRecord => {
+    const normSession = normalizeSessionName(record.session || currentSession);
     const newRecord: StudentRegistrationRecord = {
       ...record,
+      session: normSession,
       id: `REG-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -1109,28 +1134,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStudentRegistrations((prev) => {
       const key = getRegistrationCompositeKey(newRecord);
       const filtered = prev.filter((r) => getRegistrationCompositeKey(r) !== key);
-      return [newRecord, ...filtered];
+      const updated = [newRecord, ...filtered];
+      try {
+        postSyncAdmissions(updated).catch(() => {});
+      } catch {}
+      return updated;
     });
     logAuditEvent({
       action: 'SETTINGS_UPDATED',
       category: 'AUTHENTICATION',
       actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
       role: currentRole,
-      session: record.session,
+      session: normSession,
       targetIdentifier: record.enrollmentNo,
       summary: `Registered student ${record.studentName} (${record.enrollmentNo}) for ${record.cadre === 'FRESH' ? 'Fresh Admission' : 'Re-Registration'} in ${record.programmeCode}`,
       status: 'SUCCESS',
     });
     return newRecord;
-  }, [currentRole, settings.coordinatorName, logAuditEvent]);
-
-  const getRegistrationCompositeKey = (r: StudentRegistrationRecord | Partial<StudentRegistrationRecord>): string => {
-    const cleanEnr = (r.enrollmentNo || '').trim().toUpperCase();
-    const cleanSess = (r.session || '').trim().toUpperCase().replace(/\s+/g, ' ');
-    const cleanYr = (r.academicYear || '1st Year').trim().toUpperCase();
-    const cleanCadre = (r.cadre || 'FRESH').trim().toUpperCase();
-    return `${cleanEnr}__${cleanSess}__${cleanYr}__${cleanCadre}`;
-  };
+  }, [currentRole, settings.coordinatorName, currentSession, logAuditEvent]);
 
   const batchImportStudentRegistrations = useCallback((newRecords: StudentRegistrationRecord[], overwriteDuplicates: boolean = true) => {
     let addedCount = 0;
@@ -1143,22 +1164,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.forEach((r) => map.set(getRegistrationCompositeKey(r), r));
 
       newRecords.forEach((r) => {
-        const key = getRegistrationCompositeKey(r);
+        const normSession = normalizeSessionName(r.session || currentSession);
+        const cleanR = { ...r, session: normSession };
+        const key = getRegistrationCompositeKey(cleanR);
         if (map.has(key)) {
           if (overwriteDuplicates) {
             const existing = map.get(key)!;
-            map.set(key, { ...existing, ...r, id: existing.id || r.id, updatedAt: new Date().toISOString() });
+            map.set(key, { ...existing, ...cleanR, id: existing.id || cleanR.id, updatedAt: new Date().toISOString() });
             updatedCount++;
           } else {
             skippedCount++;
           }
         } else {
-          map.set(key, r);
+          map.set(key, cleanR);
           addedCount++;
         }
       });
 
-      return Array.from(map.values());
+      const updatedList = Array.from(map.values());
+      // Automatically push imported records to Google Sheets in background
+      try {
+        postSyncAdmissions(updatedList).catch((err) => {
+          console.warn('Auto-push admissions to sheets background error:', err);
+        });
+      } catch {}
+
+      return updatedList;
     });
 
     logAuditEvent({

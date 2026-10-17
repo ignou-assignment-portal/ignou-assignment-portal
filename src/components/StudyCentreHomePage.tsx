@@ -60,26 +60,41 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
     return match ? parseInt(match[0], 10) : new Date().getFullYear();
   }, [currentSession]);
 
+  const [freshYearFilter, setFreshYearFilter] = useState<string>(() => String(currentYear));
   const [freshSessionCycle, setFreshSessionCycle] = useState<'JULY' | 'JANUARY'>(() => {
     return currentSession.toLowerCase().includes('jan') ? 'JANUARY' : 'JULY';
   });
   const [admissionSearchQuery, setAdmissionSearchQuery] = useState('');
   const [admissionProgFilter, setAdmissionProgFilter] = useState('ALL');
 
-  // Compute records for July and January
+  const availableAdmissionYears = useMemo(() => {
+    const s = new Set<string>();
+    freshAdmissions.forEach((r) => {
+      const match = (r.session || '').match(/\d{4}/);
+      if (match) s.add(match[0]);
+    });
+    if (s.size === 0) s.add(String(currentYear));
+    return Array.from(s).sort().reverse();
+  }, [freshAdmissions, currentYear]);
+
+  // Compute records for July and January filtered by cycle and academic year
   const freshJulyRecords = useMemo(() => {
     return freshAdmissions.filter((r) => {
       const s = (r.session || '').toLowerCase();
-      return s.includes('jul');
+      const matchesCycle = s.includes('jul');
+      const matchesYear = freshYearFilter === 'ALL' || s.includes(freshYearFilter);
+      return matchesCycle && matchesYear;
     });
-  }, [freshAdmissions]);
+  }, [freshAdmissions, freshYearFilter]);
 
   const freshJanRecords = useMemo(() => {
     return freshAdmissions.filter((r) => {
       const s = (r.session || '').toLowerCase();
-      return s.includes('jan');
+      const matchesCycle = s.includes('jan');
+      const matchesYear = freshYearFilter === 'ALL' || s.includes(freshYearFilter);
+      return matchesCycle && matchesYear;
     });
-  }, [freshAdmissions]);
+  }, [freshAdmissions, freshYearFilter]);
 
   const activeFreshCycleRecords = useMemo(() => {
     return freshSessionCycle === 'JULY' ? freshJulyRecords : freshJanRecords;
@@ -1039,45 +1054,68 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
               </p>
             </div>
 
-            {/* Session Tabs (January & July) */}
-            <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setFreshSessionCycle('JULY');
-                  setAdmissionProgFilter('ALL');
-                }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  freshSessionCycle === 'JULY'
-                    ? 'bg-white text-indigo-950 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                }`}
-              >
-                <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                <span>July Session</span>
-                <span className="font-mono text-[11px] px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                  {freshJulyRecords.length}
-                </span>
-              </button>
+            {/* Session Tabs (January & July) & Year Selector */}
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {/* Academic Year Selector */}
+              <div className="relative">
+                <select
+                  value={freshYearFilter}
+                  onChange={(e) => setFreshYearFilter(e.target.value)}
+                  className="pl-3 pr-7 py-2 bg-slate-100 hover:bg-slate-200/80 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 transition appearance-none cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value={String(currentYear)}>{currentYear} (Current Academic Year)</option>
+                  {availableAdmissionYears
+                    .filter((y) => y !== String(currentYear))
+                    .map((yr) => (
+                      <option key={yr} value={yr}>
+                        {yr} Academic Year
+                      </option>
+                    ))}
+                  <option value="ALL">All Academic Years</option>
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+              </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setFreshSessionCycle('JANUARY');
-                  setAdmissionProgFilter('ALL');
-                }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  freshSessionCycle === 'JANUARY'
-                    ? 'bg-white text-indigo-950 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                }`}
-              >
-                <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                <span>January Session</span>
-                <span className="font-mono text-[11px] px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                  {freshJanRecords.length}
-                </span>
-              </button>
+              {/* January and July Segmented Tabs */}
+              <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFreshSessionCycle('JANUARY');
+                    setAdmissionProgFilter('ALL');
+                  }}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    freshSessionCycle === 'JANUARY'
+                      ? 'bg-white text-indigo-950 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>January Session</span>
+                  <span className="font-mono text-[11px] px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
+                    {freshJanRecords.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFreshSessionCycle('JULY');
+                    setAdmissionProgFilter('ALL');
+                  }}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    freshSessionCycle === 'JULY'
+                      ? 'bg-white text-indigo-950 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>July Session</span>
+                  <span className="font-mono text-[11px] px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
+                    {freshJulyRecords.length}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
 
