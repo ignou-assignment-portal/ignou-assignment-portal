@@ -547,16 +547,24 @@ function buildRegistrations(): StudentRegistrationRecord[] {
     { code: 'MPS', coursesYr2: ['MPSE-01', 'MPSE-03', 'MPSE-04'], coursesYr3: ['MPSE-07', 'MPSE-08'], name: 'Master of Arts (Political Science)' },
   ];
 
+  function generateLearnerEmail(name: string, enr: string): string {
+    const clean = name.toLowerCase().trim().replace(/[^a-z0-9]/g, '.').replace(/\.+/g, '.');
+    const enrSuffix = enr.slice(-4);
+    return `${clean}.${enrSuffix}@ignou.ac.in`;
+  }
+
   // 1. Re-Registration Jan 2025: EXACTLY 39 records
   for (let i = 1; i <= 39; i++) {
     const prog = rrProgs[(i - 1) % rrProgs.length];
     const isYr3 = i % 3 === 0;
+    const enr = `230182${String(7000 + i).padStart(4, '0')}`;
+    const name = names[(i - 1) % names.length];
     records.push({
       id: `REG-RR-JAN25-${String(i).padStart(3, '0')}`,
       cadre: 'RE_REGISTRATION',
       academicYear: isYr3 ? '3rd Year' : '2nd Year',
-      enrollmentNo: `230182${String(7000 + i).padStart(4, '0')}`,
-      studentName: names[(i - 1) % names.length],
+      enrollmentNo: enr,
+      studentName: name,
       programmeCode: prog.code,
       programmeName: prog.name,
       session: 'January 2025',
@@ -564,7 +572,7 @@ function buildRegistrations(): StudentRegistrationRecord[] {
       sessionYear: 2025,
       courseCodes: isYr3 ? prog.coursesYr3 : prog.coursesYr2,
       studentPhone: `98621${String(10000 + i).slice(-5)}`,
-      studentEmail: `learner.jan25.${i}@gmail.com`,
+      studentEmail: generateLearnerEmail(name, enr),
       registrationDate: '2025-01-15',
       status: 'Confirmed',
       studyCentreCode: '2033',
@@ -578,12 +586,14 @@ function buildRegistrations(): StudentRegistrationRecord[] {
   for (let i = 1; i <= 94; i++) {
     const prog = rrProgs[(i - 1) % rrProgs.length];
     const isYr3 = i % 2 === 0;
+    const enr = `230192${String(8000 + i).padStart(4, '0')}`;
+    const name = names[(i + 5) % names.length];
     records.push({
       id: `REG-RR-JUL25-${String(i).padStart(3, '0')}`,
       cadre: 'RE_REGISTRATION',
       academicYear: isYr3 ? '3rd Year' : '2nd Year',
-      enrollmentNo: `230192${String(8000 + i).padStart(4, '0')}`,
-      studentName: names[(i + 5) % names.length],
+      enrollmentNo: enr,
+      studentName: name,
       programmeCode: prog.code,
       programmeName: prog.name,
       session: 'July 2025',
@@ -591,7 +601,7 @@ function buildRegistrations(): StudentRegistrationRecord[] {
       sessionYear: 2025,
       courseCodes: isYr3 ? prog.coursesYr3 : prog.coursesYr2,
       studentPhone: `98622${String(10000 + i).slice(-5)}`,
-      studentEmail: `learner.jul25.${i}@gmail.com`,
+      studentEmail: generateLearnerEmail(name, enr),
       registrationDate: '2025-07-20',
       status: 'Confirmed',
       studyCentreCode: '2033',
@@ -605,12 +615,14 @@ function buildRegistrations(): StudentRegistrationRecord[] {
   for (let i = 1; i <= 26; i++) {
     const prog = rrProgs[(i - 1) % rrProgs.length];
     const isYr3 = i % 2 === 0;
+    const enr = `240182${String(7000 + i).padStart(4, '0')}`;
+    const name = names[(i + 12) % names.length];
     records.push({
       id: `REG-RR-JAN26-${String(i).padStart(3, '0')}`,
       cadre: 'RE_REGISTRATION',
       academicYear: isYr3 ? '3rd Year' : '2nd Year',
-      enrollmentNo: `240182${String(7000 + i).padStart(4, '0')}`,
-      studentName: names[(i + 12) % names.length],
+      enrollmentNo: enr,
+      studentName: name,
       programmeCode: prog.code,
       programmeName: prog.name,
       session: 'January 2026',
@@ -618,7 +630,7 @@ function buildRegistrations(): StudentRegistrationRecord[] {
       sessionYear: 2026,
       courseCodes: isYr3 ? prog.coursesYr3 : prog.coursesYr2,
       studentPhone: `98623${String(10000 + i).slice(-5)}`,
-      studentEmail: `learner.jan26.${i}@gmail.com`,
+      studentEmail: generateLearnerEmail(name, enr),
       registrationDate: '2026-01-18',
       status: 'Confirmed',
       studyCentreCode: '2033',
@@ -628,15 +640,73 @@ function buildRegistrations(): StudentRegistrationRecord[] {
     });
   }
 
-  // 4. Fresh Admissions for January 2026 & July 2026
-  for (let i = 1; i <= 45; i++) {
+  // 4. Fresh Admissions Jan 2025: EXACTLY 29 records
+  for (let i = 1; i <= 29; i++) {
     const prog = progs[(i - 1) % progs.length];
+    const enr = `250110${String(1000 + i).padStart(4, '0')}`;
+    const name = names[(i + 2) % names.length];
+    records.push({
+      id: `REG-FR-JAN25-${String(i).padStart(3, '0')}`,
+      cadre: 'FRESH',
+      academicYear: '1st Year',
+      enrollmentNo: enr,
+      studentName: name,
+      programmeCode: prog.code,
+      programmeName: prog.name,
+      session: 'January 2025',
+      sessionCycle: 'January',
+      sessionYear: 2025,
+      courseCodes: prog.courses,
+      studentPhone: `98621${String(20000 + i).slice(-5)}`,
+      studentEmail: generateLearnerEmail(name, enr),
+      registrationDate: '2025-01-12',
+      status: 'Confirmed',
+      studyCentreCode: '2033',
+      regionalCentreCode: 'RC-20',
+      createdAt: '2025-01-12T10:00:00.000Z',
+      updatedAt: '2025-01-12T10:00:00.000Z',
+    });
+  }
+
+  // 5. Fresh Admissions July 2025: EXACTLY 99 records
+  for (let i = 1; i <= 99; i++) {
+    const prog = progs[(i - 1) % progs.length];
+    const enr = `250120${String(2000 + i).padStart(4, '0')}`;
+    const name = names[(i + 6) % names.length];
+    records.push({
+      id: `REG-FR-JUL25-${String(i).padStart(3, '0')}`,
+      cadre: 'FRESH',
+      academicYear: '1st Year',
+      enrollmentNo: enr,
+      studentName: name,
+      programmeCode: prog.code,
+      programmeName: prog.name,
+      session: 'July 2025',
+      sessionCycle: 'July',
+      sessionYear: 2025,
+      courseCodes: prog.courses,
+      studentPhone: `98622${String(20000 + i).slice(-5)}`,
+      studentEmail: generateLearnerEmail(name, enr),
+      registrationDate: '2025-07-15',
+      status: 'Confirmed',
+      studyCentreCode: '2033',
+      regionalCentreCode: 'RC-20',
+      createdAt: '2025-07-15T10:00:00.000Z',
+      updatedAt: '2025-07-15T10:00:00.000Z',
+    });
+  }
+
+  // 6. Fresh Admissions Jan 2026: EXACTLY 33 records
+  for (let i = 1; i <= 33; i++) {
+    const prog = progs[(i - 1) % progs.length];
+    const enr = `260110${String(1000 + i).padStart(4, '0')}`;
+    const name = names[(i + 4) % names.length];
     records.push({
       id: `REG-FR-JAN26-${String(i).padStart(3, '0')}`,
       cadre: 'FRESH',
       academicYear: '1st Year',
-      enrollmentNo: `260110${String(1000 + i).padStart(4, '0')}`,
-      studentName: names[(i + 3) % names.length],
+      enrollmentNo: enr,
+      studentName: name,
       programmeCode: prog.code,
       programmeName: prog.name,
       session: 'January 2026',
@@ -644,38 +714,13 @@ function buildRegistrations(): StudentRegistrationRecord[] {
       sessionYear: 2026,
       courseCodes: prog.courses,
       studentPhone: `98624${String(10000 + i).slice(-5)}`,
-      studentEmail: `fresh.jan26.${i}@gmail.com`,
+      studentEmail: generateLearnerEmail(name, enr),
       registrationDate: '2026-01-10',
       status: 'Confirmed',
       studyCentreCode: '2033',
       regionalCentreCode: 'RC-20',
       createdAt: '2026-01-10T10:00:00.000Z',
       updatedAt: '2026-01-10T10:00:00.000Z',
-    });
-  }
-
-  for (let i = 1; i <= 65; i++) {
-    const prog = progs[(i - 1) % progs.length];
-    records.push({
-      id: `REG-FR-JUL26-${String(i).padStart(3, '0')}`,
-      cadre: 'FRESH',
-      academicYear: '1st Year',
-      enrollmentNo: `260120${String(2000 + i).padStart(4, '0')}`,
-      studentName: names[(i + 7) % names.length],
-      programmeCode: prog.code,
-      programmeName: prog.name,
-      session: 'July 2026',
-      sessionCycle: 'July',
-      sessionYear: 2026,
-      courseCodes: prog.courses,
-      studentPhone: `98625${String(10000 + i).slice(-5)}`,
-      studentEmail: `fresh.jul26.${i}@gmail.com`,
-      registrationDate: '2026-07-08',
-      status: 'Confirmed',
-      studyCentreCode: '2033',
-      regionalCentreCode: 'RC-20',
-      createdAt: '2026-07-08T10:00:00.000Z',
-      updatedAt: '2026-07-08T10:00:00.000Z',
     });
   }
 

@@ -60,10 +60,8 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
     return match ? parseInt(match[0], 10) : new Date().getFullYear();
   }, [currentSession]);
 
-  const [freshYearFilter, setFreshYearFilter] = useState<string>(() => String(currentYear));
-  const [freshSessionCycle, setFreshSessionCycle] = useState<'JULY' | 'JANUARY'>(() => {
-    return currentSession.toLowerCase().includes('jan') ? 'JANUARY' : 'JULY';
-  });
+  const [freshYearFilter, setFreshYearFilter] = useState<string>('ALL');
+  const [freshSessionCycle, setFreshSessionCycle] = useState<'JULY' | 'JANUARY'>('JANUARY');
   const [admissionSearchQuery, setAdmissionSearchQuery] = useState('');
   const [admissionProgFilter, setAdmissionProgFilter] = useState('ALL');
 
@@ -1223,7 +1221,13 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
                           </div>
                         </td>
                         <td className="py-3 px-4 font-semibold text-slate-900">
-                          {record.studentName}
+                          <div>{record.studentName}</div>
+                          {record.studentEmail && (
+                            <div className="text-[10px] text-indigo-700 font-normal font-mono flex items-center gap-1 mt-0.5" title={record.studentEmail}>
+                              <Mail className="w-3 h-3 text-indigo-500 shrink-0" />
+                              <span className="truncate">{record.studentEmail}</span>
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-3 text-center">
                           <span className="px-2 py-0.5 rounded-md font-bold text-[11px] bg-indigo-50 text-indigo-900 border border-indigo-200">

@@ -224,8 +224,42 @@ export function extractRegistrationsFromSheetsPayload(json: Record<string, any>)
       courseCodes = rawCourses.split(/[,;\/|\n]+/).map((c) => c.trim().toUpperCase()).filter((c) => c.length >= 3);
     }
 
-    const cleanPhone = String(item.studentPhone || item.Contact || item.mobile || item.phone || '').replace(/[^0-9+]/g, '');
-    const cleanEmail = String(item.studentEmail || item.Email || item.email || '').trim();
+    const cleanPhone = String(item.studentPhone || item.Contact || item.mobile || item.phone || item['Mobile Number'] || item['Phone Number'] || item.contactNo || '').replace(/[^0-9+]/g, '');
+    const rawEmail = (
+      item.studentEmail ||
+      item.student_email ||
+      item['Student Email'] ||
+      item['Student_Email'] ||
+      item['student email'] ||
+      item.Email ||
+      item.email ||
+      item.Email_ID ||
+      item['Email ID'] ||
+      item['Email Id'] ||
+      item['Email_ID'] ||
+      item.email_id ||
+      item['Email Address'] ||
+      item.Email_Address ||
+      item['Email_address'] ||
+      item['email address'] ||
+      item['Candidate Email'] ||
+      item.candidate_email ||
+      item.candidateEmail ||
+      item['Learner Email'] ||
+      item.learner_email ||
+      item.learnerEmail ||
+      item['E-mail'] ||
+      item['E-mail ID'] ||
+      item['e-mail id'] ||
+      item.Mail ||
+      item.mail ||
+      item['Mail ID'] ||
+      item.mail_id ||
+      ''
+    );
+    const hasInvalidDefault = String(rawEmail || '').toLowerCase().includes('not provided') || String(rawEmail || '').toLowerCase().includes('default email');
+    const cleanEmail = (!hasInvalidDefault && String(rawEmail || '').trim()) ||
+      `${studentName.toLowerCase().replace(/[^a-z0-9]/g, '.').replace(/\.+/g, '.')}.${cleanEnr.slice(-4)}@ignou.ac.in`;
 
     // Composite key deduplication
     const compKey = `${cleanEnr}__${session.toUpperCase()}__${academicYear.toUpperCase()}__${cadre}`;
@@ -1376,24 +1410,83 @@ function createFallbackClaimBillPdfBlob(details: {
  * Pushes admissions and re-registrations records to Google Sheets
  */
 export async function postSyncAdmissions(records: any[]): Promise<ApiResponse> {
+  const formattedRecords = records.map((r, idx) => {
+    const cleanEnr = (r.enrollmentNo || '').trim().toUpperCase();
+    const name = (r.studentName || '').trim().toUpperCase();
+    const cleanEmail = (r.studentEmail || '').trim() ||
+      `${name.toLowerCase().replace(/[^a-z0-9]/g, '.').replace(/\.+/g, '.')}.${cleanEnr.slice(-4)}@ignou.ac.in`;
+    const coursesStr = Array.isArray(r.courseCodes) ? r.courseCodes.join(', ') : (r.courseCodes || '');
+
+    return {
+      ...r,
+      slNo: idx + 1,
+      'S.No.': idx + 1,
+      enrollmentNo: cleanEnr,
+      'Enrollment No': cleanEnr,
+      Enrollment_No: cleanEnr,
+      studentName: name,
+      'Candidate Name': name,
+      Candidate_Name: name,
+      'Student Name': name,
+      programmeCode: r.programmeCode,
+      Programme: r.programmeCode,
+      'Programme Code': r.programmeCode,
+      cadre: r.cadre,
+      Cadre: r.cadre === 'FRESH' ? 'Fresh (1st Year)' : 'Re-Registration',
+      academicYear: r.academicYear,
+      'Academic Year': r.academicYear,
+      Academic_Year: r.academicYear,
+      session: r.session,
+      Session: r.session,
+      courseCodes: r.courseCodes,
+      Courses: coursesStr,
+      'Courses Taken': coursesStr,
+      studentPhone: r.studentPhone || '',
+      'Mobile Number': r.studentPhone || '',
+      Contact: r.studentPhone || '',
+      studentEmail: cleanEmail,
+      'Email Address': cleanEmail,
+      Email: cleanEmail,
+      Email_ID: cleanEmail,
+      'Email ID': cleanEmail,
+      status: r.status || 'Confirmed',
+      Status: r.status || 'Confirmed',
+      registrationDate: r.registrationDate,
+      'Registration Date': r.registrationDate,
+      studyCentreCode: r.studyCentreCode || '2033',
+      'Study Centre': r.studyCentreCode || '2033',
+    };
+  });
+
+  const tabRecords = {
+    'Fresh Jan 2025': formattedRecords.filter((r) => r.cadre === 'FRESH' && (r.session || '').toLowerCase().includes('jan') && (r.session || '').includes('2025')),
+    'RR Jan 2025': formattedRecords.filter((r) => r.cadre === 'RE_REGISTRATION' && (r.session || '').toLowerCase().includes('jan') && (r.session || '').includes('2025')),
+    'Fresh July 2025': formattedRecords.filter((r) => r.cadre === 'FRESH' && (r.session || '').toLowerCase().includes('jul') && (r.session || '').includes('2025')),
+    'RR July 2025': formattedRecords.filter((r) => r.cadre === 'RE_REGISTRATION' && (r.session || '').toLowerCase().includes('jul') && (r.session || '').includes('2025')),
+    'Fresh Jan 2026': formattedRecords.filter((r) => r.cadre === 'FRESH' && (r.session || '').toLowerCase().includes('jan') && (r.session || '').includes('2026')),
+    'RR Jan 2026': formattedRecords.filter((r) => r.cadre === 'RE_REGISTRATION' && (r.session || '').toLowerCase().includes('jan') && (r.session || '').includes('2026')),
+  };
+
   const payload = {
     action: "SYNC_ADMISSIONS",
     payload: {
       timestamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
-      records,
-      count: records.length,
+      records: formattedRecords,
+      count: formattedRecords.length,
+      tabRecords,
     },
-    records,
+    records: formattedRecords,
+    tabRecords,
   };
 
   const sent = await sendScriptPost(payload, {
     queueOnFailure: true,
-    summary: `Sync ${records.length} admission & re-registration record(s) with Google Sheets`,
+    summary: `Sync ${formattedRecords.length} admission & re-registration record(s) with Google Sheets`,
     type: 'ADD_INTAKE',
   });
 
   return {
     status: sent ? 'success' : 'fallback',
-    message: sent ? 'Admissions synchronized to Google Sheets.' : 'Admissions sync queued in background.',
+    message: sent ? 'Admissions synchronized to Google Sheets with full email and multi-session tab mapping.' : 'Admissions sync queued in background.',
   };
 }

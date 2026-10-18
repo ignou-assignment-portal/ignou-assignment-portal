@@ -131,10 +131,29 @@ export async function parseExcelSpreadsheet(file: File): Promise<ParsedExcelResu
     ]),
     emailKey: findBestHeaderMatch(headers, [
       'email',
+      'emailaddress',
+      'email_address',
+      'email address',
       'emailid',
-      'studentemail',
-      'mail',
       'email_id',
+      'email id',
+      'e-mail',
+      'e-mail id',
+      'e-mail_id',
+      'studentemail',
+      'student_email',
+      'student email',
+      'candidate_email',
+      'candidate email',
+      'learner_email',
+      'learner email',
+      'candidateemail',
+      'learneremail',
+      'contact_email',
+      'contact email',
+      'mail',
+      'mail_id',
+      'mail id',
     ]),
     cadreKey: findBestHeaderMatch(headers, [
       'cadre',
@@ -270,7 +289,23 @@ export function validateAndMapRows(
     const courseCodes = normalizeCourseList(rawCourses);
     const rawPhone = mapping.phoneKey ? String(row[mapping.phoneKey] || '').trim() : '';
     const cleanPhone = rawPhone.replace(/[^0-9+]/g, '');
-    const studentEmail = mapping.emailKey ? String(row[mapping.emailKey] || '').trim() : '';
+    const rawRowEmail = mapping.emailKey ? String(row[mapping.emailKey] || '').trim() : '';
+    const fallbackRowEmail = String(
+      row.email ||
+      row.Email ||
+      row['Email Address'] ||
+      row.Email_Address ||
+      row['Email ID'] ||
+      row.Email_ID ||
+      row['Student Email'] ||
+      row['Candidate Email'] ||
+      row['Learner Email'] ||
+      ''
+    ).trim();
+    const rawCandidates = rawRowEmail || fallbackRowEmail;
+    const hasInvalidDefault = rawCandidates.toLowerCase().includes('not provided') || rawCandidates.toLowerCase().includes('default email');
+    const studentEmail = (!hasInvalidDefault && rawCandidates) ||
+      `${studentName.toLowerCase().replace(/[^a-z0-9]/g, '.').replace(/\.+/g, '.')}.${cleanEnroll.slice(-4)}@ignou.ac.in`;
 
     // Determine Cadre (Fresh vs Re-Registration)
     let cadre: RegistrationCadre = defaultCadre;
