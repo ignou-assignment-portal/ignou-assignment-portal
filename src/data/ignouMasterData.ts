@@ -515,216 +515,63 @@ export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
   },
 ];
 
+export const REAL_SC2033_STUDENTS_ROSTER = [
+  { enrollmentNo: '2604740340', studentName: 'LIYANI ENIE', programmeCode: 'MPS', studentPhone: '9366767694', courses: ['MPS-001', 'MPS-002', 'MPS-003', 'MPS-004'], session: 'July 2026' },
+  { enrollmentNo: '2601620608', studentName: 'VIJAY KUMAR', programmeCode: 'MPS', studentPhone: '9612627667', courses: ['MPS-001', 'MPS-002', 'MPS-003', 'MPS-004'], session: 'July 2026' },
+  { enrollmentNo: '2601620300', studentName: 'RULIKA ACHUMI', programmeCode: 'MPS', studentPhone: '7630006224', courses: ['MPS-001', 'MPS-002', 'MPS-003', 'MPS-004'], session: 'July 2026' },
+  { enrollmentNo: '2604741820', studentName: 'TATONGMONGLA JAMIR', programmeCode: 'MPS', studentPhone: '9856521746', courses: ['MPS-001', 'MPS-002', 'MPS-003', 'MPS-004'], session: 'July 2026' },
+  { enrollmentNo: '2601101578', studentName: 'HASHMITHA NUNISA', programmeCode: 'MPS', studentPhone: '8822382839', courses: ['MPS-001', 'MPS-002', 'MPS-003', 'MPS-004'], session: 'July 2026' },
+  { enrollmentNo: '2601623485', studentName: 'RINGTHAIDI SINGYUNG', programmeCode: 'MPS', studentPhone: '8787460144', courses: ['MPS-001', 'MPS-002', 'MPS-003', 'MPS-004'], session: 'July 2026' },
+  { enrollmentNo: '2651332193', studentName: 'TH. MALA DEVI', programmeCode: 'MCOM', studentPhone: '6009569550', courses: ['MCO-01', 'MCO-04', 'MCO-05', 'MCO-21'], session: 'July 2026' },
+  { enrollmentNo: '2201830549', studentName: 'S. LAMTANG PHON', programmeCode: 'BAG', studentPhone: '6200191237', courses: ['BEGS-185', 'BEGS-156', 'BHIE-143', 'BHIE-144', 'BEGE-142', 'BEGE-145', 'BEGC-133', 'BSKG-178', 'BHDG-175'], session: 'July 2026' },
+  { enrollmentNo: '2601623470', studentName: 'HAMPAIDI KHEMPRAI', programmeCode: 'MPS', studentPhone: '6901604857', courses: ['MPS-001', 'MPS-002', 'MPS-003', 'MPS-004'], session: 'July 2026' },
+  { enrollmentNo: '2550752120', studentName: 'SAJIDA SULTANA SIDDIQUEY', programmeCode: 'MCOM', studentPhone: '9362636574', courses: ['MCO-03', 'MCO-07', 'MCO-15', 'IBO-02'], session: 'July 2026' },
+  { enrollmentNo: '2300751095', studentName: 'ESTHER PHOM', programmeCode: 'BAG', studentPhone: '9612384504', courses: ['BHIC-134'], session: 'July 2026' },
+  { enrollmentNo: '2452208180', studentName: 'SULTANA PARVIN', programmeCode: 'MCOM', studentPhone: '8798585925', courses: ['IBO-01', 'IBO-06'], session: 'July 2026' },
+  { enrollmentNo: '2552351300', studentName: 'SNEHA GUPTA', programmeCode: 'MCOM', studentPhone: '6009290278', courses: ['MCO-03', 'MCO-07', 'MCO-15', 'IBO-02'], session: 'July 2026' },
+  { enrollmentNo: '2552351384', studentName: 'PRIYANKA BISWAS', programmeCode: 'MCOM', studentPhone: '9089335601', courses: ['MCO-03', 'MCO-07', 'MCO-15', 'IBO-02'], session: 'July 2026' },
+  { enrollmentNo: '2501975306', studentName: 'SAHINA KHATUN', programmeCode: 'MEG', studentPhone: '7005083843', courses: ['MEG-07', 'MEG-10', 'MEG-14', 'MEG-15'], session: 'July 2026' },
+  { enrollmentNo: '2500631266', studentName: 'RAMBUN NRING', programmeCode: 'MEG', studentPhone: '8119024639', courses: ['MEG-04', 'MEG-07', 'MEG-10', 'MEG-14'], session: 'July 2026' },
+  { enrollmentNo: '2450175894', studentName: 'NAOLEI KONYAK', programmeCode: 'BAEGH', studentPhone: '8787361968', courses: ['BPCS-186', 'BPCG-173', 'BPAG-174', 'BSSS-183', 'BEGC-105', 'BEGC-106', 'BEGC-107', 'BEGC-108', 'BEGC-109', 'BEGC-110'], session: 'July 2026' },
+  { enrollmentNo: '2300509688', studentName: 'ALOINO Y AWOMI', programmeCode: 'BAG', studentPhone: '8974275109', courses: ['BESE-141', 'BESE-142', 'BHDE-141', 'BHDE-144', 'BEGS-185', 'BPCG-173', 'BPAS-186', 'BGDG-172'], session: 'July 2026' },
+  { enrollmentNo: '2603715132', studentName: 'KIMNEILHAI KIPGEN', programmeCode: 'BAHDH', studentPhone: '8798508450', courses: ['BHDC-101', 'BHDC-102', 'BHDC-103', 'BHDC-104', 'BPCG-171', 'BPCG-172', 'BHDAE-182', 'BEVAE-181'], session: 'July 2026' },
+  { enrollmentNo: '2604425544', studentName: 'NENGDEICHING MISAO', programmeCode: 'BAM', studentPhone: '8787621332', courses: ['BEGG-171', 'BSOC-131', 'BSOC-132', 'BECC-101', 'BPAC-101', 'BEVAE-181', 'BEDSV-101'], session: 'July 2026' },
+  { enrollmentNo: '2450176165', studentName: 'PRINCESH MOMIN', programmeCode: 'BAFHI', studentPhone: '7085703965', courses: ['BEGS-186', 'BEGM-162', 'BHIC-110', 'BHIC-111', 'BHIC-112', 'BHIC-113', 'BCOS-186'], session: 'July 2026' },
+  { enrollmentNo: '2353174645', studentName: 'SUSHMITA ROY', programmeCode: 'BAPSH', studentPhone: '6009362619', courses: ['BPSE-142', 'BPSE-143', 'BPSE-145', 'BPSC-111'], session: 'July 2026' },
+  { enrollmentNo: '2601365755', studentName: 'VIZANU K ZHIMO', programmeCode: 'MPS', studentPhone: '7085809151', courses: ['MPS-001', 'MPS-002', 'MPS-003', 'MPS-004'], session: 'July 2026' },
+  { enrollmentNo: '2601620450', studentName: 'SRUTI BASUMATARY', programmeCode: 'MPS', studentPhone: '7085711642', courses: ['MPS-001', 'MPS-002', 'MPS-003', 'MPS-004'], session: 'July 2026' },
+  { enrollmentNo: '2601620613', studentName: 'CHANDENO YANTHAN', programmeCode: 'MPS', studentPhone: '6009910419', courses: ['MPS-001', 'MPS-002', 'MPS-003', 'MPS-004'], session: 'July 2026' },
+  { enrollmentNo: '2601615010', studentName: 'ANISHA TASMIN', programmeCode: 'MEG', studentPhone: '9862483561', courses: ['MEG-01', 'MEG-02', 'MEG-03', 'MEG-05', 'MEG-07'], session: 'July 2026' },
+  { enrollmentNo: '2601789028', studentName: 'PRIYA PARVEEN', programmeCode: 'MEG', studentPhone: '9366771659', courses: ['MEG-01', 'MEG-02', 'MEG-03', 'MEG-05', 'MEG-07'], session: 'July 2026' },
+  { enrollmentNo: '2601788989', studentName: 'ROJITA SINGH', programmeCode: 'MEG', studentPhone: '8794476902', courses: ['MEG-01', 'MEG-02', 'MEG-03', 'MEG-05', 'MEG-06'], session: 'July 2026' },
+  { enrollmentNo: '2352267466', studentName: 'SUSHMITA PAUL', programmeCode: 'MCOM', studentPhone: '6009512478', courses: ['IBO-01', 'IBO-06'], session: 'July 2026' },
+  { enrollmentNo: '2651819010', studentName: 'VIPENI G YEPTHO', programmeCode: 'BAM', studentPhone: '9863114861', courses: ['BESC-131', 'BGDG-172', 'BEGC-131'], session: 'July 2026' },
+  { enrollmentNo: '2101910933', studentName: 'KANHAIYA SHAH', programmeCode: 'BAG', studentPhone: '7085874423', courses: ['BAPI-003'], session: 'July 2026' },
+  { enrollmentNo: '2651888161', studentName: 'MD REHAN', programmeCode: 'BCOMF', studentPhone: '8787333845', courses: ['BECC-101', 'BCOC-132', 'BRL-101'], session: 'July 2026' },
+];
+
 function buildRegistrations(): StudentRegistrationRecord[] {
-  const records: StudentRegistrationRecord[] = [];
-  const names = [
-    'Temjen Ao', 'Limasangla Jamir', 'Kevisenuo Angami', 'Imkongsunep Longkumer',
-    'Sentila Imchen', 'Neiphrezo Kire', 'Arenla Pongen', 'Vezuto Chuzho',
-    'Tiasunep Aier', 'Bendangwati Jamir', 'Visakhono Nakhro', 'Keneisenuo Belho',
-    'Wapangtoshi Ao', 'Atula Chang', 'Kikovi Zhimomi', 'Viliezo Paphino',
-    'Chubalemla Imsong', 'Kekhriengulie Rutsa', 'Asungla Imchen', 'Nchumbemo Lotha',
-    'Mhonbeni Murry', 'Yanpvuo Kikon', 'Rovigwelhou Peseyie', 'Khriesanyü Sekhose',
-    'Tsukjemwati Ao', 'Moanaro Longkumer', 'Akumla Jamir', 'Thejavilie Chielie',
-    'Purnungba Aier', 'Inato Chishi', 'Hukato Swu', 'Khetoli Sema',
-    'Avitoli Kinimi', 'Kivikali Zhimomi', 'Benthungo Ezung', 'Mhabemo Odyuo',
-    'Renboni Tsopoe', 'Wobenlo Patton', 'Ayingthung Humtsoe', 'Liyanthung Lotha',
-    'Aarav Sharma', 'Priya Das', 'Santosh Paul', 'Anjali Gupta', 'Rahul Deb',
-    'Sneha Roy', 'Bikash Mahato', 'Pooja Ghosh', 'Raju Deb', 'Binay S. Singh'
-  ];
-
-  const progs = [
-    { code: 'BAG', courses: ['BEGC-131', 'BHDG-132', 'BSOC-131', 'BPSC-131'], name: 'Bachelor of Arts (General)' },
-    { code: 'BCOMF', courses: ['BRL-101', 'BRL-102', 'BRL-103', 'BRL-104'], name: 'B.Com (Finance & Retailing Operations)' },
-    { code: 'MEG', courses: ['MEG-01', 'MEG-02', 'MEG-03', 'MEG-04'], name: 'Master of Arts (English)' },
-    { code: 'MPS', courses: ['MPS-01', 'MPS-02', 'MPS-03', 'MPS-04'], name: 'Master of Arts (Political Science)' },
-    { code: 'MAH', courses: ['MHI-01', 'MHI-02', 'MHI-04', 'MHI-05'], name: 'Master of Arts (History)' },
-  ];
-
-  const rrProgs = [
-    { code: 'BAG', coursesYr2: ['BEGC-133', 'BHDG-134', 'BSOC-133'], coursesYr3: ['BEGG-171', 'BPCG-171', 'BPAG-171'], name: 'Bachelor of Arts (General)' },
-    { code: 'BCOMF', coursesYr2: ['BRL-105', 'BRL-106', 'BRL-107'], coursesYr3: ['BRL-111', 'BRL-112', 'BRL-113'], name: 'B.Com (Finance & Retailing Operations)' },
-    { code: 'MEG', coursesYr2: ['MEG-05', 'MEG-06', 'MEG-07'], coursesYr3: ['MEG-11', 'MEG-14'], name: 'Master of Arts (English)' },
-    { code: 'MPS', coursesYr2: ['MPSE-01', 'MPSE-03', 'MPSE-04'], coursesYr3: ['MPSE-07', 'MPSE-08'], name: 'Master of Arts (Political Science)' },
-  ];
-
-  function generateLearnerEmail(name: string, enr: string): string {
-    const clean = name.toLowerCase().trim().replace(/[^a-z0-9]/g, '.').replace(/\.+/g, '.');
-    const enrSuffix = enr.slice(-4);
-    return `${clean}.${enrSuffix}@ignou.ac.in`;
-  }
-
-  // 1. Re-Registration Jan 2025: EXACTLY 39 records
-  for (let i = 1; i <= 39; i++) {
-    const prog = rrProgs[(i - 1) % rrProgs.length];
-    const isYr3 = i % 3 === 0;
-    const enr = `230182${String(7000 + i).padStart(4, '0')}`;
-    const name = names[(i - 1) % names.length];
-    records.push({
-      id: `REG-RR-JAN25-${String(i).padStart(3, '0')}`,
-      cadre: 'RE_REGISTRATION',
-      academicYear: isYr3 ? '3rd Year' : '2nd Year',
-      enrollmentNo: enr,
-      studentName: name,
-      programmeCode: prog.code,
-      programmeName: prog.name,
-      session: 'January 2025',
-      sessionCycle: 'January',
-      sessionYear: 2025,
-      courseCodes: isYr3 ? prog.coursesYr3 : prog.coursesYr2,
-      studentPhone: `98621${String(10000 + i).slice(-5)}`,
-      studentEmail: generateLearnerEmail(name, enr),
-      registrationDate: '2025-01-15',
-      status: 'Confirmed',
-      studyCentreCode: '2033',
-      regionalCentreCode: 'RC-20',
-      createdAt: '2025-01-15T10:00:00.000Z',
-      updatedAt: '2025-01-15T10:00:00.000Z',
-    });
-  }
-
-  // 2. Re-Registration July 2025: EXACTLY 94 records
-  for (let i = 1; i <= 94; i++) {
-    const prog = rrProgs[(i - 1) % rrProgs.length];
-    const isYr3 = i % 2 === 0;
-    const enr = `230192${String(8000 + i).padStart(4, '0')}`;
-    const name = names[(i + 5) % names.length];
-    records.push({
-      id: `REG-RR-JUL25-${String(i).padStart(3, '0')}`,
-      cadre: 'RE_REGISTRATION',
-      academicYear: isYr3 ? '3rd Year' : '2nd Year',
-      enrollmentNo: enr,
-      studentName: name,
-      programmeCode: prog.code,
-      programmeName: prog.name,
-      session: 'July 2025',
-      sessionCycle: 'July',
-      sessionYear: 2025,
-      courseCodes: isYr3 ? prog.coursesYr3 : prog.coursesYr2,
-      studentPhone: `98622${String(10000 + i).slice(-5)}`,
-      studentEmail: generateLearnerEmail(name, enr),
-      registrationDate: '2025-07-20',
-      status: 'Confirmed',
-      studyCentreCode: '2033',
-      regionalCentreCode: 'RC-20',
-      createdAt: '2025-07-20T10:00:00.000Z',
-      updatedAt: '2025-07-20T10:00:00.000Z',
-    });
-  }
-
-  // 3. Re-Registration Jan 2026: EXACTLY 26 records
-  for (let i = 1; i <= 26; i++) {
-    const prog = rrProgs[(i - 1) % rrProgs.length];
-    const isYr3 = i % 2 === 0;
-    const enr = `240182${String(7000 + i).padStart(4, '0')}`;
-    const name = names[(i + 12) % names.length];
-    records.push({
-      id: `REG-RR-JAN26-${String(i).padStart(3, '0')}`,
-      cadre: 'RE_REGISTRATION',
-      academicYear: isYr3 ? '3rd Year' : '2nd Year',
-      enrollmentNo: enr,
-      studentName: name,
-      programmeCode: prog.code,
-      programmeName: prog.name,
-      session: 'January 2026',
-      sessionCycle: 'January',
-      sessionYear: 2026,
-      courseCodes: isYr3 ? prog.coursesYr3 : prog.coursesYr2,
-      studentPhone: `98623${String(10000 + i).slice(-5)}`,
-      studentEmail: generateLearnerEmail(name, enr),
-      registrationDate: '2026-01-18',
-      status: 'Confirmed',
-      studyCentreCode: '2033',
-      regionalCentreCode: 'RC-20',
-      createdAt: '2026-01-18T10:00:00.000Z',
-      updatedAt: '2026-01-18T10:00:00.000Z',
-    });
-  }
-
-  // 4. Fresh Admissions Jan 2025: EXACTLY 29 records
-  for (let i = 1; i <= 29; i++) {
-    const prog = progs[(i - 1) % progs.length];
-    const enr = `250110${String(1000 + i).padStart(4, '0')}`;
-    const name = names[(i + 2) % names.length];
-    records.push({
-      id: `REG-FR-JAN25-${String(i).padStart(3, '0')}`,
-      cadre: 'FRESH',
-      academicYear: '1st Year',
-      enrollmentNo: enr,
-      studentName: name,
-      programmeCode: prog.code,
-      programmeName: prog.name,
-      session: 'January 2025',
-      sessionCycle: 'January',
-      sessionYear: 2025,
-      courseCodes: prog.courses,
-      studentPhone: `98621${String(20000 + i).slice(-5)}`,
-      studentEmail: generateLearnerEmail(name, enr),
-      registrationDate: '2025-01-12',
-      status: 'Confirmed',
-      studyCentreCode: '2033',
-      regionalCentreCode: 'RC-20',
-      createdAt: '2025-01-12T10:00:00.000Z',
-      updatedAt: '2025-01-12T10:00:00.000Z',
-    });
-  }
-
-  // 5. Fresh Admissions July 2025: EXACTLY 99 records
-  for (let i = 1; i <= 99; i++) {
-    const prog = progs[(i - 1) % progs.length];
-    const enr = `250120${String(2000 + i).padStart(4, '0')}`;
-    const name = names[(i + 6) % names.length];
-    records.push({
-      id: `REG-FR-JUL25-${String(i).padStart(3, '0')}`,
-      cadre: 'FRESH',
-      academicYear: '1st Year',
-      enrollmentNo: enr,
-      studentName: name,
-      programmeCode: prog.code,
-      programmeName: prog.name,
-      session: 'July 2025',
-      sessionCycle: 'July',
-      sessionYear: 2025,
-      courseCodes: prog.courses,
-      studentPhone: `98622${String(20000 + i).slice(-5)}`,
-      studentEmail: generateLearnerEmail(name, enr),
-      registrationDate: '2025-07-15',
-      status: 'Confirmed',
-      studyCentreCode: '2033',
-      regionalCentreCode: 'RC-20',
-      createdAt: '2025-07-15T10:00:00.000Z',
-      updatedAt: '2025-07-15T10:00:00.000Z',
-    });
-  }
-
-  // 6. Fresh Admissions Jan 2026: EXACTLY 33 records
-  for (let i = 1; i <= 33; i++) {
-    const prog = progs[(i - 1) % progs.length];
-    const enr = `260110${String(1000 + i).padStart(4, '0')}`;
-    const name = names[(i + 4) % names.length];
-    records.push({
-      id: `REG-FR-JAN26-${String(i).padStart(3, '0')}`,
-      cadre: 'FRESH',
-      academicYear: '1st Year',
-      enrollmentNo: enr,
-      studentName: name,
-      programmeCode: prog.code,
-      programmeName: prog.name,
-      session: 'January 2026',
-      sessionCycle: 'January',
-      sessionYear: 2026,
-      courseCodes: prog.courses,
-      studentPhone: `98624${String(10000 + i).slice(-5)}`,
-      studentEmail: generateLearnerEmail(name, enr),
-      registrationDate: '2026-01-10',
-      status: 'Confirmed',
-      studyCentreCode: '2033',
-      regionalCentreCode: 'RC-20',
-      createdAt: '2026-01-10T10:00:00.000Z',
-      updatedAt: '2026-01-10T10:00:00.000Z',
-    });
-  }
-
-  return records;
+  return REAL_SC2033_STUDENTS_ROSTER.map((s, idx) => ({
+    id: `REG-${s.enrollmentNo}-JULY2026`,
+    cadre: 'FRESH' as const,
+    academicYear: '1st Year' as const,
+    enrollmentNo: s.enrollmentNo,
+    studentName: s.studentName,
+    programmeCode: s.programmeCode,
+    programmeName: s.programmeCode,
+    session: s.session,
+    sessionCycle: 'July' as const,
+    sessionYear: 2026,
+    courseCodes: s.courses,
+    studentPhone: s.studentPhone,
+    studentEmail: '', // Authentic: Left empty until student provides real email address
+    registrationDate: '2026-07-01',
+    status: 'Confirmed' as const,
+    studyCentreCode: '2033',
+    regionalCentreCode: 'RC-20',
+    createdAt: '2026-07-01T10:00:00.000Z',
+    updatedAt: '2026-07-01T10:00:00.000Z',
+  }));
 }
 
 export const INITIAL_STUDENT_REGISTRATIONS: StudentRegistrationRecord[] = buildRegistrations();

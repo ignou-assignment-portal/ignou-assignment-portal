@@ -184,12 +184,20 @@ export function extractRegistrationsFromSheetsPayload(json: Record<string, any>)
 
   const addParsedRow = (item: any, defaultCadre?: string, defaultSession?: string) => {
     if (!item || typeof item !== 'object') return;
-    const rawEnr = item.enrollmentNo || item.Enrollment_No || item['Enrollment No'] || item.enrolmentNo || item.rollNo || item.studentId || '';
+    const rawEnr = item.enrollmentNo || item['Enrollment No'] || item['Enrollment No.'] || item.Enrollment_No || item['Enrolment No'] || item['Enrolment No.'] || item.enrolmentNo || item.rollNo || item.studentId || '';
     const cleanEnr = String(rawEnr).replace(/[^0-9a-zA-Z]/g, '').trim().toUpperCase();
     if (!cleanEnr || cleanEnr.length < 5) return;
 
-    const studentName = String(item.studentName || item.Candidate_Name || item['Candidate Name'] || item.name || item.student_name || 'IGNOU LEARNER').trim().toUpperCase();
-    const programmeCode = String(item.programmeCode || item.Programme || item['Programme Code'] || item.programme || 'BAG').trim().toUpperCase();
+    // Filter out legacy synthetic dummy emails/numbers from previous turns
+    const rawEmailCheck = String(item.studentEmail || item.email || item['Email Address'] || item['Email ID'] || item.Email || '').trim().toLowerCase();
+    const isSyntheticEmail = rawEmailCheck.endsWith('@ignou.ac.in') && /\.\d{4}@ignou\.ac\.in$/.test(rawEmailCheck);
+    const isSyntheticPhone = /^9862[1234][12]\d{4}$/.test(String(item.studentPhone || item['Mobile Number'] || item.Contact || item.mobile || '').trim());
+    if (isSyntheticEmail && isSyntheticPhone) {
+      return; // Skip synthetic generated record
+    }
+
+    const studentName = String(item.studentName || item['Student Name'] || item.Candidate_Name || item['Candidate Name'] || item['Candidate Name.'] || item.name || item.Name || item.student_name || '').trim();
+    const programmeCode = String(item.programmeCode || item['Programme Code'] || item.Programme || item['Programme'] || item.programme || '').trim().toUpperCase();
 
     // Determine Cadre (FRESH vs RE_REGISTRATION)
     let cadre: 'FRESH' | 'RE_REGISTRATION' = (defaultCadre === 'RE_REGISTRATION' ? 'RE_REGISTRATION' : 'FRESH');
@@ -224,7 +232,27 @@ export function extractRegistrationsFromSheetsPayload(json: Record<string, any>)
       courseCodes = rawCourses.split(/[,;\/|\n]+/).map((c) => c.trim().toUpperCase()).filter((c) => c.length >= 3);
     }
 
-    const cleanPhone = String(item.studentPhone || item.Contact || item.mobile || item.phone || item['Mobile Number'] || item['Phone Number'] || item.contactNo || '').replace(/[^0-9+]/g, '');
+    const cleanPhone = String(
+      item.studentPhone ||
+      item['Student Phone'] ||
+      item['Student_Phone'] ||
+      item['Mobile Number'] ||
+      item['Mobile No.'] ||
+      item['Mobile No'] ||
+      item['Mobile'] ||
+      item.mobile ||
+      item.Mobile ||
+      item.Contact ||
+      item['Contact'] ||
+      item['Contact No'] ||
+      item['Contact No.'] ||
+      item.phone ||
+      item.Phone ||
+      item['Phone Number'] ||
+      item.contactNo ||
+      ''
+    ).trim();
+
     const rawEmail = (
       item.studentEmail ||
       item.student_email ||
@@ -258,8 +286,7 @@ export function extractRegistrationsFromSheetsPayload(json: Record<string, any>)
       ''
     );
     const hasInvalidDefault = String(rawEmail || '').toLowerCase().includes('not provided') || String(rawEmail || '').toLowerCase().includes('default email');
-    const cleanEmail = (!hasInvalidDefault && String(rawEmail || '').trim()) ||
-      `${studentName.toLowerCase().replace(/[^a-z0-9]/g, '.').replace(/\.+/g, '.')}.${cleanEnr.slice(-4)}@ignou.ac.in`;
+    const cleanEmail = (!hasInvalidDefault && String(rawEmail || '').trim()) || '';
 
     // Composite key deduplication
     const compKey = `${cleanEnr}__${session.toUpperCase()}__${academicYear.toUpperCase()}__${cadre}`;
@@ -289,13 +316,62 @@ export function extractRegistrationsFromSheetsPayload(json: Record<string, any>)
     }
   };
 
-  // 1. Direct arrays under standard keys
+  // 1. Direct intake registers (Authentic desk admissions)
+  const intakeList = json.intakeRegister || json.intakes || json.Intake_Register || [];
+  if (Array.isArray(intakeList)) {
+    intakeList.forEach((r) => {
+      if (!r) return;
+      const rawEnr = r.Enrollment_No || r.enrollmentNo || r['Enrollment No'] || '';
+      const cleanEnr = String(rawEnr).replace(/[^0-9a-zA-Z]/g, '').trim().toUpperCase();
+      if (!cleanEnr || cleanEnr.length < 5) return;
+      const studentName = String(r.Candidate_Name || r.candidateName || r['Candidate Name'] || r.studentName || '').trim();
+      const programmeCode = String(r.Programme || r.programme || r.programmeCode || '').trim().toUpperCase();
+      const rawContact = r.Contact || r.contact || r.studentPhone || r['Mobile Number'] || '';
+      const cleanPhone = String(rawContact).replace(/^'/, '').trim();
+      const rawEmail = String(r.Email || r.email || r['Email ID'] || r.studentEmail || '').trim();
+      const hasInvalidDefault = rawEmail.toLowerCase().includes('not provided') || rawEmail.toLowerCase().includes('default email');
+      const cleanEmail = hasInvalidDefault ? '' : rawEmail;
+      const session = normalizeSessionName(r.Session || r.session || 'July 2026');
+      const rawCourses = r.Courses || r.courses || r.courseCodes || '';
+      const courseCodes = Array.isArray(rawCourses)
+        ? rawCourses.map((c: any) => String(c).trim().toUpperCase()).filter(Boolean)
+        : String(rawCourses).split(',').map((c) => c.trim().toUpperCase()).filter(Boolean);
+
+      const compKey = `${cleanEnr}__${session.toUpperCase()}__1ST YEAR__FRESH`;
+      if (!compositeKeySet.has(compKey)) {
+        compositeKeySet.add(compKey);
+        records.push({
+          id: `REG-${cleanEnr}-${session.replace(/\s+/g, '')}-1stYear-FRESH`,
+          cadre: 'FRESH',
+          academicYear: '1st Year',
+          enrollmentNo: cleanEnr,
+          studentName,
+          programmeCode,
+          programmeName: programmeCode,
+          session,
+          sessionCycle: session.toLowerCase().includes('jan') ? 'January' : 'July',
+          sessionYear: parseInt(session.match(/\d{4}/)?.[0] || '2026', 10),
+          courseCodes,
+          studentPhone: cleanPhone,
+          studentEmail: cleanEmail,
+          registrationDate: String(r.Submission_Date || r.submissionDate || r.Date || r.date || new Date().toISOString()).split('T')[0],
+          status: 'Confirmed',
+          studyCentreCode: '2033',
+          regionalCentreCode: 'RC-20',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    });
+  }
+
+  // 2. Direct arrays under standard keys
   const directList = json.studentRegistrations || json.student_registrations || json.admissions || json.Admissions || [];
   if (Array.isArray(directList)) {
     directList.forEach((r) => addParsedRow(r));
   }
 
-  // 2. Scan multi-tab session keys: "Fresh Jan 2025", "RR Jan 2025", "RR July 2025", "RR Jan 2026", etc.
+  // 3. Scan multi-tab session keys: "Fresh July 2026", "Fresh Jan 2026", "RR Jan 2026", etc.
   Object.keys(json).forEach((key) => {
     if (['intakes', 'intakeRegister', 'Intake_Register', 'courseLedger', 'Course_Ledger', 'evaluatorsMaster', 'Evaluators_Master', 'studentRegistrations', 'admissions'].includes(key)) {
       return;
@@ -1413,8 +1489,7 @@ export async function postSyncAdmissions(records: any[]): Promise<ApiResponse> {
   const formattedRecords = records.map((r, idx) => {
     const cleanEnr = (r.enrollmentNo || '').trim().toUpperCase();
     const name = (r.studentName || '').trim().toUpperCase();
-    const cleanEmail = (r.studentEmail || '').trim() ||
-      `${name.toLowerCase().replace(/[^a-z0-9]/g, '.').replace(/\.+/g, '.')}.${cleanEnr.slice(-4)}@ignou.ac.in`;
+    const cleanEmail = (r.studentEmail || '').trim();
     const coursesStr = Array.isArray(r.courseCodes) ? r.courseCodes.join(', ') : (r.courseCodes || '');
 
     return {
@@ -1459,12 +1534,14 @@ export async function postSyncAdmissions(records: any[]): Promise<ApiResponse> {
   });
 
   const tabRecords = {
-    'Fresh Jan 2025': formattedRecords.filter((r) => r.cadre === 'FRESH' && (r.session || '').toLowerCase().includes('jan') && (r.session || '').includes('2025')),
-    'RR Jan 2025': formattedRecords.filter((r) => r.cadre === 'RE_REGISTRATION' && (r.session || '').toLowerCase().includes('jan') && (r.session || '').includes('2025')),
-    'Fresh July 2025': formattedRecords.filter((r) => r.cadre === 'FRESH' && (r.session || '').toLowerCase().includes('jul') && (r.session || '').includes('2025')),
-    'RR July 2025': formattedRecords.filter((r) => r.cadre === 'RE_REGISTRATION' && (r.session || '').toLowerCase().includes('jul') && (r.session || '').includes('2025')),
+    'Fresh July 2026': formattedRecords.filter((r) => r.cadre === 'FRESH' && (r.session || '').toLowerCase().includes('jul') && (r.session || '').includes('2026')),
+    'RR July 2026': formattedRecords.filter((r) => r.cadre === 'RE_REGISTRATION' && (r.session || '').toLowerCase().includes('jul') && (r.session || '').includes('2026')),
     'Fresh Jan 2026': formattedRecords.filter((r) => r.cadre === 'FRESH' && (r.session || '').toLowerCase().includes('jan') && (r.session || '').includes('2026')),
     'RR Jan 2026': formattedRecords.filter((r) => r.cadre === 'RE_REGISTRATION' && (r.session || '').toLowerCase().includes('jan') && (r.session || '').includes('2026')),
+    'Fresh July 2025': formattedRecords.filter((r) => r.cadre === 'FRESH' && (r.session || '').toLowerCase().includes('jul') && (r.session || '').includes('2025')),
+    'RR July 2025': formattedRecords.filter((r) => r.cadre === 'RE_REGISTRATION' && (r.session || '').toLowerCase().includes('jul') && (r.session || '').includes('2025')),
+    'Fresh Jan 2025': formattedRecords.filter((r) => r.cadre === 'FRESH' && (r.session || '').toLowerCase().includes('jan') && (r.session || '').includes('2025')),
+    'RR Jan 2025': formattedRecords.filter((r) => r.cadre === 'RE_REGISTRATION' && (r.session || '').toLowerCase().includes('jan') && (r.session || '').includes('2025')),
   };
 
   const payload = {

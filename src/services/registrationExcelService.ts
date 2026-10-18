@@ -304,8 +304,7 @@ export function validateAndMapRows(
     ).trim();
     const rawCandidates = rawRowEmail || fallbackRowEmail;
     const hasInvalidDefault = rawCandidates.toLowerCase().includes('not provided') || rawCandidates.toLowerCase().includes('default email');
-    const studentEmail = (!hasInvalidDefault && rawCandidates) ||
-      `${studentName.toLowerCase().replace(/[^a-z0-9]/g, '.').replace(/\.+/g, '.')}.${cleanEnroll.slice(-4)}@ignou.ac.in`;
+    const studentEmail = (!hasInvalidDefault && rawCandidates) ? rawCandidates.trim() : '';
 
     // Determine Cadre (Fresh vs Re-Registration)
     let cadre: RegistrationCadre = defaultCadre;

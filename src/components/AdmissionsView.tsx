@@ -614,14 +614,26 @@ export const AdmissionsView: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => setSessionFilter('January 2025')}
+            onClick={() => setSessionFilter('July 2026')}
             className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border ${
-              sessionFilter === 'January 2025'
+              sessionFilter === 'July 2026'
                 ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
                 : 'bg-indigo-50 text-indigo-900 hover:bg-indigo-100 border-indigo-200'
             }`}
           >
-            Jan 2025 ({metrics.jan2025Count})
+            July 2026 ({metrics.july2026Count})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSessionFilter('January 2026')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border ${
+              sessionFilter === 'January 2026'
+                ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                : 'bg-indigo-50 text-indigo-900 hover:bg-indigo-100 border-indigo-200'
+            }`}
+          >
+            Jan 2026 ({metrics.jan2026Count})
           </button>
 
           <button
@@ -638,29 +650,15 @@ export const AdmissionsView: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => setSessionFilter('January 2026')}
+            onClick={() => setSessionFilter('January 2025')}
             className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border ${
-              sessionFilter === 'January 2026'
+              sessionFilter === 'January 2025'
                 ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
                 : 'bg-indigo-50 text-indigo-900 hover:bg-indigo-100 border-indigo-200'
             }`}
           >
-            Jan 2026 ({metrics.jan2026Count})
+            Jan 2025 ({metrics.jan2025Count})
           </button>
-
-          {metrics.july2026Count > 0 && (
-            <button
-              type="button"
-              onClick={() => setSessionFilter('July 2026')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border ${
-                sessionFilter === 'July 2026'
-                  ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
-                  : 'bg-indigo-50 text-indigo-900 hover:bg-indigo-100 border-indigo-200'
-              }`}
-            >
-              July 2026 ({metrics.july2026Count})
-            </button>
-          )}
         </div>
 
         {/* Multi-Tab Google Sheets Sync Notification */}
