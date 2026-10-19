@@ -13,7 +13,6 @@ import {
   Calendar,
   Layers,
   ChevronRight,
-  GraduationCap,
 } from 'lucide-react';
 import { formatDate } from '../utils/helpers';
 import { IntakeRecord } from '../types';
@@ -30,7 +29,6 @@ export const QuickActionBar: React.FC<QuickActionBarProps> = ({
   const {
     sessionIntakes,
     sessionCourseEvaluations,
-    studentRegistrations,
     currentSession,
     openReceiptModal,
     openSearchModal,
@@ -115,29 +113,6 @@ export const QuickActionBar: React.FC<QuickActionBarProps> = ({
             <kbd className="hidden sm:inline px-1.5 py-0.2 text-[10px] font-mono bg-white text-slate-500 rounded border border-slate-200">
               Ctrl+K
             </kbd>
-          </button>
-
-          {/* Admissions & Re-Registration Quick Jump */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('ADMISSIONS')}
-            id="quick-action-admissions"
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer shadow-2xs ${
-              activeTab === 'ADMISSIONS'
-                ? 'bg-indigo-950 text-white border-indigo-950 font-bold ring-2 ring-indigo-500/30'
-                : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-            }`}
-            title="View Fresh Admissions and Re-Registrations roster"
-          >
-            <GraduationCap className={`w-3.5 h-3.5 ${activeTab === 'ADMISSIONS' ? 'text-amber-300' : 'text-indigo-600'}`} />
-            <span>Admissions & Re-Reg</span>
-            {studentRegistrations.length > 0 && (
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
-                activeTab === 'ADMISSIONS' ? 'bg-indigo-800 text-white' : 'bg-slate-100 text-slate-700'
-              }`}>
-                {studentRegistrations.length}
-              </span>
-            )}
           </button>
 
           {/* Quick Counter Metrics */}

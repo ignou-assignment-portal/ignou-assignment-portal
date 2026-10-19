@@ -410,31 +410,3 @@ export interface AuditLogEntry {
   status: 'SUCCESS' | 'WARNING' | 'FAILED';
 }
 
-export type RegistrationCadre = 'FRESH' | 'RE_REGISTRATION';
-export type AcademicYearLevel = '1st Year' | '2nd Year' | '3rd Year' | 'Semester';
-
-export interface StudentRegistrationRecord {
-  id: string;
-  cadre: RegistrationCadre;
-  academicYear: AcademicYearLevel;
-  semesterNo?: number;
-  enrollmentNo: string;
-  studentName: string;
-  programmeCode: string;
-  programmeName?: string;
-  session: string; // e.g. 'July 2026' or 'January 2026'
-  sessionCycle: 'January' | 'July';
-  sessionYear: number;
-  courseCodes: string[];
-  studentPhone: string;
-  studentEmail: string;
-  registrationDate: string;
-  status: 'Confirmed' | 'Provisional' | 'Cancelled';
-  feeReference?: string;
-  studyCentreCode: string;
-  regionalCentreCode: string;
-  remarks?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-

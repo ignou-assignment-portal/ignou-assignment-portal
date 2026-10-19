@@ -29,10 +29,8 @@ import {
   Layers,
   Inbox,
   TrendingUp,
+  Package,
   BookOpen,
-  Copy,
-  Filter,
-  RotateCcw,
 } from 'lucide-react';
 import { formatDate, formatDateTime } from '../utils/helpers';
 
@@ -48,80 +46,9 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
     currentSession,
     allIntakes,
     allProgrammes,
-    freshAdmissions,
     isAuthenticated,
     openReceiptModal,
-    showToast,
   } = useApp();
-
-  // Fresh Admission Status (Current Year January & July Sessions)
-  const currentYear = useMemo(() => {
-    const match = currentSession.match(/\d{4}/);
-    return match ? parseInt(match[0], 10) : new Date().getFullYear();
-  }, [currentSession]);
-
-  const [freshYearFilter, setFreshYearFilter] = useState<string>('ALL');
-  const [freshSessionCycle, setFreshSessionCycle] = useState<'JULY' | 'JANUARY'>('JANUARY');
-  const [admissionSearchQuery, setAdmissionSearchQuery] = useState('');
-  const [admissionProgFilter, setAdmissionProgFilter] = useState('ALL');
-
-  const availableAdmissionYears = useMemo(() => {
-    const s = new Set<string>();
-    freshAdmissions.forEach((r) => {
-      const match = (r.session || '').match(/\d{4}/);
-      if (match) s.add(match[0]);
-    });
-    if (s.size === 0) s.add(String(currentYear));
-    return Array.from(s).sort().reverse();
-  }, [freshAdmissions, currentYear]);
-
-  // Compute records for July and January filtered by cycle and academic year
-  const freshJulyRecords = useMemo(() => {
-    return freshAdmissions.filter((r) => {
-      const s = (r.session || '').toLowerCase();
-      const matchesCycle = s.includes('jul');
-      const matchesYear = freshYearFilter === 'ALL' || s.includes(freshYearFilter);
-      return matchesCycle && matchesYear;
-    });
-  }, [freshAdmissions, freshYearFilter]);
-
-  const freshJanRecords = useMemo(() => {
-    return freshAdmissions.filter((r) => {
-      const s = (r.session || '').toLowerCase();
-      const matchesCycle = s.includes('jan');
-      const matchesYear = freshYearFilter === 'ALL' || s.includes(freshYearFilter);
-      return matchesCycle && matchesYear;
-    });
-  }, [freshAdmissions, freshYearFilter]);
-
-  const activeFreshCycleRecords = useMemo(() => {
-    return freshSessionCycle === 'JULY' ? freshJulyRecords : freshJanRecords;
-  }, [freshSessionCycle, freshJulyRecords, freshJanRecords]);
-
-  // Available programmes in active cycle
-  const availableFreshProgrammes = useMemo(() => {
-    const s = new Set<string>();
-    activeFreshCycleRecords.forEach((r) => {
-      if (r.programmeCode) s.add(r.programmeCode.trim().toUpperCase());
-    });
-    return Array.from(s).sort();
-  }, [activeFreshCycleRecords]);
-
-  // Filtered fresh admission records based on search and programme filter
-  const filteredFreshAdmissionRecords = useMemo(() => {
-    const q = admissionSearchQuery.trim().toUpperCase();
-    return activeFreshCycleRecords.filter((r) => {
-      if (admissionProgFilter !== 'ALL' && (r.programmeCode || '').toUpperCase() !== admissionProgFilter.toUpperCase()) {
-        return false;
-      }
-      if (!q) return true;
-      const enr = (r.enrollmentNo || '').toUpperCase();
-      const name = (r.studentName || '').toUpperCase();
-      const prog = (r.programmeCode || '').toUpperCase();
-      const courses = (r.courseCodes || []).join(' ').toUpperCase();
-      return enr.includes(q) || name.includes(q) || prog.includes(q) || courses.includes(q);
-    });
-  }, [activeFreshCycleRecords, admissionSearchQuery, admissionProgFilter]);
 
   // Public Student Search & Verification State
   const [searchQuery, setSearchQuery] = useState('');
@@ -370,10 +297,6 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
                 <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
                 <span>Intake Tracker</span>
               </a>
-              <a href="#fresh-admission-status" className="px-3 py-1.5 rounded-lg hover:bg-zinc-100 hover:text-indigo-900 transition flex items-center gap-1">
-                <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Fresh Admissions</span>
-              </a>
               <a href="#student-verification" className="px-3 py-1.5 rounded-lg hover:bg-zinc-100 hover:text-indigo-900 transition">
                 Verify Intake
               </a>
@@ -473,15 +396,6 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
                 >
                   <BarChart3 className="w-4 h-4 text-amber-400" />
                   <span>Submission Tracker</span>
-                </a>
-
-                {/* Fresh Admission Status Shortcut */}
-                <a
-                  href="#fresh-admission-status"
-                  className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-indigo-900/80 hover:bg-indigo-900 text-white font-bold text-sm border border-indigo-700/80 transition cursor-pointer"
-                >
-                  <GraduationCap className="w-4 h-4 text-amber-400" />
-                  <span>Fresh Admissions</span>
                 </a>
 
                 <a
@@ -1031,242 +945,6 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
               <span>Verify Your Enrollment</span>
             </a>
           </div>
-        </div>
-      </section>
-
-      {/* 5.5 Fresh Admission Status & Enrollment Roster (January and July Sessions with Global Search) */}
-      <section id="fresh-admission-status" className="py-12 sm:py-16 bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 space-y-6">
-          {/* Header & Session Selector */}
-          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border-b border-slate-100 pb-6">
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 text-xs font-bold uppercase tracking-wider mb-2">
-                <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Fresh Admission Status • SC-2033</span>
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                Fresh Admission Status & Enrollment Roster
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl">
-                Official directory of 1st Year new entrants admitted at Study Centre 2033 for the January and July admission cycles. Search by enrollment number, name, or course.
-              </p>
-            </div>
-
-            {/* Session Tabs (January & July) & Year Selector */}
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {/* Academic Year Selector */}
-              <div className="relative">
-                <select
-                  value={freshYearFilter}
-                  onChange={(e) => setFreshYearFilter(e.target.value)}
-                  className="pl-3 pr-7 py-2 bg-slate-100 hover:bg-slate-200/80 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 transition appearance-none cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value={String(currentYear)}>{currentYear} (Current Academic Year)</option>
-                  {availableAdmissionYears
-                    .filter((y) => y !== String(currentYear))
-                    .map((yr) => (
-                      <option key={yr} value={yr}>
-                        {yr} Academic Year
-                      </option>
-                    ))}
-                  <option value="ALL">All Academic Years</option>
-                </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-              </div>
-
-              {/* January and July Segmented Tabs */}
-              <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFreshSessionCycle('JANUARY');
-                    setAdmissionProgFilter('ALL');
-                  }}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    freshSessionCycle === 'JANUARY'
-                      ? 'bg-white text-indigo-950 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                  }`}
-                >
-                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>January Session</span>
-                  <span className="font-mono text-[11px] px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                    {freshJanRecords.length}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFreshSessionCycle('JULY');
-                    setAdmissionProgFilter('ALL');
-                  }}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    freshSessionCycle === 'JULY'
-                      ? 'bg-white text-indigo-950 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                  }`}
-                >
-                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>July Session</span>
-                  <span className="font-mono text-[11px] px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                    {freshJulyRecords.length}
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Metrics & Search Bar Strip */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-center">
-            {/* Global Search Input */}
-            <div className="md:col-span-7 relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search by student name, enrollment no (e.g. 250...), course code, or phone..."
-                value={admissionSearchQuery}
-                onChange={(e) => setAdmissionSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs sm:text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
-              />
-              {admissionSearchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setAdmissionSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-                  title="Clear search query"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Programme Filter Dropdown */}
-            <div className="md:col-span-3">
-              <div className="relative">
-                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                <select
-                  value={admissionProgFilter}
-                  onChange={(e) => setAdmissionProgFilter(e.target.value)}
-                  className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition appearance-none cursor-pointer"
-                >
-                  <option value="ALL">All Programmes ({activeFreshCycleRecords.length})</option>
-                  {availableFreshProgrammes.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
-            </div>
-
-            {/* Total Results Summary */}
-            <div className="md:col-span-2 text-right">
-              <span className="text-xs text-slate-500 block">Matching Entries</span>
-              <span className="font-mono font-bold text-sm text-indigo-900">
-                {filteredFreshAdmissionRecords.length} / {activeFreshCycleRecords.length}
-              </span>
-            </div>
-          </div>
-
-          {/* Roster Table */}
-          {filteredFreshAdmissionRecords.length === 0 ? (
-            <div className="p-8 bg-slate-50 border border-dashed border-slate-300 rounded-2xl text-center space-y-2">
-              <AlertCircle className="w-8 h-8 text-amber-600 mx-auto" />
-              <h3 className="text-sm font-bold text-slate-900">
-                No Fresh Admission Records Found
-              </h3>
-              <p className="text-xs text-slate-600 max-w-md mx-auto">
-                {admissionSearchQuery || admissionProgFilter !== 'ALL'
-                  ? `No matching records found for "${admissionSearchQuery || admissionProgFilter}" in the ${freshSessionCycle === 'JULY' ? 'July' : 'January'} session. Please verify your enrollment number or switch session tabs.`
-                  : `No fresh admission records have been uploaded yet for the ${freshSessionCycle === 'JULY' ? 'July' : 'January'} session. Desk officials can import the roster via the Admissions module.`}
-              </p>
-            </div>
-          ) : (
-            <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs bg-white">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-[11px] uppercase tracking-wider text-slate-500 font-bold">
-                      <th className="py-3 px-3.5 w-12 text-center">#</th>
-                      <th className="py-3 px-4">Enrolment Number</th>
-                      <th className="py-3 px-4">Candidate Name</th>
-                      <th className="py-3 px-3 text-center">Prog</th>
-                      <th className="py-3 px-4">Courses Registered</th>
-                      <th className="py-3 px-3 text-center">Session</th>
-                      <th className="py-3 px-3 text-center">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs">
-                    {filteredFreshAdmissionRecords.slice(0, 50).map((record, idx) => (
-                      <tr key={record.id || `${record.enrollmentNo}-${idx}`} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-3.5 text-center font-mono text-slate-400 text-[11px]">
-                          {idx + 1}
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-1.5 font-mono font-bold text-slate-950">
-                            <span>{record.enrollmentNo}</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(record.enrollmentNo);
-                                showToast(`Copied Enrolment No ${record.enrollmentNo}`, 'success');
-                              }}
-                              className="text-slate-400 hover:text-indigo-600 p-0.5 rounded cursor-pointer"
-                              title="Copy Enrolment Number"
-                            >
-                              <Copy className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 font-semibold text-slate-900">
-                          <div>{record.studentName}</div>
-                          {record.studentEmail && (
-                            <div className="text-[10px] text-indigo-700 font-normal font-mono flex items-center gap-1 mt-0.5" title={record.studentEmail}>
-                              <Mail className="w-3 h-3 text-indigo-500 shrink-0" />
-                              <span className="truncate">{record.studentEmail}</span>
-                            </div>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <span className="px-2 py-0.5 rounded-md font-bold text-[11px] bg-indigo-50 text-indigo-900 border border-indigo-200">
-                            {record.programmeCode}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex flex-wrap gap-1">
-                            {(record.courseCodes || []).map((code, cIdx) => (
-                              <span
-                                key={`${code}-${cIdx}`}
-                                className="px-1.5 py-0.2 rounded font-mono text-[10px] font-semibold bg-slate-100 text-slate-800 border border-slate-200"
-                              >
-                                {code}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 text-center font-mono text-[11px] text-slate-600">
-                          {record.session || (freshSessionCycle === 'JULY' ? 'July' : 'January')}
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Confirmed</span>
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {filteredFreshAdmissionRecords.length > 50 && (
-                <div className="p-3 bg-slate-50 border-t border-slate-200 text-center text-xs text-slate-500 font-medium">
-                  Showing first 50 of {filteredFreshAdmissionRecords.length} records. Use the search input above to filter by student name or roll number.
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </section>
 

@@ -16,16 +16,14 @@ import {
   X,
   Search,
   Home,
+  History as HistoryIcon,
   ShieldCheck,
   CheckCircle2,
   ChevronRight,
-  GraduationCap,
-  History,
 } from 'lucide-react';
 
 export type TabType =
   | 'INTAKE_DESK'
-  | 'ADMISSIONS'
   | 'SUBMISSIONS_TRACKER'
   | 'INTAKE_REGISTER'
   | 'EVALUATION_MASTER'
@@ -60,7 +58,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     sessionPackets,
     evaluators,
     settings,
-    studentRegistrations,
     isSidebarHidden,
     setIsSidebarHidden,
     isSidebarCollapsed,
@@ -75,7 +72,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (
       (userRole === 'desk' || isUrlLockedDeskMode) &&
       activeTab !== 'INTAKE_DESK' &&
-      activeTab !== 'ADMISSIONS' &&
       activeTab !== 'EVALUATION_MASTER' &&
       activeTab !== 'AUDIT_TRAIL'
     ) {
@@ -85,7 +81,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Dynamic calculations for stage counters
   const intakeCount = sessionIntakes.length;
-  const regCount = studentRegistrations.length;
   const evalCount = sessionCourseEvaluations.length;
   const lockedEvalCount = sessionCourseEvaluations.filter((e) => e.isLocked).length;
   const gradedEvalCount = sessionCourseEvaluations.filter(
@@ -143,13 +138,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Secondary Operational Registers
   const secondaryRegisters = [
     {
-      id: 'ADMISSIONS' as TabType,
-      label: 'Admissions & Re-Reg',
-      icon: GraduationCap,
-      badge: regCount > 0 ? `${regCount}` : 'Roster',
-      badgeColor: 'bg-indigo-50 text-indigo-900 border-indigo-200',
-    },
-    {
       id: 'SUBMISSIONS_TRACKER' as TabType,
       label: 'Submissions Tracker',
       icon: FileCheck2,
@@ -199,7 +187,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       id: 'AUDIT_TRAIL' as TabType,
       label: 'Forensic Audit Trail',
-      icon: History,
+      icon: HistoryIcon,
       badge: 'Live',
       badgeColor: 'bg-emerald-50 text-emerald-900 border-emerald-200',
     },
@@ -443,22 +431,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           {/* SECTION 2: OPERATIONAL REGISTERS & TRACKING */}
-          <div className="pt-2">
-            {!isSidebarCollapsed && (
-              <div className="px-2 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                <span>Student & Course Registers</span>
-              </div>
-            )}
+          {!(userRole === 'desk' || isUrlLockedDeskMode) && (
+            <div className="pt-2">
+              {!isSidebarCollapsed && (
+                <div className="px-2 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                  <span>Registers & Tracking</span>
+                </div>
+              )}
 
-            <div className="space-y-1">
-              {secondaryRegisters
-                .filter((item) => {
-                  if (userRole === 'desk' || isUrlLockedDeskMode) {
-                    return item.id === 'ADMISSIONS';
-                  }
-                  return true;
-                })
-                .map((item) => {
+              <div className="space-y-1">
+                {secondaryRegisters.map((item) => {
                   const Icon = item.icon;
                   const isActive = activeTab === item.id;
 
@@ -512,8 +494,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 })}
               </div>
             </div>
+          )}
 
-            {/* SECTION 3: MANAGEMENT, AUDIT & CONFIGURATION */}
+          {/* SECTION 3: MANAGEMENT, AUDIT & CONFIGURATION */}
           <div className="pt-2">
             {!isSidebarCollapsed && (
               <div className="px-2 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center justify-between">
