@@ -22,7 +22,6 @@ import { AdminPinModal } from './components/AdminPinModal';
 import { GatekeeperLockScreen } from './components/GatekeeperLockScreen';
 import { StudyCentreHomePage } from './components/StudyCentreHomePage';
 import { QuickActionBar } from './components/QuickActionBar';
-import { AdmissionsView } from './components/AdmissionsView';
 import { Toast } from './components/Toast';
 
 interface DashboardContentProps {
@@ -75,7 +74,6 @@ const DashboardContent: React.FC<DashboardContentProps> = ({ onViewHome }) => {
           }`}>
             <ErrorBoundary fallbackTitle="Workspace Desk Encountered an Issue">
               {activeTab === 'INTAKE_DESK' && <IntakeDesk />}
-              {activeTab === 'ADMISSIONS' && <AdmissionsView />}
               {activeTab === 'SUBMISSIONS_TRACKER' && <CourseSubmissionsTracker />}
               {activeTab === 'INTAKE_REGISTER' && <IntakeRegister />}
               {activeTab === 'EVALUATION_MASTER' && <CourseEvaluationMaster />}
