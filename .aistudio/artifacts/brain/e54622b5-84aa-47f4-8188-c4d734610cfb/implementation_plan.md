@@ -1,200 +1,100 @@
-# Admissions & Re-Registration Module (Fresh & 2nd/3rd Year) Blueprint
+# Academic Seal & Application Icon Suite for IGNOU SC-2033
 
-Comprehensive architectural blueprint and implementation plan for the **Admissions & Re-Registration** module at IGNOU Study Centre 2033. Features **separate independent registers** for **Fresh Admissions (1st Year)** and **Re-Registrations (2nd & 3rd Year)** across **January and July** admission sessions, powered by an intelligent Excel/CSV batch spreadsheet ingestion wizard.
+An institutional icon suite featuring an academic seal with an open book and quill in deep navy and warm gold, applied consistently across browser tab favicons, web app home screen icons, and application header branding.
 
 ### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following operational and architectural choices were confirmed during the interactive clarification session:
->
-> - **Confirmed Decision 1 (Module Title)**: Official naming in sidebar navigation and counter bar will be **"Admissions & Re-Registration"**.
-> - **Confirmed Decision 2 (Register Structure)**: **Separate independent registers for Fresh Admissions and Re-Registrations**. Rather than mixing them into one table, the module will feature two dedicated, sovereign registers:
->   1. **Fresh Admissions Register**: For 1st Year new entrants in January & July cycles.
->   2. **Re-Registration Register**: For continuing 2nd Year & 3rd Year (and semester-wise) students in January & July cycles.
-> - **Confirmed Decision 3 (Spreadsheet Ingestion)**: **Auto-detect registration type from spreadsheet columns** (e.g. `Type`, `Year`, `Semester`, `Category`), or allow the desk official to explicitly pick the target register during upload.
-> - **Confirmed Decision 4 (Counter Decoupling)**: Fresh Admissions and Re-Registration rosters remain **independent with on-demand counter lookup**, ensuring assignment intake operations remain 100% focused, fast, and unblocked.
+> The following visual and technical decisions were confirmed through user preferences and domain guidelines:
+
+- **Confirmed Symbolism**: Classical academic seal incorporating an open knowledge book, feather quill pen, and subtle star/laurel motifs representing scholarship and assignment verification.
+- **Confirmed Palette**: Institutional deep navy (`#0B192C` / `#1E293B`) paired with warm radiant gold (`#F59E0B` / `#D97706`) and crisp white highlights.
+- **Confirmed Deployment Scope**: Browser tab favicon (`icon.svg` and `favicon.ico`), Apple touch and mobile home screen icons (`pwa-192x192.png`, `apple-touch-icon.png`), and embedded vector logos in the primary navigation header, left drawer, and public home page.
+- **Icon Format Strategy**: Native high-contrast SVG for lossless scaling at 16px, 32px, 48px, and 128px across desktop browser tabs and UI headers, paired with crisp PNG assets for PWA installability.
 
 ---
 
-### 1. Data Models & Architectural Schemas
+### 1. Overview & Core Concept
 
-#### Core Record Interface (`StudentRegistrationRecord`)
-```typescript
-export type RegistrationCadre = 'FRESH' | 'RE_REGISTRATION';
-export type AcademicYearLevel = '1st Year' | '2nd Year' | '3rd Year' | 'Semester';
+- **What It Does**: Establishes a dignified, recognizable visual identity for IGNOU Study Centre 2033 (Dimapur, Nagaland). Replaces generic plain text and square numerical boxes with a custom institutional seal featuring an open book of learning and an assessment quill pen enclosed in a concentric academic roundel.
+- **Target Audience / Persona**: Study Centre Coordinators, Examination Desk Officials, Academic Evaluators, and Students checking assignment intake receipts and verification statuses.
+- **Key Value**: Professional credibility, instant tab identification among crowded browser sessions, and polished home screen presence when installed as a Progressive Web App.
 
-export interface StudentRegistrationRecord {
-  id: string;                         // e.g. 'ADM-FRESH-2026-0042' or 'RR-YR2-2026-0018'
-  cadre: RegistrationCadre;           // 'FRESH' (1st Year) | 'RE_REGISTRATION' (2nd/3rd Year)
-  academicYear: AcademicYearLevel;     // '1st Year' | '2nd Year' | '3rd Year' | 'Semester'
-  semesterNo?: number;                // e.g. 1 to 6 (for BCA/MCA/semester programmes)
-  enrollmentNo: string;               // 9-10 digit IGNOU Enrollment Number
-  studentName: string;                // Full Candidate Name
-  programmeCode: string;              // e.g. MEG, BCOMF, BAG, BCA, MPS, BSCG
-  programmeName?: string;             // Dynamic Programme Description
-  session: string;                    // e.g. 'July 2026' or 'January 2026'
-  sessionCycle: 'January' | 'July';   // Standard IGNOU cycle
-  sessionYear: number;                // e.g. 2026
-  courseCodes: string[];              // Registered courses array for this specific year
-  studentPhone: string;               // Mobile Number
-  studentEmail: string;               // Email Address
-  registrationDate: string;           // YYYY-MM-DD
-  status: 'Confirmed' | 'Provisional' | 'Cancelled';
-  feeReference?: string;              // Challan / Online Transaction Ref (Optional)
-  studyCentreCode: string;            // '2033'
-  regionalCentreCode: string;         // 'RC-20' (Kohima)
-  remarks?: string;
-  createdAt: string;                  // ISO Timestamp
-  updatedAt: string;                  // ISO Timestamp
-}
+---
+
+### 2. User Experience & Visual Design
+
+- **Icon Design Composition**:
+  - **Outer Ring**: Concentric circular border with deep navy fill (`#0F172A`) and warm gold hairline trim (`#F59E0B`).
+  - **Central Charge**: An open book with curved pages symbolizing open learning and curriculum, overlaid by a diagonal golden quill pen symbolizing evaluation and marks entry.
+  - **Insignia Lettering**: Micro-embossed "IGNOU" and "SC-2033" in crisp geometric sans-serif along the lower ribbon curve.
+  - **Dual Appearance**: A high-resolution full-detail version for headers and PWA splash screens, and an optically simplified high-contrast silhouette version for 16×16 and 32×32 favicon viewports.
+
+- **Placement & Touchpoints**:
+  - **Browser Tab (Favicon)**: `<link rel="icon" type="image/svg+xml" href="/icon.svg">` and `<link rel="apple-touch-icon" href="/apple-touch-icon.png">` in `index.html`.
+  - **Application Header**: Dedicated `<InstitutionalSeal className="w-8 h-8" />` component in `Header.tsx` next to "Assignment Operations Cell".
+  - **Collapsible Sidebar**: Unified seal branding in `Sidebar.tsx` (replacing the plain "2033" / "SC" text placeholders) with smooth collapse transitions.
+  - **Public Study Centre Landing**: Prominent emblem badge in `StudyCentreHomePage.tsx` hero and top navigation.
+  - **Web App Manifest**: Complete PWA manifest linking 192×192 and 512×512 icon assets for Add-to-Home-Screen support.
+
+- **Color Palette & Theme Tokens**:
+  - Canvas & Neutral: `#FFFFFF` (pure white) and `#0F172A` (midnight navy)
+  - Primary Institutional: Deep Navy (`#0A192F` / `#1E293B`)
+  - Accent Institutional: Warm Gold (`#D97706` / `#F59E0B` / `#FBBF24`)
+  - Subdued Accents: Crisp Cream Paper (`#FEF3C7` / `#FFFBEB`)
+
+---
+
+### 3. Key Product Decisions & Trade-Offs
+
+- **Decision 1: Native Clean SVG + PNG Generation vs. Raster Only**
+  - *Chosen Approach*: Deliver a meticulously crafted inline/standalone SVG as the primary vector master (`public/icon.svg` & `src/components/InstitutionalSeal.tsx`), alongside standard PNG exports for Safari and mobile launchers.
+  - *Why*: SVGs remain razor-sharp on Retina/4K displays, adapt seamlessly to dark/light browser themes, and add zero network latency.
+  - *Alternatives Considered*: External image generation alone without SVG master can lead to fuzzy anti-aliasing on 16px browser favicons.
+
+- **Decision 2: Dedicated Component vs. Repeating Image Tags**
+  - *Chosen Approach*: Create a reusable React component `<InstitutionalSeal size="sm" | "md" | "lg" />` that renders the official seal with customizable dimensions, hover transitions, and accessible labeling.
+  - *Why*: Guarantees instant rendering with zero network roundtrip, supports smooth CSS transitions, and stays synchronized across Header, Sidebar, Login/Gatekeeper, and Home views.
+  - *Alternatives Considered*: Multiple static `<img>` tags referencing public files require separate caching and cannot adapt styles dynamically.
+
+---
+
+### 4. Technical Architecture & Data Strategy
+
 ```
-
-#### Dual Register Persistence:
-- Stored persistently in `localStorage` under `ignou_sc2033_student_registrations`.
-- Clean helper accessors in `AppContext.tsx`:
-  - `freshAdmissions`: filtered subset where `cadre === 'FRESH'` (1st Year).
-  - `reRegistrations`: filtered subset where `cadre === 'RE_REGISTRATION'` (2nd/3rd Year).
-- Dedicated CRUD actions with validation, duplicate checking, and Google Sheets sync compatibility.
-
----
-
-### 2. User Experience & Interactive Design
-
-#### Master View Layout (`AdmissionsView.tsx`)
-1. **Top Register Selector & Cadre Switcher**:
-   ```text
-   ┌────────────────────────────────────────────────────────────────────────┐
-   │  ADMISSIONS & RE-REGISTRATION CELL • SC-2033                           │
-   │                                                                        │
-   │  [ ① Fresh Admissions (1st Year) - 148 ]  [ ② Re-Registration (2nd & 3rd Year) - 96 ] │
-   └────────────────────────────────────────────────────────────────────────┘
-   ```
-   - Two large, clean sovereign tabs matching the refined academic slate aesthetic.
-   - Activating a tab switches the entire register context, summary metrics, filters, and records table.
-
-2. **Register 1: Fresh Admissions (1st Year)**:
-   - Focuses strictly on new learners admitted in 1st Year.
-   - Metrics: Total 1st Year Fresh Entrants, July Cycle Count, January Cycle Count, Top 1st Year Programmes.
-   - Filter pills: Session (`All`, `July 2026`, `January 2026`, `July 2025`, `January 2025`), Programme (`BCOMF`, `MEG`, `BAG`, etc.).
-   - Actions: `+ New Fresh Admission`, `Import Fresh Excel`, `Export Roster`.
-
-3. **Register 2: Re-Registration (2nd & 3rd Year)**:
-   - Focuses on continuing learners re-registering for 2nd or 3rd year.
-   - Metrics: Total Re-Registered Learners, 2nd Year Count, 3rd Year Count, Session Breakdown (`July 2026` vs `January 2026`).
-   - Filter pills: Year Level (`All Years`, `2nd Year`, `3rd Year`, `Semester`), Session (`July 2026`, `January 2026`), Programme.
-   - Actions: `+ New Re-Registration`, `Import Re-Reg Excel`, `Export Roster`.
-
-4. **Structured Table Presentation**:
-   - Clean slate micro-borders (`border-slate-200`) and high-contrast typography.
-   - S.No., Enrollment No. (monospace with copy icon), Candidate Name, Programme badge, Academic Year badge (`1st Year`, `2nd Year`, `3rd Year`), Admission Session (`July 2026` / `January 2026`), Registered Course Pills, Contact Details (phone & email), Status badge (`Confirmed`), and Actions (View Card, Edit, Delete with Coordinator PIN 2033).
-
----
-
-### 3. Intelligent Excel/CSV Spreadsheet Ingestion Wizard
-
-#### 3-Step Wizard Flow:
-```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│             EXCEL BATCH INGESTION WIZARD (3 STEPS)                     │
-├────────────────────────────────────────────────────────────────────────┤
-│  STEP 1: Upload File & Target Register Detection                       │
-│  - Target Register: [ (•) Fresh Admissions  ( ) Re-Registration ]      │
-│  - Default Session: [ July 2026 ▼ ]                                    │
-│  - Drag & Drop .xlsx, .xls, .csv                                       │
-├────────────────────────────────────────────────────────────────────────┤
-│  STEP 2: Intelligent Column Auto-Mapping                               │
-│  • Enrollment Number  <──> [ "Enrolment No" / "ENRNO" ]                │
-│  • Candidate Name     <──> [ "Student Name" / "CANDIDATE_NAME" ]       │
-│  • Programme Code     <──> [ "Prog" / "PROGRAMME" ]                    │
-│  • Year / Cadre       <──> [ "Year" / "2nd Yr" / "FRESH" (Optional) ]  │
-│  • Courses Registered <──> [ "Courses" / "SUBJECTS" ]                  │
-│  • Mobile Number      <──> [ "Mobile" / "PHONE" ]                      │
-│  • Email Address      <──> [ "Email" / "EMAIL_ID" ]                    │
-├────────────────────────────────────────────────────────────────────────┤
-│  STEP 3: Parity & Quality Verification Preview                         │
-│  - Total Records Detected: 84                                          │
-│  - Valid Records: 84 (100% Pass)                                       │
-│  - Duplicates in Roster: 0                                             │
-│  - Live 5-row table preview showing mapped fields                      │
-│                                                                        │
-│  [ Cancel ]                                     [ Confirm & Import ]   │
-└────────────────────────────────────────────────────────────────────────┘
+│                      IGNOU SC-2033 ICON ARCHITECTURE                   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+           ┌────────────────────────┴─────────────────────────┐
+           ▼                                                   ▼
+┌──────────────────────┐                           ┌─────────────────────┐
+│    Static Assets     │                           │   React Component   │
+│     (/public/*)      │                           │  InstitutionalSeal  │
+├──────────────────────┤                           ├─────────────────────┤
+│ • icon.svg           │                           │ • Deep navy & gold  │
+│ • apple-touch-icon   │                           │ • Open book & quill │
+│ • pwa-192x192.png    │                           │ • Responsive sizes  │
+│ • pwa-512x512.png    │                           │ • Semantic ARIA tag │
+│ • site.webmanifest   │                           │                     │
+└──────────┬───────────┘                           └──────────┬──────────┘
+           │                                                   │
+           ▼                                                   ▼
+┌──────────────────────┐                           ┌─────────────────────┐
+│  Browser Entry Point │                           │ Application Surfaces│
+│     (index.html)     │                           ├─────────────────────┤
+├──────────────────────┤                           │ • Header.tsx        │
+│ • <link rel="icon">  │                           │ • Sidebar.tsx       │
+│ • apple-touch-icon   │                           │ • StudyCentreHome   │
+│ • manifest.json link │                           │ • GatekeeperLock    │
+│ • theme-color meta   │                           │ • ReceiptModal      │
+└──────────────────────┘                           └─────────────────────┘
 ```
 
----
-
-### 4. Navigation & Counter Bar Integration
-
-1. **Sidebar Navigation (`Sidebar.tsx`)**:
-   - Navigation item:
-     - Label: **"Admissions & Re-Reg"**
-     - Subtitle: **"Fresh (Yr 1) & Re-Reg (Yr 2/3)"**
-     - Icon: `GraduationCap`
-     - Badge: Dynamic total student count (e.g. `244 Total`)
-     - Role: Accessible to both `ADMIN` (Coordinator) and `OFFICIAL` (Desk)
-2. **Counter Quick Action Bar (`QuickActionBar.tsx`)**:
-   - Quick shortcut button:
-     - `[ Admissions & Re-Reg (244) ]` allowing counter operators to open the registry with one click when looking up a student's course entitlement.
-3. **Global Student Search Modal (`StudentSearchModal.tsx`)**:
-   - Integrated tab or badge in search results showing if a student is enrolled in Fresh 1st Year or Re-Registered 2nd/3rd Year, with their registered course list.
-
----
-
-### 5. Technical Implementation Steps
-
-#### Step 1: Install Excel Parsing Library
-- Run `install_applet_package` for `xlsx` (SheetJS) to enable client-side Excel reading and parsing.
-
-#### Step 2: Types & Context Extensions
-- In `src/types.ts`: Define `StudentRegistrationRecord`, `RegistrationCadre`, and `AcademicYearLevel`.
-- In `src/context/AppContext.tsx`:
-  - Add state `studentRegistrations: StudentRegistrationRecord[]`.
-  - Add CRUD handlers (`addStudentRegistration`, `batchImportStudentRegistrations`, `updateStudentRegistration`, `deleteStudentRegistration`).
-  - Add computed selectors `freshAdmissions` and `reRegistrations`.
-
-#### Step 3: Implement Ingestion Engine & Service
-- Create `src/services/registrationExcelService.ts`:
-  - Excel/CSV parsing algorithms.
-  - Column matching rules for IGNOU admission sheets.
-  - Course string sanitization (e.g. `"MEG-01, MEG-02, MEG-03"` -> `['MEG-01', 'MEG-02', 'MEG-03']`).
-  - Duplicate detection.
-
-#### Step 4: Create UI Components
-- Create `src/components/AdmissionsView.tsx`:
-  - Top tab switcher between **Fresh Admissions** and **Re-Registration**.
-  - Metric summary cards for each register.
-  - Search, filter bar, pagination, and export tools.
-  - Structured data tables with copyable roll numbers and course pills.
-- Create `src/components/RegistrationExcelUploadModal.tsx`:
-  - 3-step wizard with file upload, column mapping, and preview table.
-- Create `src/components/AddRegistrationModal.tsx`:
-  - Manual entry modal supporting both Fresh 1st Year and 2nd/3rd Year Re-Registrations.
-
-#### Step 5: Navigation & Workspace Wiring
-- Add `ADMISSIONS` to `TabType` in `Sidebar.tsx`.
-- Add quick action button in `QuickActionBar.tsx`.
-- Mount `AdmissionsView` in `App.tsx` when `activeTab === 'ADMISSIONS'`.
-
-#### Step 6: Quality Assurance & Build Verification
-- Run `compile_applet` and `lint_applet` to confirm zero compilation or lint errors.
-- Test both Fresh and Re-Registration workflows with sample data.
-
----
-
-### 6. Verification Scenarios
-
-1. **Dual Independent Registers**:
-   - Open Admissions & Re-Registration view.
-   - Switch between "Fresh Admissions (1st Year)" and "Re-Registration (2nd & 3rd Year)".
-   - Verify each register shows its own independent data, counts, and filters.
-2. **Excel Import for Fresh Admission**:
-   - Upload sample Fresh Admission Excel file.
-   - Confirm target register is Fresh Admissions, review column mapping, and verify records import into 1st Year.
-3. **Excel Import for Re-Registration**:
-   - Upload sample Re-Registration file (e.g. 2nd or 3rd year students).
-   - Confirm records appear under Re-Registration register with correct academic year badges (`2nd Year` / `3rd Year`).
-4. **Session Filtering**:
-   - Filter by "July 2026" and "January 2026" in both registers.
-   - Verify records filter accurately.
-5. **Desk Usability**:
-   - Confirm counter officials can look up any student's courses on demand without interfering with assignment intake operations.
+- **Deliverables**:
+  1. `public/icon.svg`: Master scalable vector seal with open book, quill, starburst, and institutional gold trim.
+  2. `public/apple-touch-icon.png` & `public/pwa-192x192.png`: Rendered high-contrast square PNGs.
+  3. `public/site.webmanifest`: Standard PWA manifest declaring name, short_name, icons, theme_color (`#0f172a`), and display (`standalone`).
+  4. `src/components/InstitutionalSeal.tsx`: Flexible React SVG component supporting sizes (`xs`, `sm`, `md`, `lg`, `xl`) and optional gold ring glow.
+  5. `index.html`: Updated with favicon link tags, web app manifest, and theme meta tags.
+  6. Integration in `Header.tsx`, `Sidebar.tsx`, `StudyCentreHomePage.tsx`, and `GatekeeperLockScreen.tsx`.

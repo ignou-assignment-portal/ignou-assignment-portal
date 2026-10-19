@@ -20,7 +20,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { formatDate, marksToWords, calculateIGNOUGrade } from '../utils/helpers';
-import { IntakeRecord } from '../types';
+import { IntakeRecord, StudentRegistrationRecord } from '../types';
 
 interface StudentProfile {
   enrollmentNo: string;
@@ -29,6 +29,7 @@ interface StudentProfile {
   programmeCode: string;
   sessions: Set<string>;
   intakeRecords: IntakeRecord[];
+  registration?: StudentRegistrationRecord;
 }
 
 export const StudentSearchModal: React.FC = () => {
@@ -38,6 +39,7 @@ export const StudentSearchModal: React.FC = () => {
     searchInitialQuery,
     allIntakes,
     allCourseEvaluations,
+    studentRegistrations,
     openReceiptModal,
     currentSession,
     evaluators,
@@ -60,7 +62,7 @@ export const StudentSearchModal: React.FC = () => {
     }
   }, [isSearchModalOpen, searchInitialQuery]);
 
-  // Aggregate student profiles from intakes and course evaluations
+  // Aggregate student profiles from intakes, course evaluations, and admissions
   const studentsMap = useMemo(() => {
     const map = new Map<string, StudentProfile>();
 
@@ -100,8 +102,28 @@ export const StudentSearchModal: React.FC = () => {
       }
     });
 
+    // Also index registered students from Admissions & Re-Registration
+    studentRegistrations.forEach((reg) => {
+      const enr = reg.enrollmentNo.trim();
+      const existing = map.get(enr) || {
+        enrollmentNo: enr,
+        studentName: reg.studentName,
+        studentPhone: reg.studentPhone,
+        programmeCode: reg.programmeCode,
+        sessions: new Set<string>(),
+        intakeRecords: [],
+        registration: reg,
+      };
+      existing.studentName = reg.studentName || existing.studentName;
+      if (reg.studentPhone && !existing.studentPhone) existing.studentPhone = reg.studentPhone;
+      existing.programmeCode = reg.programmeCode || existing.programmeCode;
+      if (reg.session) existing.sessions.add(reg.session);
+      existing.registration = reg;
+      map.set(enr, existing);
+    });
+
     return map;
-  }, [allIntakes, allCourseEvaluations]);
+  }, [allIntakes, allCourseEvaluations, studentRegistrations]);
 
   // Filtered student list based on search term
   const searchResults = useMemo(() => {
@@ -435,6 +457,50 @@ export const StudentSearchModal: React.FC = () => {
                     )}
                   </div>
                 </div>
+
+                {/* Admissions & Re-Registration Card */}
+                {activeStudent.registration && (
+                  <div className="bg-white border border-indigo-200/80 rounded-xl p-4 shadow-2xs space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <GraduationCap className="w-4 h-4 text-indigo-700" />
+                        <span className="text-xs font-bold text-slate-900">
+                          {activeStudent.registration.cadre === 'FRESH'
+                            ? 'Fresh Admission (1st Year)'
+                            : `Re-Registration (${activeStudent.registration.academicYear})`}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200">
+                        Session: {activeStudent.registration.session}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-slate-600">
+                      <span className="font-semibold text-slate-700">Enrolled Courses ({activeStudent.registration.courseCodes.length}): </span>
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {activeStudent.registration.courseCodes.map((c) => (
+                          <span
+                            key={c}
+                            className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 border border-slate-200 font-mono text-[11px] font-semibold"
+                          >
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {(activeStudent.registration.studentEmail || activeStudent.registration.studentPhone) && (
+                      <div className="pt-2 border-t border-slate-100 flex flex-wrap gap-3 text-[11px] text-slate-500 font-mono">
+                        {activeStudent.registration.studentPhone && (
+                          <span>Phone: {activeStudent.registration.studentPhone}</span>
+                        )}
+                        {activeStudent.registration.studentEmail && (
+                          <span>Email: {activeStudent.registration.studentEmail}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Course Evaluation Status Matrix */}
                 <div className="space-y-3">

@@ -11,6 +11,8 @@ import {
   Lock,
   Home,
 } from 'lucide-react';
+import { InstitutionalSeal } from './InstitutionalSeal';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
   onViewHome?: () => void;
@@ -96,9 +98,10 @@ export const Header: React.FC<HeaderProps> = ({ onViewHome }) => {
             <Menu className="w-4 h-4 text-indigo-950" />
           </button>
 
-          <div className="w-8 h-8 rounded-lg bg-indigo-950 flex items-center justify-center text-white font-bold text-xs border border-indigo-800 shadow-xs shrink-0 tracking-tight font-mono ring-1 ring-indigo-900/40">
-            2033
-          </div>
+          <InstitutionalSeal
+            size={isHeaderCompact ? 'xs' : 'sm'}
+            className="hover:scale-105 transition-transform duration-200"
+          />
           <div>
             <div className="flex items-center gap-2">
               <h1
@@ -267,6 +270,9 @@ export const Header: React.FC<HeaderProps> = ({ onViewHome }) => {
               </button>
             </div>
           )}
+
+          {/* PWA Install Button with New Icon */}
+          <PWAInstallButton />
 
           {/* Return to Study Centre Home Page */}
           {onViewHome && (

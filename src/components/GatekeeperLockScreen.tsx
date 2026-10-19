@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { ThemeSelector } from './ThemeSelector';
+import { InstitutionalSeal } from './InstitutionalSeal';
 import {
   Lock,
   ShieldAlert,
@@ -80,15 +81,15 @@ export const GatekeeperLockScreen: React.FC<GatekeeperLockScreenProps> = ({ onBa
         <div className="bg-zinc-900/90 border border-zinc-700/80 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden">
           {/* Top Header Banner */}
           <div className="bg-linear-to-r from-zinc-900 via-indigo-950 to-zinc-900 p-6 text-center border-b border-zinc-800">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[11px] font-bold tracking-widest uppercase mb-3">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>INDIRA GANDHI NATIONAL OPEN UNIVERSITY</span>
+            <div className="flex flex-col items-center justify-center mb-3">
+              <InstitutionalSeal size="lg" className="mb-2.5 drop-shadow-md hover:scale-105 transition-transform duration-200" />
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[11px] font-bold tracking-widest uppercase">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>INDIRA GANDHI NATIONAL OPEN UNIVERSITY</span>
+              </div>
             </div>
 
             <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center justify-center gap-2">
-              <span className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-sm font-bold shadow-xs">
-                2033
-              </span>
               Assignment Operations Portal
             </h1>
 

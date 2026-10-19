@@ -18,6 +18,7 @@ import {
   SessionArchiveRecord,
   AppTheme,
   AuditLogEntry,
+  StudentRegistrationRecord,
 } from '../types';
 import { THEMES, THEME_STORAGE_KEY, getInitialTheme, applyThemeToDOM } from '../utils/theme';
 import {
@@ -31,6 +32,7 @@ import {
   INITIAL_COURSE_EVALUATIONS,
   IGNOU_PROGRAMMES,
   INITIAL_AUDIT_LOGS,
+  INITIAL_STUDENT_REGISTRATIONS,
 } from '../data/ignouMasterData';
 import {
   EXTENDED_IGNOU_PROGRAMMES,
@@ -47,7 +49,7 @@ import {
   isPracticalCourse,
   isDualComponentCourse,
 } from '../utils/helpers';
-import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, executeQueuedMutation, SCRIPT_URL, normalizeSessionName, norm } from '../services/sheetsService';
+import { doGet, postAddIntake, postEditIntake, postDeleteIntake, postUpdateMarks, postAllotEvaluator, postSyncAdmissions, executeQueuedMutation, SCRIPT_URL, normalizeSessionName, norm } from '../services/sheetsService';
 import {
   subscribeSyncQueue,
   processPendingQueue,
@@ -311,6 +313,18 @@ interface AppContextType {
   clearAuditLogs: () => void;
   exportAuditLogsCSV: () => void;
   exportAuditLogsJSON: () => void;
+
+  // Admissions & Re-Registration (Fresh 1st Year & Re-Reg 2nd/3rd Year)
+  studentRegistrations: StudentRegistrationRecord[];
+  freshAdmissions: StudentRegistrationRecord[];
+  reRegistrations: StudentRegistrationRecord[];
+  addStudentRegistration: (record: Omit<StudentRegistrationRecord, 'id' | 'createdAt' | 'updatedAt'>) => StudentRegistrationRecord;
+  batchImportStudentRegistrations: (records: StudentRegistrationRecord[], overwriteDuplicates?: boolean) => { added: number; updated: number; skipped: number };
+  updateStudentRegistration: (id: string, updates: Partial<StudentRegistrationRecord>) => void;
+  deleteStudentRegistration: (id: string) => void;
+  isSyncingAdmissions: boolean;
+  syncAdmissionsWithGoogleSheets: () => Promise<void>;
+  calibrateStudentRegistrations: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -333,6 +347,7 @@ const STORAGE_KEYS = {
   COURSE_TITLES_REGISTRY: 'ignou_sc2033_course_titles_registry',
   ARCHIVES: 'ignou_sc2033_archives',
   AUDIT_LOGS: 'ignou_sc2033_audit_trail',
+  STUDENT_REGISTRATIONS: 'ignou_sc2033_student_registrations',
 };
 
 export const parseEvaluatorsMaster = (rawList: any[]): Evaluator[] => {
@@ -1052,6 +1067,198 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Failed to save course titles registry to localStorage', e);
     }
   }, [courseTitlesRegistry]);
+
+  // Student Registrations Database State (Fresh Admissions 1st Year & Re-Registrations 2nd/3rd Year)
+  const getRegistrationCompositeKey = (r: StudentRegistrationRecord | Partial<StudentRegistrationRecord>): string => {
+    const cleanEnr = (r.enrollmentNo || '').trim().toUpperCase();
+    const cleanSess = normalizeSessionName(r.session || 'July 2026').trim().toUpperCase();
+    const cleanYr = (r.academicYear || '1st Year').trim().toUpperCase();
+    const cleanCadre = (r.cadre || 'FRESH').trim().toUpperCase();
+    return `${cleanEnr}__${cleanSess}__${cleanYr}__${cleanCadre}`;
+  };
+
+  const [studentRegistrations, setStudentRegistrations] = useState<StudentRegistrationRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.STUDENT_REGISTRATIONS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Filter out any synthetic mock records from legacy loops (e.g. fake .1001@ignou.ac.in emails or synthetic loop enrollments)
+          const validRecords = parsed.filter((r: any) => {
+            const em = String(r.studentEmail || '').toLowerCase();
+            const isSyntheticEmail = em.endsWith('@ignou.ac.in') && /\.\d{4}@ignou\.ac\.in$/.test(em);
+            const enr = String(r.enrollmentNo || '').trim();
+            const isSyntheticEnr = /^(26011010|24018270|25012020|23019280|25011010|23018270)\d{2}$/.test(enr);
+            return !(isSyntheticEmail || (isSyntheticEnr && isSyntheticEmail));
+          }).map((r: any) => {
+            const normalizedSession = normalizeSessionName(r.session || 'July 2026');
+            const cleanEnr = String(r.enrollmentNo || '').trim();
+            const cleanName = String(r.studentName || '').trim();
+            const cleanProg = String(r.programmeCode || '').trim().toUpperCase();
+            const cleanPhone = String(r.studentPhone || '').trim();
+            const rawEmail = String(r.studentEmail || '').trim();
+            const hasInvalidDefault = rawEmail.toLowerCase().includes('not provided') || rawEmail.toLowerCase().includes('default email');
+            const cleanEmail = hasInvalidDefault ? '' : rawEmail;
+
+            return {
+              ...r,
+              enrollmentNo: cleanEnr,
+              studentName: cleanName,
+              programmeCode: cleanProg,
+              studentPhone: cleanPhone,
+              studentEmail: cleanEmail,
+              session: normalizedSession,
+            } as StudentRegistrationRecord;
+          });
+
+          if (validRecords.length > 0) {
+            return validRecords;
+          }
+        }
+      }
+      return INITIAL_STUDENT_REGISTRATIONS;
+    } catch {
+      return INITIAL_STUDENT_REGISTRATIONS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.STUDENT_REGISTRATIONS, JSON.stringify(studentRegistrations));
+    } catch (e) {
+      console.warn('Failed to save student registrations to localStorage', e);
+    }
+  }, [studentRegistrations]);
+
+  const calibrateStudentRegistrations = useCallback(() => {
+    setStudentRegistrations(INITIAL_STUDENT_REGISTRATIONS);
+    try {
+      localStorage.setItem(STORAGE_KEYS.STUDENT_REGISTRATIONS, JSON.stringify(INITIAL_STUDENT_REGISTRATIONS));
+    } catch {}
+    showToast('Admissions & Re-registrations calibrated with authentic SC-2033 student roster.', 'success');
+  }, [showToast]);
+
+  const freshAdmissions = useMemo(() => {
+    return studentRegistrations.filter((r) => r.cadre === 'FRESH');
+  }, [studentRegistrations]);
+
+  const reRegistrations = useMemo(() => {
+    return studentRegistrations.filter((r) => r.cadre === 'RE_REGISTRATION');
+  }, [studentRegistrations]);
+
+  const addStudentRegistration = useCallback((record: Omit<StudentRegistrationRecord, 'id' | 'createdAt' | 'updatedAt'>): StudentRegistrationRecord => {
+    const normSession = normalizeSessionName(record.session || currentSession);
+    const name = (record.studentName || '').trim();
+    const enr = (record.enrollmentNo || '').trim().toUpperCase();
+    const rawEmail = String(record.studentEmail || '').trim();
+    const isInvalidDefault = rawEmail.toLowerCase().includes('default email') || rawEmail.toLowerCase().includes('not provided');
+    const cleanEmail = isInvalidDefault ? '' : rawEmail;
+
+    const newRecord: StudentRegistrationRecord = {
+      ...record,
+      studentName: name,
+      enrollmentNo: enr,
+      studentPhone: String(record.studentPhone || '').trim(),
+      session: normSession,
+      studentEmail: cleanEmail,
+      id: `REG-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setStudentRegistrations((prev) => {
+      const key = getRegistrationCompositeKey(newRecord);
+      const filtered = prev.filter((r) => getRegistrationCompositeKey(r) !== key);
+      return [newRecord, ...filtered];
+    });
+    logAuditEvent({
+      action: 'SETTINGS_UPDATED',
+      category: 'AUTHENTICATION',
+      actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+      role: currentRole,
+      session: normSession,
+      targetIdentifier: record.enrollmentNo,
+      summary: `Registered student ${record.studentName} (${record.enrollmentNo}) for ${record.cadre === 'FRESH' ? 'Fresh Admission' : 'Re-Registration'} in ${record.programmeCode}`,
+      status: 'SUCCESS',
+    });
+    return newRecord;
+  }, [currentRole, settings.coordinatorName, currentSession, logAuditEvent]);
+
+  const batchImportStudentRegistrations = useCallback((newRecords: StudentRegistrationRecord[], overwriteDuplicates: boolean = true) => {
+    let addedCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+
+    setStudentRegistrations((prev) => {
+      const map = new Map<string, StudentRegistrationRecord>();
+      // Key by Enrollment, Session, Academic Year, and Cadre so multi-session registrations coexist
+      prev.forEach((r) => map.set(getRegistrationCompositeKey(r), r));
+
+      newRecords.forEach((r) => {
+        const normSession = normalizeSessionName(r.session || currentSession);
+        const name = (r.studentName || '').trim();
+        const enr = (r.enrollmentNo || '').trim().toUpperCase();
+        if (!enr || enr.length < 5) return;
+        const rawEmail = String(r.studentEmail || '').trim();
+        const isInvalidDefault = rawEmail.toLowerCase().includes('default email') || rawEmail.toLowerCase().includes('not provided');
+        const email = isInvalidDefault ? '' : rawEmail;
+        const phone = String(r.studentPhone || '').trim();
+        const cleanR: StudentRegistrationRecord = {
+          ...r,
+          enrollmentNo: enr,
+          studentName: name,
+          studentPhone: phone,
+          session: normSession,
+          studentEmail: email,
+        };
+        const key = getRegistrationCompositeKey(cleanR);
+        if (map.has(key)) {
+          if (overwriteDuplicates) {
+            const existing = map.get(key)!;
+            const mergedEmail = email || existing.studentEmail || '';
+            const mergedPhone = phone || existing.studentPhone || '';
+            map.set(key, {
+              ...existing,
+              ...cleanR,
+              studentPhone: mergedPhone,
+              studentEmail: mergedEmail,
+              id: existing.id || cleanR.id,
+              updatedAt: new Date().toISOString()
+            });
+            updatedCount++;
+          } else {
+            skippedCount++;
+          }
+        } else {
+          map.set(key, cleanR);
+          addedCount++;
+        }
+      });
+
+      return Array.from(map.values());
+    });
+
+    logAuditEvent({
+      action: 'SETTINGS_UPDATED',
+      category: 'AUTHENTICATION',
+      actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+      role: currentRole,
+      session: currentSession,
+      summary: `Batch imported ${newRecords.length} student registration records (${addedCount} new, ${updatedCount} updated, ${skippedCount} skipped)`,
+      status: 'SUCCESS',
+    });
+
+    return { added: addedCount, updated: updatedCount, skipped: skippedCount };
+  }, [currentRole, settings.coordinatorName, currentSession, logAuditEvent]);
+
+  const updateStudentRegistration = useCallback((id: string, updates: Partial<StudentRegistrationRecord>) => {
+    setStudentRegistrations((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r))
+    );
+  }, []);
+
+  const deleteStudentRegistration = useCallback((id: string) => {
+    setStudentRegistrations((prev) => prev.filter((r) => r.id !== id));
+  }, []);
 
   // One-time retroactive rectification for BRL series courses (BCOMF):
   // Migrates any existing BRL-101 (and BRL-101 to BRL-115) records that were erroneously
@@ -2600,6 +2807,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           localStorage.setItem(STORAGE_KEYS.ASSIGNMENT_SUBMISSIONS, JSON.stringify(combined));
         } catch {}
         return combined;
+      });
+
+      // Also ensure studentRegistrations has this student with exact enrollment, name, phone, programme, email
+      setStudentRegistrations((prev) => {
+        const enr = cleanEnrollment.toUpperCase();
+        const existing = prev.find((r) => (r.enrollmentNo || '').toUpperCase() === enr);
+        const email = (data as any).studentEmail || (data as any).email || existing?.studentEmail || '';
+        const phone = (data.studentPhone || '').trim() || existing?.studentPhone || '';
+        const updatedStudent: StudentRegistrationRecord = {
+          id: existing?.id || `REG-${enr}-${currentSession.replace(/\s+/g, '')}`,
+          cadre: existing?.cadre || 'FRESH',
+          academicYear: existing?.academicYear || '1st Year',
+          enrollmentNo: cleanEnrollment,
+          studentName: cleanName,
+          programmeCode: cleanProgramme,
+          programmeName: cleanProgramme,
+          session: currentSession,
+          sessionCycle: currentSession.toLowerCase().includes('jan') ? 'January' : 'July',
+          sessionYear: parseInt(currentSession.match(/\d{4}/)?.[0] || '2026', 10),
+          courseCodes: cleanCourses,
+          studentPhone: phone,
+          studentEmail: email,
+          registrationDate: intakeDate,
+          status: existing?.status || 'Confirmed',
+          studyCentreCode: '2033',
+          regionalCentreCode: 'RC-20',
+          createdAt: existing?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        const filtered = prev.filter((r) => (r.enrollmentNo || '').toUpperCase() !== enr);
+        const next = [updatedStudent, ...filtered];
+        try {
+          localStorage.setItem(STORAGE_KEYS.STUDENT_REGISTRATIONS, JSON.stringify(next));
+        } catch {}
+        return next;
       });
 
       // Show confirmation toast immediately
@@ -4842,6 +5084,96 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
+        // Also synchronize real student intake records directly into Admissions & Re-Registrations
+        setStudentRegistrations((prev) => {
+          const map = new Map<string, StudentRegistrationRecord>();
+          prev.forEach((r) => {
+            const enr = (r.enrollmentNo || '').trim().toUpperCase();
+            if (enr) map.set(enr, r);
+          });
+
+          // 1. Sync every authentic student from cleanIntake (Intake Register)
+          cleanIntake.forEach((item: any) => {
+            const enr = (item.enrollmentNo || '').trim().toUpperCase();
+            if (!enr || enr.length < 5) return;
+            const existing = map.get(enr);
+            const courses = Array.isArray(item.courses) ? item.courses : (item.courses || '').split(',').map((c: string) => c.trim()).filter(Boolean);
+            const session = item.session || existing?.session || 'July 2026';
+            const yearMatch = session.match(/\d{4}/);
+            const sessionYear = yearMatch ? parseInt(yearMatch[0], 10) : 2026;
+
+            map.set(enr, {
+              id: existing?.id || `REG-${enr}-${session.replace(/\s+/g, '')}`,
+              cadre: existing?.cadre || 'FRESH',
+              academicYear: existing?.academicYear || '1st Year',
+              enrollmentNo: item.enrollmentNo, // Exact from Intake!
+              studentName: item.candidateName || existing?.studentName || '', // Exact Candidate Name!
+              programmeCode: item.programme || existing?.programmeCode || 'MPS', // Exact Programme!
+              programmeName: existing?.programmeName || item.programme || '',
+              session,
+              sessionCycle: session.toLowerCase().includes('jan') ? 'January' : 'July',
+              sessionYear,
+              courseCodes: courses.length > 0 ? courses : (existing?.courseCodes || []),
+              studentPhone: item.contact || existing?.studentPhone || '', // Exact Mobile No.!
+              studentEmail: existing?.studentEmail || item.studentEmail || item.email || '', // Exact real Email (no default!)
+              registrationDate: item.submissionDate || existing?.registrationDate || new Date().toISOString().split('T')[0],
+              status: existing?.status || 'Confirmed',
+              studyCentreCode: '2033',
+              regionalCentreCode: 'RC-20',
+              createdAt: existing?.createdAt || item.timestamp || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+          });
+
+          // 2. Merge non-synthetic records from data.studentRegistrations if present in Google Sheets
+          if (data.studentRegistrations && Array.isArray(data.studentRegistrations)) {
+            data.studentRegistrations.forEach((r: any) => {
+              const enr = String(r.enrollmentNo || r['Enrollment No'] || '').trim().toUpperCase();
+              if (!enr || enr.length < 5) return;
+
+              // Filter out legacy synthetic dummy emails/numbers
+              const rawEmail = String(r.studentEmail || r.email || r['Email'] || r['Email ID'] || r['Email Address'] || '').trim();
+              const isSyntheticEmail = rawEmail.endsWith('@ignou.ac.in') && /\.\d{4}@ignou\.ac\.in$/.test(rawEmail);
+              const isInvalidDefault = rawEmail.toLowerCase().includes('not provided') || rawEmail.toLowerCase().includes('default email');
+              const cleanEmail = (isSyntheticEmail || isInvalidDefault) ? '' : rawEmail;
+
+              const existing = map.get(enr);
+              const name = String(r.studentName || r['Student Name'] || r['Candidate Name'] || existing?.studentName || '').trim();
+              const prog = String(r.programmeCode || r['Programme Code'] || r['Programme'] || existing?.programmeCode || '').trim().toUpperCase();
+              const phone = String(r.studentPhone || r['Mobile Number'] || r['Mobile No.'] || r.Contact || r.contact || existing?.studentPhone || '').trim();
+
+              map.set(enr, {
+                ...(existing || {}),
+                id: existing?.id || r.id || `REG-${enr}`,
+                cadre: r.cadre || existing?.cadre || 'FRESH',
+                academicYear: r.academicYear || existing?.academicYear || '1st Year',
+                enrollmentNo: enr,
+                studentName: name,
+                programmeCode: prog,
+                programmeName: r.programmeName || existing?.programmeName || prog,
+                session: r.session || existing?.session || 'July 2026',
+                sessionCycle: r.sessionCycle || existing?.sessionCycle || 'July',
+                sessionYear: r.sessionYear || existing?.sessionYear || 2026,
+                courseCodes: r.courseCodes || existing?.courseCodes || [],
+                studentPhone: phone,
+                studentEmail: cleanEmail || existing?.studentEmail || '',
+                registrationDate: r.registrationDate || existing?.registrationDate || new Date().toISOString().split('T')[0],
+                status: r.status || existing?.status || 'Confirmed',
+                studyCentreCode: '2033',
+                regionalCentreCode: 'RC-20',
+                createdAt: existing?.createdAt || r.createdAt || new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              } as StudentRegistrationRecord);
+            });
+          }
+
+          const result = Array.from(map.values());
+          try {
+            localStorage.setItem(STORAGE_KEYS.STUDENT_REGISTRATIONS, JSON.stringify(result));
+          } catch {}
+          return result;
+        });
+
         if (!isSilent) {
           showToast(syncMsg, 'success');
         }
@@ -4894,6 +5226,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsSyncingEvaluators(false);
     }
   }, [showToast]);
+
+  const [isSyncingAdmissions, setIsSyncingAdmissions] = useState<boolean>(false);
+
+  const syncAdmissionsWithGoogleSheets = useCallback(async () => {
+    setIsSyncingAdmissions(true);
+    try {
+      await fetchAllData(false);
+      showToast('Admissions & Re-registrations synchronized with Google Sheets.', 'success');
+    } catch (err: any) {
+      console.warn('Admissions sync pull error:', err);
+      showToast('Failed to pull admissions from Google Sheets.', 'error');
+    } finally {
+      setIsSyncingAdmissions(false);
+    }
+  }, [fetchAllData, showToast]);
 
   // 1. On Load: Call doGet() to hydrate IntakeRegister and CourseLedger state from Google Sheets
   useEffect(() => {
@@ -5556,6 +5903,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         clearAuditLogs,
         exportAuditLogsCSV,
         exportAuditLogsJSON,
+        // Admissions & Re-Registration (Fresh 1st Year & Re-Reg 2nd/3rd Year)
+        studentRegistrations,
+        freshAdmissions,
+        reRegistrations,
+        addStudentRegistration,
+        batchImportStudentRegistrations,
+        updateStudentRegistration,
+        deleteStudentRegistration,
+        isSyncingAdmissions,
+        syncAdmissionsWithGoogleSheets,
+        calibrateStudentRegistrations,
       }}
     >
       {children}

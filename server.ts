@@ -22,7 +22,7 @@ function loadStore() {
   } catch (e) {
     console.error("Error reading sheets_store.json:", e);
   }
-  return { intakes: [], courseLedger: [], registrationReceipts: [], assignmentSubmissions: [] };
+  return { intakes: [], courseLedger: [], registrationReceipts: [], assignmentSubmissions: [], studentRegistrations: [] };
 }
 
 function saveStore(data: any) {
@@ -595,6 +595,9 @@ app.get("/api/sheets", async (req, res) => {
       if (store.dateOverrides && typeof json === 'object' && json !== null) {
         json.dateOverrides = { ...(json.dateOverrides || {}), ...store.dateOverrides };
       }
+      if (typeof json === 'object' && json !== null && !json.studentRegistrations && store.studentRegistrations) {
+        json.studentRegistrations = store.studentRegistrations;
+      }
       // Validate directly from Google Sheets data - Google Sheets is the source of truth!
       return res.json(json);
     } catch {
@@ -606,6 +609,7 @@ app.get("/api/sheets", async (req, res) => {
         message: "Google Apps Script returned non-JSON response.",
         intakes: store.intakes || [],
         courseLedger: store.courseLedger || [],
+        studentRegistrations: store.studentRegistrations || [],
       });
     }
   } catch (error: any) {
@@ -616,16 +620,30 @@ app.get("/api/sheets", async (req, res) => {
       error: error.message,
       intakes: store.intakes || [],
       courseLedger: store.courseLedger || [],
+      studentRegistrations: store.studentRegistrations || [],
     });
   }
 });
 
 // 3. Google Sheets doPost() Proxy
-// Handles ADD_INTAKE, UPDATE_MARKS, GENERATE_SED_PDF, GENERATE_CLAIM_PDF
+// Handles ADD_INTAKE, UPDATE_MARKS, GENERATE_SED_PDF, GENERATE_CLAIM_PDF, SYNC_ADMISSIONS
 app.post("/api/sheets", async (req, res) => {
   const targetUrl = getTargetAppsScriptUrl(req.body.scriptUrl as string);
   const action = req.body?.action || "UNKNOWN";
   console.log(`[Proxy POST] Action: ${action} -> ${targetUrl}`);
+
+  // If action is SYNC_ADMISSIONS, persist in local store
+  if (action === "SYNC_ADMISSIONS" && (req.body.records || req.body.payload?.records)) {
+    try {
+      const records = req.body.records || req.body.payload?.records || [];
+      const store = loadStore();
+      store.studentRegistrations = records;
+      saveStore(store);
+      console.log(`[Store] Synced ${records.length} student registrations in local backup.`);
+    } catch (e) {
+      console.warn("Failed to save studentRegistrations in store:", e);
+    }
+  }
 
   try {
     const outgoingBody = {

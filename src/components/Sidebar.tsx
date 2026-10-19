@@ -21,6 +21,7 @@ import {
   CheckCircle2,
   ChevronRight,
 } from 'lucide-react';
+import { InstitutionalSeal } from './InstitutionalSeal';
 
 export type TabType =
   | 'INTAKE_DESK'
@@ -226,10 +227,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Sidebar Header Toolbar */}
         <div className="p-3 border-b border-slate-200 flex items-center justify-between gap-2 bg-slate-50/80">
           {!isSidebarCollapsed ? (
-            <div className="flex items-center gap-2 overflow-hidden">
-              <div className="w-7 h-7 rounded-lg bg-indigo-950 text-white font-black text-xs flex items-center justify-center shadow-2xs shrink-0 ring-1 ring-indigo-900/40">
-                SC
-              </div>
+            <div className="flex items-center gap-2.5 overflow-hidden">
+              <InstitutionalSeal size="sm" className="shrink-0" />
               <div className="truncate">
                 <div className="text-xs font-black text-slate-900 tracking-tight truncate">
                   EXAMINATION MENU
@@ -240,10 +239,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </div>
           ) : (
-            <div className="mx-auto">
-              <div className="w-8 h-8 rounded-lg bg-indigo-950 text-white font-black text-xs flex items-center justify-center shadow-2xs ring-1 ring-indigo-900/40">
-                2033
-              </div>
+            <div className="mx-auto flex items-center justify-center py-0.5">
+              <InstitutionalSeal size="sm" />
             </div>
           )}
 

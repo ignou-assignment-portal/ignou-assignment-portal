@@ -4,6 +4,7 @@ import { formatDate, formatDateTime, isPracticalCourse } from '../utils/helpers'
 import { Printer, X, CheckCircle2, AlertTriangle, Calendar, FlaskConical, Pencil, Trash2 } from 'lucide-react';
 import { EditIntakeModal } from './EditIntakeModal';
 import { IntakeRecord } from '../types';
+import { InstitutionalSeal } from './InstitutionalSeal';
 
 export const ReceiptModal: React.FC = () => {
   const {
@@ -279,9 +280,12 @@ export const ReceiptModal: React.FC = () => {
         <div className="p-4 sm:p-6 print:p-1 text-zinc-900 bg-white" id="printable-receipt">
           {/* Institutional Header */}
           <div className="text-center border-b-2 border-zinc-900 pb-2 print:pb-1">
-            <h1 className="text-xs sm:text-sm print:text-[11px] font-black tracking-tight text-zinc-950 uppercase">
-              INDIRA GANDHI NATIONAL OPEN UNIVERSITY - STUDY CENTRE SC-2033
-            </h1>
+            <div className="flex items-center justify-center gap-2 mb-1">
+              <InstitutionalSeal size="sm" className="w-6 h-6 print:w-5 print:h-5 shrink-0" />
+              <h1 className="text-xs sm:text-sm print:text-[11px] font-black tracking-tight text-zinc-950 uppercase">
+                INDIRA GANDHI NATIONAL OPEN UNIVERSITY - STUDY CENTRE SC-2033
+              </h1>
+            </div>
             <div className="text-[11px] print:text-[8.5px] text-zinc-600 font-medium mt-0.5 print:mt-0">
               {settings.institutionName} • Regional Centre: {settings.regionalCentreCode}
             </div>

@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { ThemeSelector } from './ThemeSelector';
+import { InstitutionalSeal } from './InstitutionalSeal';
+import { PWAInstallButton } from './PWAInstallButton';
 import {
   ShieldAlert,
   Lock,
@@ -271,10 +273,10 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           {/* Logo & Centre Identity */}
           <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-linear-to-br from-indigo-900 to-indigo-950 text-white flex flex-col items-center justify-center font-black shadow-md border border-indigo-700/50 shrink-0">
-              <span className="text-xs tracking-tighter leading-none text-amber-400">SC</span>
-              <span className="text-sm tracking-tight leading-none">2033</span>
-            </div>
+            <InstitutionalSeal
+              size="md"
+              className="hover:scale-105 transition-transform duration-200"
+            />
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-base sm:text-lg font-black tracking-tight text-zinc-950 leading-tight">
@@ -310,6 +312,9 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
                 Contact & Location
               </a>
             </nav>
+
+            {/* PWA Install Button with New Icon */}
+            <PWAInstallButton className="hidden sm:inline-flex" />
 
             {/* Theme Selector */}
             <ThemeSelector variant="dropdown" />
