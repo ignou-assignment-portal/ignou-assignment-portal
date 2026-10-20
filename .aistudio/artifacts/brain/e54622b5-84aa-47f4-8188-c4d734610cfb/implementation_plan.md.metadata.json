@@ -1,6 +1,6 @@
 {
-  "summary": "Plan to remove Admissions & Re-Registration Master UI from the web application while verifying and guaranteeing that the physical and digital Assignment Intake process remains 100% independent and unaffected.",
-  "updatedAt": "2026-10-19T10:27:37.869960982Z",
+  "summary": "Implementation plan to restore and enhance the In-App Install Action across both the top header and left sidebar navigation, featuring warm amber styling, download iconography, and interactive guided instructions for mobile home screens and desktop docks.",
+  "updatedAt": "2026-10-20T13:25:07.923179841Z",
   "requestFeedback": true,
   "userFacing": true
 }

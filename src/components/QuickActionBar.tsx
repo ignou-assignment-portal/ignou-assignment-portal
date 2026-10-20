@@ -35,6 +35,7 @@ export const QuickActionBar: React.FC<QuickActionBarProps> = ({
     setIsSyncDrawerOpen,
     isSyncingSheets,
     syncStatus,
+    isAdmin,
   } = useApp();
 
   // Compute Today's Date String
@@ -166,22 +167,24 @@ export const QuickActionBar: React.FC<QuickActionBarProps> = ({
             </div>
           )}
 
-          {/* Google Sheets Sync Telemetry Launcher (Clean & Intact) */}
-          <div className="pl-2 border-l border-slate-200 shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsSyncDrawerOpen(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition cursor-pointer shadow-2xs"
-              title="Open Google Sheets Telemetry & Cloud Sync Monitor"
-            >
-              <RefreshCw
-                className={`w-3 h-3 text-emerald-600 shrink-0 ${
-                  isSyncingSheets ? 'animate-spin' : ''
-                }`}
-              />
-              <span className="hidden md:inline font-mono text-[11px]">Sync Monitor</span>
-            </button>
-          </div>
+          {/* Google Sheets Sync Telemetry Launcher (Coordinator / Admin Only) */}
+          {isAdmin && (
+            <div className="pl-2 border-l border-slate-200 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsSyncDrawerOpen(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition cursor-pointer shadow-2xs"
+                title="Open Google Sheets Telemetry & Cloud Sync Monitor"
+              >
+                <RefreshCw
+                  className={`w-3 h-3 text-emerald-600 shrink-0 ${
+                    isSyncingSheets ? 'animate-spin' : ''
+                  }`}
+                />
+                <span className="hidden md:inline font-mono text-[11px]">Sync Monitor</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

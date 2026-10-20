@@ -438,3 +438,34 @@ export interface StudentRegistrationRecord {
   updatedAt: string;
 }
 
+export type RbacOperation =
+  | 'intake_registration'
+  | 'intake_edit_delete'
+  | 'marks_entry'
+  | 'marks_locking'
+  | 'packets_dispatch'
+  | 'remuneration_billing'
+  | 'sed_award_sheets'
+  | 'evaluators_directory'
+  | 'system_settings'
+  | 'forensic_audit_trail';
+
+export type RbacAccessLevel = 'ALLOWED' | 'PIN_REQUIRED' | 'FORBIDDEN';
+
+export interface RbacPolicy {
+  desk: RbacAccessLevel;
+  admin: RbacAccessLevel;
+  label: string;
+  description: string;
+  category: 'Intake' | 'Evaluation' | 'Finance' | 'Administration';
+}
+
+export interface RbacConfiguration {
+  enabled: boolean;
+  requireCoordinatorPinForMarksLock: boolean;
+  requireCoordinatorPinForBilling: boolean;
+  policies: Record<RbacOperation, RbacPolicy>;
+  lastUpdated?: string;
+  updatedBy?: string;
+}
+

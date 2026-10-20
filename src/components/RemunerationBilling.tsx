@@ -4,6 +4,7 @@ import { RemunerationBill, Evaluator } from '../types';
 import { formatCurrency, formatDate, amountToIndianWords, maskAccountNumber, maskPAN } from '../utils/helpers';
 import { postGenerateClaimPdf } from '../services/sheetsService';
 import { IGNOU_PROGRAMMES } from '../data/ignouMasterData';
+import { CoordinatorPinChallengeModal } from './CoordinatorPinChallengeModal';
 import {
   Receipt,
   FileCheck2,
@@ -59,7 +60,23 @@ export const RemunerationBilling: React.FC = () => {
     setRole,
     sessionCourseEvaluations,
     resetAllData,
+    canPerformOperation,
+    showToast,
+    userRole,
   } = useApp();
+
+  // Coordinator PIN challenge state for desk officials
+  const [pinChallenge, setPinChallenge] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    action: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    action: () => {},
+  });
 
   // Selected bill for viewing/printing official F&AD voucher
   const [selectedPrintBill, setSelectedPrintBill] = useState<RemunerationBill | null>(null);
@@ -291,16 +308,63 @@ export const RemunerationBilling: React.FC = () => {
     setActiveClaimDraft(claim);
   };
 
-  // Submit and save statutory bill to sessionBills
+  // Submit and save statutory bill to sessionBills (Coordinator-protected for Desk role)
   const handleSaveStatutoryBill = () => {
     if (!activeClaimDraft) return;
     const ev = activeClaimDraft.evaluator;
     const courses = activeClaimDraft.courseBreakdown.map((c) => c.courseCode);
     const count = activeClaimDraft.totalEvaluated > 0 ? activeClaimDraft.totalEvaluated : 1;
 
-    const newBill = generateBill(ev.id, courses, count, draftRate);
-    setActiveClaimDraft(null);
-    setSelectedPrintBill(newBill);
+    const executeGenerate = () => {
+      const newBill = generateBill(ev.id, courses, count, draftRate);
+      setActiveClaimDraft(null);
+      setSelectedPrintBill(newBill);
+      showToast(`Statutory Bill ${newBill.billNumber} generated successfully for ${ev.name || ev.evaluatorName}.`, 'success');
+    };
+
+    const perm = canPerformOperation('remuneration_billing');
+    if (!perm.allowed) {
+      showToast('Permission Denied: Remuneration bill generation is disabled for your role.', 'error');
+      return;
+    }
+
+    if (perm.requiresPin) {
+      setPinChallenge({
+        isOpen: true,
+        title: `Coordinator Authorization: Generate Bill for ${ev.name || ev.evaluatorName}`,
+        description: `Statutory remuneration claims and financial vouchers are coordinator-protected under SC-2033 governance. Enter Coordinator PIN to authorize this claim bill.`,
+        action: executeGenerate,
+      });
+      return;
+    }
+
+    executeGenerate();
+  };
+
+  // Sanction remuneration bill (Coordinator-protected for Desk role)
+  const handleSanctionBill = (billId: string, billNumber: string) => {
+    const executeSanction = () => {
+      sanctionBill(billId);
+      showToast(`Bill ${billNumber} sanctioned successfully.`, 'success');
+    };
+
+    const perm = canPerformOperation('remuneration_billing');
+    if (!perm.allowed) {
+      showToast('Permission Denied: Sanctioning remuneration bills is restricted to Coordinator.', 'error');
+      return;
+    }
+
+    if (perm.requiresPin) {
+      setPinChallenge({
+        isOpen: true,
+        title: `Coordinator Authorization: Sanction Bill ${billNumber}`,
+        description: `Remuneration bill disbursement sanctioning requires Coordinator authority. Enter Coordinator PIN to sanction this voucher.`,
+        action: executeSanction,
+      });
+      return;
+    }
+
+    executeSanction();
   };
 
   // Update global rate multiplier
@@ -456,6 +520,36 @@ export const RemunerationBilling: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Coordinator Protection Banner for Desk Role */}
+      {!isAdmin && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-300 text-amber-800 flex items-center justify-center shrink-0">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-black text-xs uppercase tracking-tight text-amber-900">
+                  Coordinator-Protected Financial Module
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-200 text-amber-950 border border-amber-300 font-bold">
+                  PIN Challenge Active
+                </span>
+              </div>
+              <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">
+                Desk officials can inspect script counts and preview remuneration claim calculations. Generating official F&AD claim vouchers and sanctioning payments require Coordinator PIN authorization.
+              </p>
+            </div>
+          </div>
+          <div className="shrink-0">
+            <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-amber-300 text-amber-900 text-xs font-bold shadow-2xs">
+              <Lock className="w-3.5 h-3.5 text-amber-700" />
+              <span>PIN: 2033</span>
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Financial Norms & Billing Adjustments Toolbar */}
       <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs">
@@ -913,9 +1007,9 @@ export const RemunerationBilling: React.FC = () => {
                         <div className="flex items-center justify-end gap-1.5">
                           {bill.sanctionStatus === 'Draft' && (
                             <button
-                              onClick={() => sanctionBill(bill.id)}
+                              onClick={() => handleSanctionBill(bill.id, bill.billNumber)}
                               className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition flex items-center gap-1 cursor-pointer"
-                              title="Sanction remuneration bill as Study Centre Coordinator"
+                              title="Sanction remuneration bill (Coordinator protected)"
                             >
                               <ShieldCheck className="w-3 h-3 text-amber-300" />
                               <span>Sanction</span>
@@ -1515,6 +1609,14 @@ export const RemunerationBilling: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Coordinator PIN Challenge Modal for Billing Protection */}
+      <CoordinatorPinChallengeModal
+        isOpen={pinChallenge.isOpen}
+        onClose={() => setPinChallenge((prev) => ({ ...prev, isOpen: false }))}
+        onSuccess={pinChallenge.action}
+        actionTitle={pinChallenge.title}
+        actionDescription={pinChallenge.description}
+      />
     </div>
   );
 };

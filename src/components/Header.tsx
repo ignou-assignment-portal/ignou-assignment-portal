@@ -272,7 +272,7 @@ export const Header: React.FC<HeaderProps> = ({ onViewHome }) => {
           )}
 
           {/* PWA Install Button with New Icon */}
-          <PWAInstallButton />
+          <PWAInstallButton id="header-pwa-install-action" className="shrink-0" />
 
           {/* Return to Study Centre Home Page */}
           {onViewHome && (

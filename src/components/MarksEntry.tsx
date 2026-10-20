@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateIGNOUGrade, formatDate, getIgnouGrade, isPracticalCourse, isDualComponentCourse } from '../utils/helpers';
+import { CoordinatorPinChallengeModal } from './CoordinatorPinChallengeModal';
 import {
   Award,
   BookOpen,
@@ -34,7 +35,21 @@ export const MarksEntry: React.FC = () => {
     saveOrUpdateMarksAndLock,
     showToast,
     isAdmin,
+    canPerformOperation,
   } = useApp();
+
+  // Coordinator PIN challenge state for marks locking
+  const [pinChallenge, setPinChallenge] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    action: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    action: () => {},
+  });
 
   // Extract all unique course codes submitted in the current session
   const activeCourseCodes = useMemo(() => {
@@ -318,26 +333,14 @@ export const MarksEntry: React.FC = () => {
     updatePracticalMarks(intakeId, selectedCourse, val);
   };
 
-  // Save & Lock action for specific component
-  const handleSaveAndLockComponent = async (
+  // Save & Lock action execution for specific component
+  const executeSaveAndLock = async (
     student: (typeof enrolledStudents)[0],
     componentType: 'Assignment' | 'Practical',
-    isLockAction: boolean
+    isLockAction: boolean,
+    currentMark: number | null
   ) => {
     const isPrac = componentType === 'Practical';
-    const currentMark = isPrac
-      ? getStudentPracticalMark(student, selectedCourse)
-      : getStudentAssignmentMark(student, selectedCourse);
-
-    if (currentMark === null || currentMark === undefined) {
-      if (isLockAction) {
-        alert(
-          `Cannot lock ${componentType.toLowerCase()} mark: A valid numerical mark (0-100) must be recorded before locking.`
-        );
-        return;
-      }
-    }
-
     const matchingEval = sessionCourseEvaluations.find(
       (e: any) =>
         (e.enrollmentNo === student.enrollmentNo || e.Enrollment_No === student.enrollmentNo) &&
@@ -366,48 +369,103 @@ export const MarksEntry: React.FC = () => {
     await saveOrUpdateMarksAndLock(row, currentMark, isLockAction, componentType);
   };
 
-  // Administrator Unlock action
-  const handleUnlockComponent = async (
+  const handleSaveAndLock = async (
     student: (typeof enrolledStudents)[0],
-    componentType: 'Assignment' | 'Practical'
+    componentType: 'Assignment' | 'Practical',
+    isLockAction: boolean
   ) => {
-    if (!isAdmin) {
-      alert(
-        'Permission Denied: Only an Administrator (Coordinator) can unlock marks for verified scripts.'
-      );
-      return;
-    }
     const isPrac = componentType === 'Practical';
     const currentMark = isPrac
       ? getStudentPracticalMark(student, selectedCourse)
       : getStudentAssignmentMark(student, selectedCourse);
 
-    const matchingEval = sessionCourseEvaluations.find(
-      (e: any) =>
-        (e.enrollmentNo === student.enrollmentNo || e.Enrollment_No === student.enrollmentNo) &&
-        (e.courseCode === selectedCourse || e.Course_Code === selectedCourse) &&
-        (isPrac ? (e.componentType === 'Practical' || e.isPractical) : (!e.componentType || e.componentType === 'Assignment' || !e.isPractical))
-    );
+    if (currentMark === null || currentMark === undefined) {
+      if (isLockAction) {
+        alert(
+          `Cannot lock ${componentType.toLowerCase()} mark: A valid numerical mark (0-100) must be recorded before locking.`
+        );
+        return;
+      }
+    }
 
-    const subSuffix = isPrac ? '_PRAC' : '';
-    const row = matchingEval || {
-      Sub_ID: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}${subSuffix}_${currentSession.replace(/\s+/g, '')}`,
-      subId: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}${subSuffix}_${currentSession.replace(/\s+/g, '')}`,
-      Enrollment_No: student.enrollmentNo,
-      enrollmentNo: student.enrollmentNo,
-      Course_Code: selectedCourse,
-      courseCode: selectedCourse,
-      tokenNo: student.tokenNo,
-      studentName: student.studentName,
-      programmeCode: student.programmeCode,
-      session: currentSession,
-      componentType,
-      isPractical: isPrac,
-      isLocked: false,
-      intakeId: student.id,
+    if (isLockAction) {
+      const perm = canPerformOperation('marks_locking');
+      if (!perm.allowed) {
+        showToast('Marks locking is forbidden for your role.', 'error');
+        return;
+      }
+      if (perm.requiresPin) {
+        setPinChallenge({
+          isOpen: true,
+          title: `Coordinator Authorization: Lock Marks for ${student.enrollmentNo}`,
+          description: `Locking continuous evaluation marks for course ${selectedCourse} requires Coordinator PIN authorization.`,
+          action: () => executeSaveAndLock(student, componentType, isLockAction, currentMark),
+        });
+        return;
+      }
+    }
+
+    await executeSaveAndLock(student, componentType, isLockAction, currentMark);
+  };
+
+  const handleSaveAndLockComponent = handleSaveAndLock;
+
+  // Administrator Unlock action
+  const handleUnlockComponent = async (
+    student: (typeof enrolledStudents)[0],
+    componentType: 'Assignment' | 'Practical'
+  ) => {
+    const perm = canPerformOperation('marks_locking');
+    if (!perm.allowed) {
+      showToast('Unlocking marks is forbidden for your role.', 'error');
+      return;
+    }
+
+    const unlockAction = async () => {
+      const isPrac = componentType === 'Practical';
+      const currentMark = isPrac
+        ? getStudentPracticalMark(student, selectedCourse)
+        : getStudentAssignmentMark(student, selectedCourse);
+
+      const matchingEval = sessionCourseEvaluations.find(
+        (e: any) =>
+          (e.enrollmentNo === student.enrollmentNo || e.Enrollment_No === student.enrollmentNo) &&
+          (e.courseCode === selectedCourse || e.Course_Code === selectedCourse) &&
+          (isPrac ? (e.componentType === 'Practical' || e.isPractical) : (!e.componentType || e.componentType === 'Assignment' || !e.isPractical))
+      );
+
+      const subSuffix = isPrac ? '_PRAC' : '';
+      const row = matchingEval || {
+        Sub_ID: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}${subSuffix}_${currentSession.replace(/\s+/g, '')}`,
+        subId: `SUB_${student.enrollmentNo.trim()}_${selectedCourse.trim().toUpperCase()}${subSuffix}_${currentSession.replace(/\s+/g, '')}`,
+        Enrollment_No: student.enrollmentNo,
+        enrollmentNo: student.enrollmentNo,
+        Course_Code: selectedCourse,
+        courseCode: selectedCourse,
+        tokenNo: student.tokenNo,
+        studentName: student.studentName,
+        programmeCode: student.programmeCode,
+        session: currentSession,
+        componentType,
+        isPractical: isPrac,
+        isLocked: false,
+        intakeId: student.id,
+      };
+
+      await saveOrUpdateMarksAndLock(row, currentMark, false, componentType);
     };
 
-    await saveOrUpdateMarksAndLock(row, currentMark, false, componentType);
+    if (perm.requiresPin) {
+      setPinChallenge({
+        isOpen: true,
+        title: `Coordinator Authorization: Unlock Marks for ${student.enrollmentNo}`,
+        description: `Unlocking marks for ${selectedCourse} is coordinator-protected. Enter Coordinator PIN to authorize.`,
+        action: unlockAction,
+      });
+      return;
+    }
+
+    await unlockAction();
   };
 
   // Batch lock actions

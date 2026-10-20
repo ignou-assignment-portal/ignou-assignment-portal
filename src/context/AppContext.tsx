@@ -19,6 +19,10 @@ import {
   AppTheme,
   AuditLogEntry,
   StudentRegistrationRecord,
+  RbacOperation,
+  RbacAccessLevel,
+  RbacPolicy,
+  RbacConfiguration,
 } from '../types';
 import { THEMES, THEME_STORAGE_KEY, getInitialTheme, applyThemeToDOM } from '../utils/theme';
 import {
@@ -102,6 +106,10 @@ interface AppContextType {
   updateSecurityPins: (newPins: { deskPin: string; adminPin: string }) => void;
   handleLogin: (role: 'desk' | 'admin', inputPin: string) => boolean;
   logout: () => void;
+  rbacConfig: RbacConfiguration;
+  updateRbacConfig: (newConfig: Partial<RbacConfiguration>) => void;
+  resetRbacToDefaults: () => void;
+  canPerformOperation: (operation: RbacOperation) => { allowed: boolean; requiresPin: boolean };
 
   // Intake Master (Strictly Session Filtered)
   sessionIntakes: IntakeRecord[];
@@ -348,6 +356,87 @@ const STORAGE_KEYS = {
   ARCHIVES: 'ignou_sc2033_archives',
   AUDIT_LOGS: 'ignou_sc2033_audit_trail',
   STUDENT_REGISTRATIONS: 'ignou_sc2033_student_registrations',
+  RBAC_CONFIG: 'ignou_sc2033_rbac_config',
+};
+
+export const DEFAULT_RBAC_CONFIG: RbacConfiguration = {
+  enabled: true,
+  requireCoordinatorPinForMarksLock: true,
+  requireCoordinatorPinForBilling: true,
+  lastUpdated: new Date().toISOString(),
+  updatedBy: 'System Statutory Default',
+  policies: {
+    intake_registration: {
+      desk: 'ALLOWED',
+      admin: 'ALLOWED',
+      label: 'Intake Registration & Receipts',
+      description: 'Receive student assignment/practical scripts and generate official acknowledgment receipts.',
+      category: 'Intake',
+    },
+    intake_edit_delete: {
+      desk: 'PIN_REQUIRED',
+      admin: 'ALLOWED',
+      label: 'Intake Record Modification & Deletion',
+      description: 'Edit student details, adjust submission dates, or delete mistaken intake entries.',
+      category: 'Intake',
+    },
+    marks_entry: {
+      desk: 'ALLOWED',
+      admin: 'ALLOWED',
+      label: 'Evaluation Marks Entry',
+      description: 'Enter raw assignment marks, evaluate criteria, and calculate grades.',
+      category: 'Evaluation',
+    },
+    marks_locking: {
+      desk: 'PIN_REQUIRED',
+      admin: 'ALLOWED',
+      label: 'Master Marks Finalization & Locking',
+      description: 'Lock evaluated marks preventing further tampering or modification.',
+      category: 'Evaluation',
+    },
+    packets_dispatch: {
+      desk: 'ALLOWED',
+      admin: 'ALLOWED',
+      label: 'Course Packets & Dispatch Allotment',
+      description: 'Bundle scripts into packets and allot them to empanelled evaluators.',
+      category: 'Evaluation',
+    },
+    remuneration_billing: {
+      desk: 'PIN_REQUIRED',
+      admin: 'ALLOWED',
+      label: 'Remuneration Bill Generation',
+      description: 'Generate statutory remuneration claims and compute evaluator payout totals.',
+      category: 'Finance',
+    },
+    sed_award_sheets: {
+      desk: 'ALLOWED',
+      admin: 'ALLOWED',
+      label: 'SED 3-Part Regional Award Sheets',
+      description: 'Generate, print, and export regional centre gazette award sheets.',
+      category: 'Evaluation',
+    },
+    evaluators_directory: {
+      desk: 'ALLOWED',
+      admin: 'ALLOWED',
+      label: 'Evaluator Directory & Bank Profiles',
+      description: 'View and manage academic counsellors, bank IFSC details, and course eligibility.',
+      category: 'Administration',
+    },
+    system_settings: {
+      desk: 'FORBIDDEN',
+      admin: 'ALLOWED',
+      label: 'Centre Configuration & Governance',
+      description: 'Manage study centre parameters, remuneration rates, security PINs, and cloud sync.',
+      category: 'Administration',
+    },
+    forensic_audit_trail: {
+      desk: 'FORBIDDEN',
+      admin: 'ALLOWED',
+      label: 'Forensic Audit Trail & Security Logs',
+      description: 'Institutional activity records, user session timelines, and modification logs. Strictly hidden from Desk officials.',
+      category: 'Administration',
+    },
+  },
 };
 
 export const parseEvaluatorsMaster = (rawList: any[]): Evaluator[] => {
@@ -548,6 +637,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saved = localStorage.getItem("ignou_sc2033_pins");
     return saved ? JSON.parse(saved) : { deskPin: "1001", adminPin: "2033" };
   });
+
+  // Granular Role-Based Access Control (RBAC) Governance State
+  const [rbacConfig, setRbacConfigState] = useState<RbacConfiguration>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.RBAC_CONFIG);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return {
+          ...DEFAULT_RBAC_CONFIG,
+          ...parsed,
+          policies: {
+            ...DEFAULT_RBAC_CONFIG.policies,
+            ...(parsed.policies || {}),
+          },
+        };
+      }
+    } catch {}
+    return DEFAULT_RBAC_CONFIG;
+  });
+
+  const updateRbacConfig = (newConfig: Partial<RbacConfiguration>) => {
+    setRbacConfigState((prev) => {
+      const updated: RbacConfiguration = {
+        ...prev,
+        ...newConfig,
+        lastUpdated: new Date().toISOString(),
+        updatedBy: isAdmin ? (settings.coordinatorName || 'Dr. Sant K. Gupta (Coordinator)') : 'Desk Official',
+        policies: {
+          ...prev.policies,
+          ...(newConfig.policies || {}),
+        },
+      };
+      try {
+        localStorage.setItem(STORAGE_KEYS.RBAC_CONFIG, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  const resetRbacToDefaults = () => {
+    setRbacConfigState(DEFAULT_RBAC_CONFIG);
+    try {
+      localStorage.setItem(STORAGE_KEYS.RBAC_CONFIG, JSON.stringify(DEFAULT_RBAC_CONFIG));
+    } catch {}
+  };
 
   // User Role (RBAC) - strictly enforced to OFFICIAL if isUrlLockedDeskMode
   const [currentRole, setCurrentRole] = useState<UserRole>(() => {
@@ -2164,6 +2298,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const isAdmin = !isUrlLockedDeskMode && (userRole === 'admin' || currentRole === 'ADMIN');
   const isOfficial = !isAdmin;
+
+  const canPerformOperation = useCallback(
+    (operation: RbacOperation): { allowed: boolean; requiresPin: boolean } => {
+      if (!rbacConfig.enabled) {
+        return { allowed: true, requiresPin: false };
+      }
+      const policy = rbacConfig.policies[operation];
+      if (!policy) return { allowed: true, requiresPin: false };
+
+      const activeRole = isAdmin ? 'admin' : 'desk';
+      const accessLevel = policy[activeRole];
+
+      if (accessLevel === 'FORBIDDEN') {
+        return { allowed: false, requiresPin: false };
+      }
+      if (accessLevel === 'PIN_REQUIRED') {
+        if (isAdmin) {
+          return { allowed: true, requiresPin: false };
+        }
+        return { allowed: true, requiresPin: true };
+      }
+      return { allowed: true, requiresPin: false };
+    },
+    [rbacConfig, isAdmin]
+  );
 
   // Flexible Session Isolation (Normalizes case and whitespace):
   // sessionIntakes, sessionPackets, sessionBills, sessionAssignmentSubmissions, sessionRegistrationReceipts
@@ -5769,6 +5928,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateSecurityPins,
         handleLogin,
         logout,
+        rbacConfig,
+        updateRbacConfig,
+        resetRbacToDefaults,
+        canPerformOperation,
         sessionIntakes,
         allIntakes: intakes,
         intakeRegister: intakes,

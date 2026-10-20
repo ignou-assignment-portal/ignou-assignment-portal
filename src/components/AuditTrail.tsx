@@ -81,6 +81,31 @@ export const AuditTrail: React.FC = () => {
     openSearchModal,
   } = useApp();
 
+  // Guard: Forensic Audit Trail is strictly hidden & inaccessible to Desk officials
+  if (!isAdmin || userRole === 'desk') {
+    return (
+      <div className="bg-white border border-rose-200 rounded-2xl p-8 sm:p-12 text-center max-w-lg mx-auto my-12 shadow-sm space-y-4 animate-in fade-in">
+        <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center mx-auto shadow-2xs">
+          <ShieldAlert className="w-7 h-7" />
+        </div>
+        <div className="space-y-1">
+          <h3 className="text-base sm:text-lg font-black text-zinc-900 tracking-tight">
+            Institutional Audit Trail Restricted
+          </h3>
+          <p className="text-xs text-zinc-600 leading-relaxed max-w-md mx-auto">
+            The <strong>Forensic Audit Trail</strong> is confidential and strictly hidden from Desk officials under IGNOU SC-2033 governance to preserve institutional accountability and tamper-resistance.
+          </p>
+        </div>
+        <div className="pt-2">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-zinc-100 text-zinc-700 border border-zinc-200">
+            <Lock className="w-3.5 h-3.5 text-zinc-500" />
+            Requires Coordinator Authorization (PIN: 2033)
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');

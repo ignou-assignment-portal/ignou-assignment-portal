@@ -2,8 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { ThemeSelector } from './ThemeSelector';
 import { DataSyncMonitor } from './DataSyncMonitor';
+import { RbacGovernanceSettings } from './RbacGovernanceSettings';
 import { formatCurrency, formatDate, formatDateTime } from '../utils/helpers';
-import { SessionArchiveRecord } from '../types';
+import { SessionArchiveRecord, RbacOperation, RbacAccessLevel } from '../types';
 import {
   Settings,
   Building2,
@@ -14,6 +15,10 @@ import {
   RotateCcw,
   ShieldCheck,
   ShieldAlert,
+  Shield,
+  Lock,
+  KeyRound,
+  UserCheck,
   Save,
   CheckCircle2,
   Archive,
@@ -43,7 +48,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 
-type SettingsTabId = 'general' | 'appearance' | 'rates' | 'sync';
+type SettingsTabId = 'general' | 'appearance' | 'rates' | 'sync' | 'rbac';
 
 export const SystemSettingsView: React.FC = () => {
   const {
@@ -52,6 +57,10 @@ export const SystemSettingsView: React.FC = () => {
     resetAllData,
     isAdmin,
     isUrlLockedDeskMode,
+    userRole,
+    rbacConfig,
+    updateRbacConfig,
+    resetRbacToDefaults,
     allIntakes,
     sessionIntakes,
     sessionCourseEvaluations,
@@ -409,6 +418,23 @@ export const SystemSettingsView: React.FC = () => {
               {pendingSyncQueue.length}
             </span>
           )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('rbac')}
+          id="btn-settings-tab-rbac"
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+            activeTab === 'rbac'
+              ? 'bg-white text-indigo-950 shadow-xs border border-zinc-200'
+              : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/50'
+          }`}
+        >
+          <ShieldCheck className={`w-4 h-4 ${activeTab === 'rbac' ? 'text-indigo-600' : 'text-zinc-500'}`} />
+          <span>Access Control & RBAC</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300">
+            Gov
+          </span>
         </button>
       </div>
 
@@ -1317,6 +1343,9 @@ export const SystemSettingsView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* TAB 5: ROLE-BASED ACCESS CONTROL (RBAC) & GOVERNANCE */}
+      {activeTab === 'rbac' && <RbacGovernanceSettings />}
 
       {/* Modal 2: Snapshot Detail Inspector Dialog */}
       {selectedArchiveDetail && (

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp, norm } from '../context/AppContext';
 import { formatDate, formatDateTime, isPracticalCourse } from '../utils/helpers';
-import { Printer, X, CheckCircle2, AlertTriangle, Calendar, FlaskConical, Pencil, Trash2 } from 'lucide-react';
+import { Printer, X, CheckCircle2, AlertTriangle, Calendar, FlaskConical, Pencil, Trash2, QrCode } from 'lucide-react';
 import { EditIntakeModal } from './EditIntakeModal';
 import { IntakeRecord } from '../types';
 import { InstitutionalSeal } from './InstitutionalSeal';
+import { ReceiptQRCode } from './ReceiptQRCode';
 
 export const ReceiptModal: React.FC = () => {
   const {
@@ -243,6 +244,21 @@ export const ReceiptModal: React.FC = () => {
               <span>Edit</span>
             </button>
 
+            {/* Verify Online Deep-Link Button */}
+            <button
+              type="button"
+              onClick={() => {
+                const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : '';
+                const url = `${origin}/?verify=${encodeURIComponent(selectedReceiptRecord.tokenNo.trim())}`;
+                window.open(url, '_blank', 'noopener,noreferrer');
+              }}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/70 hover:bg-emerald-900 text-emerald-200 border border-emerald-800 text-xs font-semibold rounded-lg transition shadow-xs cursor-pointer"
+              title="Open student verification page directly as scanned via QR"
+            >
+              <QrCode className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Verify Online</span>
+            </button>
+
             {/* Delete Intake Button - Requires PIN 2033 */}
             <button
               id="receipt-delete-btn"
@@ -339,10 +355,13 @@ export const ReceiptModal: React.FC = () => {
             </div>
           </div>
 
-          {/* Barcode & Verification Tracking Strip (No QR code) */}
-          <div className="mt-1.5 print:mt-1 p-1.5 print:p-1 bg-white border border-zinc-300 rounded-lg flex flex-row items-center justify-between gap-3">
-            {/* Barcode */}
+          {/* Barcode & Digital QR Code Verification Tracking Strip */}
+          <div className="mt-1.5 print:mt-1 p-2 print:p-1 bg-white border border-zinc-300 rounded-lg flex items-center justify-between gap-3">
+            {/* Linear Barcode */}
             <div className="flex flex-col items-start sm:items-center">
+              <span className="text-[8px] print:text-[6.5px] text-zinc-500 font-bold uppercase tracking-wider mb-0.5">
+                Physical Token Barcode
+              </span>
               <div className="h-6 print:h-4.5 flex items-end gap-[1.5px] px-2 py-0.5 bg-zinc-50 border border-zinc-200 rounded">
                 {barcodePattern.map((width, idx) => (
                   <div
@@ -357,15 +376,31 @@ export const ReceiptModal: React.FC = () => {
               </span>
             </div>
 
-            {/* Verification & Intake Status Badge */}
-            <div className="text-right">
+            {/* Verification Status Center Badge */}
+            <div className="hidden sm:flex flex-col items-center text-center px-1">
               <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-300 text-emerald-800 text-[10px] print:text-[8px] font-bold">
-                ✓ Verified & Intake Stamped at Desk
+                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                <span>Verified & Digitally Stamped</span>
               </div>
-              <div className="text-[10px] print:text-[7.5px] text-zinc-500 font-mono mt-0.5">
+              <div className="text-[9.5px] print:text-[7.5px] text-zinc-500 font-mono mt-0.5">
                 Enrol: {selectedReceiptRecord.enrollmentNo} • Prog: {selectedReceiptRecord.programmeCode}
               </div>
+              <span className="text-[8px] print:text-[6.5px] text-zinc-400 mt-0.5 print:hidden">
+                Scan QR to verify live on mobile
+              </span>
             </div>
+
+            {/* Unique 2D Mobile Verification QR Code */}
+            <ReceiptQRCode
+              tokenNo={selectedReceiptRecord.tokenNo}
+              enrollmentNo={selectedReceiptRecord.enrollmentNo}
+              studentName={selectedReceiptRecord.studentName}
+              programmeCode={selectedReceiptRecord.programmeCode}
+              session={selectedReceiptRecord.session}
+              submissionDate={currentReceiptDate || receiptDateVal}
+              courseCodes={safeCourseCodes}
+              size={66}
+            />
           </div>
 
           {/* Student Info Grid */}

@@ -22,6 +22,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { InstitutionalSeal } from './InstitutionalSeal';
+import { PWAInstallButton } from './PWAInstallButton';
 
 export type TabType =
   | 'INTAKE_DESK'
@@ -68,17 +69,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
     syncStatus,
   } = useApp();
 
-  // Guard against navigating to unauthorized tabs in Desk Official mode
+  // Guard against navigating to unauthorized tabs in Desk Official mode (Allow only Stages 1 & 2)
   React.useEffect(() => {
-    if (
-      (userRole === 'desk' || isUrlLockedDeskMode) &&
-      activeTab !== 'INTAKE_DESK' &&
-      activeTab !== 'EVALUATION_MASTER' &&
-      activeTab !== 'AUDIT_TRAIL'
-    ) {
-      setActiveTab('INTAKE_DESK');
+    if (!isAdmin || userRole === 'desk' || isUrlLockedDeskMode) {
+      if (activeTab !== 'INTAKE_DESK' && activeTab !== 'EVALUATION_MASTER') {
+        setActiveTab('INTAKE_DESK');
+      }
     }
-  }, [userRole, isUrlLockedDeskMode, activeTab, setActiveTab]);
+  }, [userRole, isUrlLockedDeskMode, isAdmin, activeTab, setActiveTab]);
 
   // Dynamic calculations for stage counters
   const intakeCount = sessionIntakes.length;
@@ -130,13 +128,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Remuneration & Claims',
       sublabel: 'Billing & bank dispatches',
       icon: Receipt,
-      adminOnly: true,
-      badge: `₹${settings.remunerationRatePerScript.toFixed(2)}`,
-      badgeColor: 'bg-purple-50 text-purple-900 border-purple-200',
+      adminOnly: false,
+      badge: isAdmin ? `₹${settings.remunerationRatePerScript.toFixed(2)}` : 'PIN Req.',
+      badgeColor: isAdmin
+        ? 'bg-purple-50 text-purple-900 border-purple-200'
+        : 'bg-amber-50 text-amber-900 border-amber-200',
     },
   ];
 
-  // Secondary Operational Registers
+  // Secondary Operational Registers (Accessible to Desk & Coordinator)
   const secondaryRegisters = [
     {
       id: 'SUBMISSIONS_TRACKER' as TabType,
@@ -166,10 +166,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: packetCount > 0 ? `${packetCount}` : null,
       badgeColor: 'bg-slate-100 text-slate-800 border-slate-200',
     },
-  ];
-
-  // Administration & Audit Sections
-  const adminSections = [
     {
       id: 'EVALUATORS' as TabType,
       label: 'Evaluator Directory',
@@ -177,6 +173,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: evalDirectoryCount > 0 ? `${evalDirectoryCount}` : null,
       badgeColor: 'bg-slate-100 text-slate-800 border-slate-200',
     },
+  ];
+
+  // Administration & Audit Sections (Strictly Protected for Coordinator / Admin)
+  const adminSections = [
     {
       id: 'INTEGRITY_AUDIT' as TabType,
       label: 'Integrity Audit',
@@ -189,8 +189,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'AUDIT_TRAIL' as TabType,
       label: 'Forensic Audit Trail',
       icon: HistoryIcon,
-      badge: 'Live',
-      badgeColor: 'bg-emerald-50 text-emerald-900 border-emerald-200',
+      adminOnly: true,
+      badge: 'Admin Only',
+      badgeColor: 'bg-indigo-50 text-indigo-900 border-indigo-200',
     },
     {
       id: 'SETTINGS' as TabType,
@@ -315,7 +316,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               {statutoryStages
                 .filter((stage) => {
-                  if (userRole === 'desk' || isUrlLockedDeskMode) {
+                  if (!isAdmin || userRole === 'desk' || isUrlLockedDeskMode) {
                     return stage.id === 'INTAKE_DESK' || stage.id === 'EVALUATION_MASTER';
                   }
                   return true;
@@ -427,8 +428,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
 
-          {/* SECTION 2: OPERATIONAL REGISTERS & TRACKING */}
-          {!(userRole === 'desk' || isUrlLockedDeskMode) && (
+          {/* SECTION 2: OPERATIONAL REGISTERS & TRACKING (Coordinator / Admin Only) */}
+          {isAdmin && (
             <div className="pt-2">
               {!isSidebarCollapsed && (
                 <div className="px-2 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center justify-between">
@@ -493,23 +494,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
 
-          {/* SECTION 3: MANAGEMENT, AUDIT & CONFIGURATION */}
-          <div className="pt-2">
-            {!isSidebarCollapsed && (
-              <div className="px-2 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                <span>Governance & Audit</span>
-              </div>
-            )}
+          {/* SECTION 3: MANAGEMENT, AUDIT & CONFIGURATION (Protected for Coordinator / Admin) */}
+          {isAdmin && (
+            <div className="pt-2">
+              {!isSidebarCollapsed && (
+                <div className="px-2 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                  <span>Governance & Audit</span>
+                </div>
+              )}
 
-            <div className="space-y-1">
-              {adminSections
-                .filter((item) => {
-                  if (userRole === 'desk' || isUrlLockedDeskMode) {
-                    return item.id === 'AUDIT_TRAIL';
-                  }
-                  return true;
-                })
-                .map((item) => {
+              <div className="space-y-1">
+                {adminSections.map((item) => {
                   const Icon = item.icon;
                   const isActive = activeTab === item.id;
                   const isRestricted = item.adminOnly && !isAdmin;
@@ -573,8 +568,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </button>
                   );
                 })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Mobile Google Sheets Sync Button */}
@@ -595,6 +591,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {syncStatus || (isSyncingSheets ? 'Syncing...' : 'Sync Google Sheets')}
             </span>
           </button>
+        </div>
+
+        {/* In-App PWA Install Action */}
+        <div className={`border-t border-slate-200 bg-slate-50/70 ${isSidebarCollapsed ? 'p-2 flex justify-center' : 'px-3 py-2'}`}>
+          <PWAInstallButton
+            variant="sidebar"
+            isCollapsed={isSidebarCollapsed}
+            id="sidebar-pwa-install-action"
+          />
         </div>
 
         {/* Sidebar Footer */}

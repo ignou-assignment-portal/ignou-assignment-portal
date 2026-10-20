@@ -3,6 +3,7 @@ import { useApp, norm } from '../context/AppContext';
 import { CourseEvaluationRecord, Evaluator } from '../types';
 import { calculateIGNOUGrade, formatDate } from '../utils/helpers';
 import { SCRIPT_URL } from '../services/sheetsService';
+import { CoordinatorPinChallengeModal } from './CoordinatorPinChallengeModal';
 import {
   Layers,
   Award,
@@ -48,7 +49,21 @@ export const CourseEvaluationMaster: React.FC = () => {
     isSyncingEvaluators,
     syncEvaluatorsDirectory,
     showToast,
+    canPerformOperation,
   } = useApp();
+
+  // Coordinator PIN Challenge Modal State for RBAC
+  const [pinChallenge, setPinChallenge] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    action: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    action: () => {},
+  });
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -244,8 +259,24 @@ export const CourseEvaluationMaster: React.FC = () => {
     showToast(`Allotted ${courseCodeDisplay} to ${selectedEvaluator}`);
   };
 
-  // Lock marks handler
+  // Lock marks handler (Protected by Coordinator PIN for Desk Role)
   const handleLockMarks = (evaluationId: string, shouldLock: boolean) => {
+    const perm = canPerformOperation('marks_locking');
+    if (!perm.allowed) {
+      showToast('Permission Denied: Marks locking is disabled for your role.', 'error');
+      return;
+    }
+
+    if (perm.requiresPin) {
+      setPinChallenge({
+        isOpen: true,
+        title: shouldLock ? 'Coordinator Authorization: Lock Marks' : 'Coordinator Authorization: Unlock Marks',
+        description: `Finalizing marks is coordinator-protected under SC-2033 governance. Enter Coordinator PIN to ${shouldLock ? 'lock' : 'unlock'} this script.`,
+        action: () => toggleLockMarks(evaluationId, shouldLock),
+      });
+      return;
+    }
+
     toggleLockMarks(evaluationId, shouldLock);
   };
 
@@ -311,11 +342,26 @@ export const CourseEvaluationMaster: React.FC = () => {
     setTimeout(() => setBatchMessage(null), 4000);
   };
 
-  // Batch Lock / Unlock
+  // Batch Lock / Unlock (Coordinator Protected)
   const handleBatchLock = (shouldLock: boolean) => {
     if (selectedIds.length === 0) return;
-    if (!shouldLock && !isAdmin) {
-      alert('Security Alert: Only an Administrator (Coordinator) can unlock marks for verified scripts.');
+
+    const perm = canPerformOperation('marks_locking');
+    if (!perm.allowed) {
+      showToast('Permission Denied: Batch marks locking is disabled for your role.', 'error');
+      return;
+    }
+
+    if (perm.requiresPin) {
+      setPinChallenge({
+        isOpen: true,
+        title: shouldLock ? `Coordinator Authorization: Batch Lock ${selectedIds.length} Scripts` : `Coordinator Authorization: Batch Unlock ${selectedIds.length} Scripts`,
+        description: `Batch marks finalization is coordinator-protected. Enter Coordinator PIN to ${shouldLock ? 'lock' : 'unlock'} these ${selectedIds.length} scripts.`,
+        action: () => {
+          batchLockMarks(selectedIds, shouldLock);
+          setSelectedIds([]);
+        },
+      });
       return;
     }
 
@@ -1318,6 +1364,15 @@ export const CourseEvaluationMaster: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Coordinator PIN Challenge Modal for Marks Locking Protection */}
+      <CoordinatorPinChallengeModal
+        isOpen={pinChallenge.isOpen}
+        onClose={() => setPinChallenge((prev) => ({ ...prev, isOpen: false }))}
+        onSuccess={pinChallenge.action}
+        actionTitle={pinChallenge.title}
+        actionDescription={pinChallenge.description}
+      />
     </div>
   );
 };

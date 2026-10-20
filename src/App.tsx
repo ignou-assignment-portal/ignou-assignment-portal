@@ -45,14 +45,14 @@ const DashboardContent: React.FC<DashboardContentProps> = ({ onViewHome }) => {
     fetchAllData();
   }, []);
 
-  // Ensure restricted tabs are redirected in desk mode
+  // Ensure restricted tabs are redirected in desk mode (Allow only INTAKE_DESK & EVALUATION_MASTER)
   useEffect(() => {
-    if (userRole === 'desk' || isUrlLockedDeskMode) {
-      if (activeTab !== 'INTAKE_DESK' && activeTab !== 'EVALUATION_MASTER' && activeTab !== 'AUDIT_TRAIL') {
+    if (!isAdmin || userRole === 'desk' || isUrlLockedDeskMode) {
+      if (activeTab !== 'INTAKE_DESK' && activeTab !== 'EVALUATION_MASTER') {
         setActiveTab('INTAKE_DESK');
       }
     }
-  }, [userRole, isUrlLockedDeskMode, activeTab]);
+  }, [userRole, isUrlLockedDeskMode, isAdmin, activeTab]);
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
@@ -74,17 +74,17 @@ const DashboardContent: React.FC<DashboardContentProps> = ({ onViewHome }) => {
           }`}>
             <ErrorBoundary fallbackTitle="Workspace Desk Encountered an Issue">
               {activeTab === 'INTAKE_DESK' && <IntakeDesk />}
-              {activeTab === 'SUBMISSIONS_TRACKER' && <CourseSubmissionsTracker />}
-              {activeTab === 'INTAKE_REGISTER' && <IntakeRegister />}
               {activeTab === 'EVALUATION_MASTER' && <CourseEvaluationMaster />}
-              {activeTab === 'SED_AWARD_SHEETS' && <RegionalCentreSEDAwardSheet />}
-              {activeTab === 'MARKS_ENTRY' && <MarksEntry />}
-              {activeTab === 'COURSE_LEDGER' && <CourseLedgerView />}
-              {activeTab === 'EVALUATORS' && <EvaluatorDirectory />}
-              {activeTab === 'REMUNERATION' && (!isUrlLockedDeskMode && isAdmin ? <RemunerationBilling /> : <IntakeDesk />)}
-              {activeTab === 'INTEGRITY_AUDIT' && (!isUrlLockedDeskMode && isAdmin ? <IntegrityAuditView /> : <IntakeDesk />)}
-              {activeTab === 'AUDIT_TRAIL' && <AuditTrail />}
-              {activeTab === 'SETTINGS' && (!isUrlLockedDeskMode && isAdmin ? <SystemSettingsView /> : <IntakeDesk />)}
+              {isAdmin && activeTab === 'SUBMISSIONS_TRACKER' && <CourseSubmissionsTracker />}
+              {isAdmin && activeTab === 'INTAKE_REGISTER' && <IntakeRegister />}
+              {isAdmin && activeTab === 'SED_AWARD_SHEETS' && <RegionalCentreSEDAwardSheet />}
+              {isAdmin && activeTab === 'MARKS_ENTRY' && <MarksEntry />}
+              {isAdmin && activeTab === 'COURSE_LEDGER' && <CourseLedgerView />}
+              {isAdmin && activeTab === 'EVALUATORS' && <EvaluatorDirectory />}
+              {isAdmin && activeTab === 'REMUNERATION' && <RemunerationBilling />}
+              {isAdmin && activeTab === 'INTEGRITY_AUDIT' && <IntegrityAuditView />}
+              {isAdmin && activeTab === 'AUDIT_TRAIL' && <AuditTrail />}
+              {isAdmin && activeTab === 'SETTINGS' && <SystemSettingsView />}
             </ErrorBoundary>
           </main>
 

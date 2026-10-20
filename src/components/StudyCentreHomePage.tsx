@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { ThemeSelector } from './ThemeSelector';
 import { InstitutionalSeal } from './InstitutionalSeal';
@@ -55,6 +55,41 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
   // Public Student Search & Verification State
   const [searchQuery, setSearchQuery] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
+  const [verifiedViaQr, setVerifiedViaQr] = useState(false);
+
+  // Auto-detect mobile QR code verification deep-link (?verify=TOKEN or ?enrol=ENROL or #verify=TOKEN)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const verifyParam = params.get('verify') || params.get('token') || params.get('enrol');
+      
+      let hashParam = '';
+      if (window.location.hash) {
+        const match = window.location.hash.match(/[#&?](?:verify|token|enrol)=([^&]+)/i);
+        if (match) {
+          hashParam = decodeURIComponent(match[1]);
+        }
+      }
+
+      const rawTarget = (verifyParam || hashParam || '').trim();
+      if (rawTarget) {
+        setSearchQuery(rawTarget);
+        setHasSearched(true);
+        setVerifiedViaQr(true);
+
+        setTimeout(() => {
+          const targetEl = document.getElementById('student-verification');
+          if (targetEl) {
+            targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 350);
+      }
+    } catch (e) {
+      console.warn('Error reading verification URL params:', e);
+    }
+  }, [allIntakes]);
 
   // Tracker State for Registered Programmes & Candidate / Script Submissions
   const [trackerSession, setTrackerSession] = useState<string>('ALL');
@@ -314,7 +349,7 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
             </nav>
 
             {/* PWA Install Button with New Icon */}
-            <PWAInstallButton className="hidden sm:inline-flex" />
+            <PWAInstallButton id="homepage-pwa-install-action" className="inline-flex shrink-0" />
 
             {/* Theme Selector */}
             <ThemeSelector variant="dropdown" />
@@ -547,6 +582,35 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
                 </div>
               ) : (
                 <div className="space-y-3">
+                  {verifiedViaQr && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-950 flex items-center justify-between gap-3 text-xs shadow-2xs">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                          <CheckCircle2 className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="font-extrabold text-emerald-900 flex items-center gap-1.5">
+                            <span>Digital QR Verification Authenticated</span>
+                            <span className="px-1.5 py-0.2 bg-emerald-200/80 text-emerald-900 rounded text-[10px] font-mono font-bold">
+                              SC-2033
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-emerald-800">
+                            Official assignment submission acknowledgment validated from Study Centre 2033 intake ledger.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setVerifiedViaQr(false)}
+                        className="text-emerald-700 hover:text-emerald-950 text-xs font-semibold p-1 cursor-pointer"
+                        title="Dismiss notification"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between text-xs text-zinc-600 font-semibold px-1">
                     <span>Matching Records Found: <strong>{searchResults.length}</strong></span>
                     <span className="text-emerald-700 font-bold flex items-center gap-1">
