@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { ThemeSelector } from './ThemeSelector';
 import { InstitutionalSeal } from './InstitutionalSeal';
-import { PWAInstallButton } from './PWAInstallButton';
 import {
   ShieldAlert,
   Lock,
@@ -347,9 +346,6 @@ export const StudyCentreHomePage: React.FC<StudyCentreHomePageProps> = ({
                 Contact & Location
               </a>
             </nav>
-
-            {/* PWA Install Button with New Icon */}
-            <PWAInstallButton id="homepage-pwa-install-action" className="inline-flex shrink-0" />
 
             {/* Theme Selector */}
             <ThemeSelector variant="dropdown" />

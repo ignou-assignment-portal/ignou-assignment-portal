@@ -12,7 +12,6 @@ import {
   Home,
 } from 'lucide-react';
 import { InstitutionalSeal } from './InstitutionalSeal';
-import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
   onViewHome?: () => void;
@@ -270,9 +269,6 @@ export const Header: React.FC<HeaderProps> = ({ onViewHome }) => {
               </button>
             </div>
           )}
-
-          {/* PWA Install Button with New Icon */}
-          <PWAInstallButton id="header-pwa-install-action" className="shrink-0" />
 
           {/* Return to Study Centre Home Page */}
           {onViewHome && (

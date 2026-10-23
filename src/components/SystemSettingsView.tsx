@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { ThemeSelector } from './ThemeSelector';
 import { DataSyncMonitor } from './DataSyncMonitor';
 import { RbacGovernanceSettings } from './RbacGovernanceSettings';
+import { CentreInstallAppBanner } from './CentreInstallAppBanner';
 import { formatCurrency, formatDate, formatDateTime } from '../utils/helpers';
 import { SessionArchiveRecord, RbacOperation, RbacAccessLevel } from '../types';
 import {
@@ -546,6 +547,9 @@ export const SystemSettingsView: React.FC = () => {
               )}
             </div>
           </form>
+
+          {/* Dedicated In-App PWA Install Banner (Centre Configuration) */}
+          <CentreInstallAppBanner />
 
           {/* Security Credentials Management (Gatekeeper PINs) */}
           {!isUrlLockedDeskMode && isAdmin && (
@@ -1208,6 +1212,31 @@ export const SystemSettingsView: React.FC = () => {
                 <Download className="w-4 h-4" />
                 <span>Export Full JSON Archive</span>
               </button>
+            </div>
+
+            {/* Word Blueprint Document Download Card */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-indigo-50/60 border border-indigo-200 rounded-xl text-xs">
+              <div>
+                <div className="flex items-center gap-1.5 font-bold text-indigo-950">
+                  <FileText className="w-4 h-4 text-indigo-700 shrink-0" />
+                  <span>Download Operational System Blueprint (Word .DOCX)</span>
+                  <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-indigo-200/80 text-indigo-900 border border-indigo-300">
+                    Official
+                  </span>
+                </div>
+                <p className="text-indigo-900/80 mt-0.5 max-w-lg">
+                  Complete architecture specification, RBAC governance rules, 4-stage assignment lifecycle protocols, and technical schemas in editable Microsoft Word format.
+                </p>
+              </div>
+              <a
+                href="/IGNOU_SC2033_Web_App_Blueprint.docx"
+                download="IGNOU_SC2033_Web_App_Blueprint.docx"
+                className="px-4 py-2 bg-indigo-900 hover:bg-indigo-800 text-white rounded-xl font-semibold flex items-center gap-2 shrink-0 transition cursor-pointer shadow-xs"
+                title="Download Microsoft Word (.docx) Blueprint"
+              >
+                <Download className="w-4 h-4 text-amber-300" />
+                <span>Download Word (.DOCX)</span>
+              </a>
             </div>
 
             {isAdmin && (

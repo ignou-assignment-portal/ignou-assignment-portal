@@ -22,7 +22,6 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { InstitutionalSeal } from './InstitutionalSeal';
-import { PWAInstallButton } from './PWAInstallButton';
 
 export type TabType =
   | 'INTAKE_DESK'
@@ -591,15 +590,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {syncStatus || (isSyncingSheets ? 'Syncing...' : 'Sync Google Sheets')}
             </span>
           </button>
-        </div>
-
-        {/* In-App PWA Install Action */}
-        <div className={`border-t border-slate-200 bg-slate-50/70 ${isSidebarCollapsed ? 'p-2 flex justify-center' : 'px-3 py-2'}`}>
-          <PWAInstallButton
-            variant="sidebar"
-            isCollapsed={isSidebarCollapsed}
-            id="sidebar-pwa-install-action"
-          />
         </div>
 
         {/* Sidebar Footer */}

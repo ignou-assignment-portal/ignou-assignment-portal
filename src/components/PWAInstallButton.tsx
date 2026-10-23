@@ -285,10 +285,21 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 </div>
               </div>
 
+              {/* Download Blueprint Action Link */}
+              <a
+                href="/IGNOU_SC2033_Web_App_Blueprint.docx"
+                download="IGNOU_SC2033_Web_App_Blueprint.docx"
+                className="mt-3 w-full py-2 px-3 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl text-amber-950 text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs"
+                title="Download Official Operational System Blueprint (.docx)"
+              >
+                <Download className="w-3.5 h-3.5 text-amber-800 shrink-0" />
+                <span>Download System Blueprint (.DOCX)</span>
+              </a>
+
               <button
                 type="button"
                 onClick={() => setShowGuideModal(false)}
-                className="mt-4 w-full py-2.5 bg-linear-to-r from-slate-900 to-indigo-950 hover:from-indigo-950 hover:to-indigo-900 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
+                className="mt-2 w-full py-2.5 bg-linear-to-r from-slate-900 to-indigo-950 hover:from-indigo-950 hover:to-indigo-900 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
               >
                 Done
               </button>

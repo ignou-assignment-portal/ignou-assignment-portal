@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan to restore and enhance the In-App Install Action across both the top header and left sidebar navigation, featuring warm amber styling, download iconography, and interactive guided instructions for mobile home screens and desktop docks.",
-  "updatedAt": "2026-10-20T13:25:07.923179841Z",
-  "requestFeedback": true,
-  "userFacing": true
+  "summary":  "Implementation plan to restrict the 'Install App' action exclusively to Centre Configuration under the General Centre Profile section, featuring a rich desktop & mobile install banner with direct installation triggers, mobile handoff QR code, and guided setup modal.",
+  "updatedAt":  "2026-10-23T04:30:03.946048362Z",
+  "requestFeedback":  true,
+  "userFacing":  true
 }

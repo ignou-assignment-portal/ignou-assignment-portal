@@ -1,32 +1,35 @@
-# In-App PWA Install Action Across Header & Sidebar Navigation
+# Dedicated 'Install App' Banner in Centre Configuration (Desktop & Mobile)
 
-Restore and prominently integrate the in-app **"Install App"** action across both the top Header navigation bar and the main Left Sidebar navigation rail. The action features a warm amber accent badge, download iconography, and a comprehensive guided installation modal for mobile home screens (iOS/Android) and desktop docks (Windows/macOS/Linux), transitioning cleanly to an **"App Guide"** trigger when running in installed standalone mode.
+Restructure the application installation experience by removing the "Install App" button from global headers and sidebars, and establishing a dedicated, high-visibility **"Install App" Banner** exclusively within **Centre Configuration** under the **General Centre Profile** section.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following product and UX decisions were confirmed during the interactive clarification session:
+> The following architectural and UX specifications were confirmed during the interactive clarification session:
 
-- **Confirmed Decision 1 (Dual Placement)**: The Install App action will be prominently mounted in **both** the top header navigation bar and the left sidebar navigation drawer, ensuring seamless discovery whether users navigate via desktop rail or mobile header.
-- **Confirmed Decision 2 (Visual Styling)**: Styled with a **warm amber accent badge** (`from-amber-50 to-orange-50` with amber border and rich amber typography) paired with a high-contrast download icon (`Download` from Lucide).
-- **Confirmed Decision 3 (Post-Install State)**: When the application is already running in standalone mode or detected as installed on the device, the button will dynamically update to **"App Guide"**, providing direct access to offline usage tips, launch instructions, and PWA capabilities without cluttering the screen.
-- **Preserved Governance**: The 2-Stage menu isolation for Desk Officials (`Stage 1: Student Intake & Desk` and `Stage 2: Evaluation Master`), coordinator-protected mark locking/bills, and hidden forensic audit trail remain strictly intact.
+- **Confirmed Decision 1 (Exclusive Placement)**: The Install App capability will be restricted exclusively to **Centre Configuration** (`SETTINGS` tab) and completely removed from the global top Header (`Header.tsx`), the left Sidebar (`Sidebar.tsx`), and the public home page header (`StudyCentreHomePage.tsx`).
+- **Confirmed Decision 2 (Exact Section Target)**: Mounted directly under the **General Centre Profile / Institutional Centre Details** section within the General tab of Centre Configuration.
+- **Confirmed Decision 3 (Interactive Controls Suite)**: The banner will feature:
+  1. **Direct Native Install Trigger**: Immediately invokes Chromium / Edge / Android `beforeinstallprompt`.
+  2. **Mobile Handoff QR Code**: Displays a scannable QR code generated from the current app URL so coordinators and desk staff can easily install the PWA on companion smartphones and tablets.
+  3. **Guided Installation Modal**: Step-by-step illustrated manual for iOS Safari (*Add to Home Screen*) and desktop dock pinning.
+  4. **Post-Install Standalone Awareness**: Clear badge and status indicating when the application is already running as an installed standalone PWA.
 
 ---
 
 ## 1. Overview & Core Concept
 
 ### What It Does
-Provides an accessible, native-feeling in-app install workflow for IGNOU Study Centre 2033 operators and students. Users can install the portal directly to their smartphone home screen (iOS Safari / Android Chrome) or desktop taskbar/dock (Chrome / Edge / Brave), giving them full-screen offline-ready operation with zero browser URL bar overhead.
+Centralizes progressive web application (PWA) management into the administrative **Centre Configuration & Governance** workspace. Rather than cluttering general navigation bars across day-to-day intake operations, system installation is treated as a foundational centre setup task. Coordinators and staff setting up counter terminals or mobile scanning stations can install the desktop dock shortcut, trigger mobile installation via QR code, or review offline operational guides all in one place.
 
 ### Target Audience & Persona
-- **Front Counter Desk Officials & Evaluators**: Quick one-tap launch from their tablet, desktop, or mobile workstation without typing URLs or navigating browser bookmarks.
-- **Centre Coordinator**: Full-screen standalone monitoring of intake cycles, mark locks, and gazette award sheets.
-- **Students & Evaluators on Public Portal**: Quick installation to check assignment receipt statuses and regional guidelines offline.
+- **Study Centre Coordinator (`admin` role)**: Configures desk kiosks and distributes mobile links to counter staff.
+- **Counter Staff & Evaluators**: Scans the setup QR code or installs the desktop workstation app during workstation onboarding.
 
 ### Key Value
-- **Zero Confusion**: Solves the browser-specific hidden install problem by providing an immediate, visible UI button that triggers the browser prompt or shows visual step-by-step installation guides.
-- **Offline Reliability**: Leverages existing PWA service worker caching to ensure fast loading even during regional network drops.
+- **Zero Global Clutter**: Cleans the top Header and left Sidebar navigation, keeping intake and evaluation workflows uncluttered.
+- **Seamless Desktop-to-Mobile Handoff**: The interactive QR code allows instant transfer from a desktop administration monitor to an operator's mobile smartphone.
+- **Offline & Standalone Preparedness**: Informs operators of the offline caching mechanism and standalone full-screen benefits before deployment.
 
 ---
 
@@ -34,86 +37,82 @@ Provides an accessible, native-feeling in-app install workflow for IGNOU Study C
 
 ### Key User Flows
 
-#### A. Initial Visit / Uninstalled State
-1. **Header Navigation Bar**:
-   - The user sees a warm amber button labeled `Install App` with a download icon right next to the role switcher and public home trigger.
-   - On small screens, the button scales gracefully with compact padding to avoid pushing other actions out of view.
-2. **Left Sidebar Navigation Menu**:
-   - In the expanded sidebar, an amber-accented card or action item sits prominently above the active cycle footer, displaying `Install App` with an amber `PWA` pill tag and download badge.
-   - When the sidebar is collapsed to icon-only mode, it renders a sleek download icon with a tooltip explaining *"Install IGNOU SC-2033 App"*.
-3. **Click Interaction**:
-   - **Chromium / Edge / Android**: Directly invokes the native browser `beforeinstallprompt` dialog for 1-click home screen or desktop dock installation.
-   - **iOS Safari / Fallback**: Opens the interactive **Installation Guide Modal** featuring tabbed instructions for Mobile (Safari Share → Add to Home Screen) and Desktop (Address Bar Install Icon / Browser Menu).
+#### A. Global Navigation State
+1. **Header Navigation Bar (`Header.tsx`)**: The install button is cleanly removed, restoring a streamlined header containing only the academic seal, cycle selector, role switcher, home link, and sign-out action.
+2. **Left Sidebar (`Sidebar.tsx`)**: The install card is removed from the sidebar rail and footer, preserving the clean two-stage focus for Desk Officials and institutional registers for Coordinators.
 
-#### B. Installed Standalone State
-1. When launched from the home screen or running in standalone display mode, both the Header and Sidebar buttons automatically switch their label to `App Guide`.
-2. Clicking `App Guide` opens the guided offline reference modal, showing how the app synchronizes data, stores offline tokens, and caches academic registers.
+#### B. Centre Configuration View (`SystemSettingsView.tsx`)
+1. User navigates to **Centre Configuration** (via sidebar or settings shortcut).
+2. Under the **General** tab, beneath the **Institutional Centre Details (Host Institution, Code, Regional Centre)** form, a dedicated **PWA Installation Banner** is rendered:
+   - **Banner Header**: Academic Seal / PWA badge, clear headline *"Install IGNOU SC-2033 Terminal Application"*, and explanatory subtext highlighting offline execution and zero-address-bar productivity.
+   - **Action Strip**:
+     - **"Install to This Device"** button: Primary warm amber / indigo action with download icon. Triggers native browser install or guided modal.
+     - **"Show Mobile QR Code"** toggle: Expands an inline scannable QR code with instructions to scan with an iPhone or Android camera to install immediately on mobile.
+     - **"Setup Guide & Instructions"** button: Opens the multi-device illustrated guide modal.
+   - **Status Badge**: If already launched in standalone mode, highlights *"Application Installed & Running Standalone (Offline Ready)"*.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Dual Navigation Presence (Header + Sidebar)**
-  - *Chosen Approach*: Embed the button in both `Header.tsx` (top-right utility bar) and `Sidebar.tsx` (navigation rail).
-  - *Why*: User confirmed preference. Ensures immediate visibility on both wide desktop displays where users focus on the sidebar, and mobile viewports where the header is primary.
-- **Decision 2: "App Guide" Mode Over Complete Hiding**
-  - *Chosen Approach*: Switch to "App Guide" rather than completely unmounting when installed.
-  - *Why*: User confirmed preference. Allows users to easily access offline documentation and re-check installation steps on companion devices.
-- **Decision 3: Reusable Component Architecture (`PWAInstallButton.tsx`)**
-  - *Chosen Approach*: Leverage and enhance the dedicated `PWAInstallButton` component supporting multiple variants (`compact`, `sidebar`, `nav`, `full`).
-  - *Why*: Eliminates duplicated event listener code and ensures uniform event handling for `beforeinstallprompt` and `appinstalled` across the entire codebase.
+- **Decision 1: Removal from Global Navigation**
+  - *Chosen Approach*: Fully remove install buttons from Header and Sidebar.
+  - *Why*: User explicitly confirmed *"Yes, display exclusively in Centre Configuration and remove elsewhere"*. This keeps operational views focused on core academic tasks.
+- **Decision 2: Dual Desktop & Mobile QR Code Integration**
+  - *Chosen Approach*: Embed a high-contrast QR code directly in the banner using the existing `qrcode` library.
+  - *Why*: Makes mobile onboarding frictionless. A coordinator on a desktop terminal can open Centre Configuration and have counter staff scan the QR code with their phones in seconds.
+- **Decision 3: Reusable Modal Support**
+  - *Chosen Approach*: Keep the existing detailed step-by-step instructions (iOS Safari and Desktop browser) intact within the banner's guide trigger.
+  - *Why*: Ensures users on browsers without `beforeinstallprompt` (such as Safari) receive clear, accurate guidance.
 
 ---
 
-## 4. Technical Architecture & Data Strategy
+## 4. Technical Architecture & Component Layout
 
-### Visual Component Diagram
+### Component Hierarchy Diagram
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        IGNOU SC-2033 Web App                          │
+│               Centre Configuration (SystemSettingsView.tsx)            │
 ├────────────────────────────────────────────────────────────────────────┤
-│ Top Header (Header.tsx)                                                │
-│ ┌───────────────┐  ┌─────────────┐  ┌──────────────────┐  ┌──────────┐ │
-│ │ Academic Seal │  │ Role Toggle │  │ [Install App] ◄──┼──┼─ Header  │ │
-│ └───────────────┘  └─────────────┘  └──────────────────┘  └──────────┘ │
+│ Tabs: [General] [Appearance] [Rates] [Governance] [Database]           │
 ├────────────────────────────────────────────────────────────────────────┤
-│ Sidebar Navigation (Sidebar.tsx)                                       │
-│ ┌────────────────────────────┐                                         │
-│ │ Stage 1: Student Intake    │                                         │
-│ ├────────────────────────────┤                                         │
-│ │ Stage 2: Evaluation Master │                                         │
-│ ├────────────────────────────┤                                         │
-│ │ [Install SC-2033 App] ◄────┼── Sidebar Variant                       │
-│ ├────────────────────────────┤                                         │
-│ │ Session / Cycle Footer     │                                         │
-│ └────────────────────────────┘                                         │
+│ [Institutional Centre Details Form]                                    │
+│ - Centre Code, Regional Centre, Host Institution, Coordinator Contact  │
+├────────────────────────────────────────────────────────────────────────┤
+│ ▼ NEW: Dedicated Install App Banner (Desktop & Mobile)                │
+│ ┌────────────────────────────────────────────────────────────────────┐ │
+│ │ ⬡ IGNOU SC-2033 Terminal Application · PWA Installation            │ │
+│ │                                                                    │ │
+│ │ [ Install App on This Device ]  [ 📱 Scan Mobile QR ]  [ 📖 Guide ]│ │
+│ │                                                                    │ │
+│ │ ┌───────────────────┐  ┌─────────────────────────────────────────┐ │ │
+│ │ │  Scannable QR     │  │ Features:                               │ │ │
+│ │ │  Code for Mobile  │  │ • 100% Offline Counter Operation        │ │ │
+│ │ │  Handoff          │  │ • Dedicated Desktop Dock / Home Screen   │ │ │
+│ │ └───────────────────┘  └─────────────────────────────────────────┘ │ │
+│ └────────────────────────────────────────────────────────────────────┘ │
+├────────────────────────────────────────────────────────────────────────┤
+│ [Gatekeeper PIN Security Settings]                                     │
 └────────────────────────────────────────────────────────────────────────┘
-                                 │ Click
-                                 ▼
-              ┌─────────────────────────────────────┐
-              │ Has Native `beforeinstallprompt`?   │
-              └──────────────────┬──────────────────┘
-                                 │
-                 ┌───────────────┴───────────────┐
-                 ▼ (Yes)                         ▼ (No / iOS)
-       [Native OS Prompt]              [Guided Instructions Modal]
-       - Add to Home Screen            - Mobile: iOS Safari Guide
-       - Desktop Dock Pin              - Desktop: Address bar icon
 ```
 
-### Component Implementation Tasks
+### File Modification Blueprint
 
-1. **`src/components/Sidebar.tsx`**:
-   - Import `PWAInstallButton` from `./PWAInstallButton`.
-   - Mount `<PWAInstallButton variant="sidebar" />` right above the sidebar footer.
-   - For collapsed sidebar view, ensure compact icon-only representation with proper tooltip and touch target ($\ge 40\text{px}$).
-2. **`src/components/Header.tsx`**:
-   - Ensure `<PWAInstallButton variant="compact" />` is prominently visible in the header action strip, with responsive styling (`hidden sm:inline-flex` or responsive text truncation) so it never overflows on small mobile devices.
-3. **`src/components/PWAInstallButton.tsx`**:
-   - Verify variant styles:
-     - `sidebar`: Full-width banner with amber gradient, download icon, label, and `PWA` tag.
-     - `compact`: Elegant inline amber pill/button with download icon.
-   - Confirm proper state transitions between `Install App` and `App Guide`.
-4. **Verification**:
-   - Test build via `compile_applet` and verify no TypeScript or lint regressions.
+1. **`src/components/CentreInstallAppBanner.tsx`** (New Component):
+   - Handles `beforeinstallprompt` and `appinstalled` events.
+   - Detects standalone mode via `display-mode: standalone`.
+   - Generates canvas QR code for `window.location.origin` or current URL.
+   - Renders responsive desktop/mobile action bar with guided instructions modal.
+2. **`src/components/SystemSettingsView.tsx`**:
+   - Mount `<CentreInstallAppBanner />` under the General Centre Details form in `activeTab === 'general'`.
+3. **`src/components/Header.tsx`**:
+   - Remove `<PWAInstallButton />` from the header toolbar.
+4. **`src/components/Sidebar.tsx`**:
+   - Remove `<PWAInstallButton />` from the sidebar rail.
+5. **`src/components/StudyCentreHomePage.tsx`**:
+   - Remove `<PWAInstallButton />` from the public homepage navigation.
+6. **`src/components/Navigation.tsx`**:
+   - Clean up export references.
+7. **Verification**:
+   - Verify compilation with `compile_applet` and type check with `lint_applet`.
