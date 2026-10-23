@@ -1494,10 +1494,12 @@ export const OFFICIAL_APPS_SCRIPT_CODE = `/**
  * 
  * ARCHITECTURAL SPECIFICATION:
  * (A) ASSIGNMENT OPERATIONS & ACADEMIC:
- *     1. Student Intake & Desk (Intake_Register)
- *     2. Evaluation Master & Course Ledger (Course_Ledger & Evaluators_Master)
- *     3. SED Award Sheets (Award_Sheets) & Remuneration Claims
+ *     1. Student Intake & Desk (intakeRegister / Intake_Register)
+ *     2. Evaluation Master & Course Ledger (courseLedger / Course_Ledger)
+ *     3. Evaluators Master (evaluatorsMaster / Evaluators_Master)
+ *     4. SED Award Sheets (awardSheets / Award_Sheets)
  *     --> Data from Intake Desk is saved to Google Sheets (doPost) and kept in sync.
+ *     --> Each intake row is appended and auto-unpacked into Course Ledger rows.
  * 
  * (B) STUDENT STATUS ONLY (Admission & Re-Registration):
  *     --> Read-Only from Google Sheets (doGet) or imported Excel.
@@ -1511,19 +1513,24 @@ function doGet(e) {
 
   // -------------------------------------------------------------
   // GROUP (A): ASSIGNMENT OPERATIONS & ACADEMIC (Synchronized Data)
+  // Supports both snake_case and camelCase sheet names
   // -------------------------------------------------------------
-  result.Intake_Register = getSheetDataAsArray(ss, "Intake_Register");
-  result.intakeRegister = result.Intake_Register;
-  result.intakes = result.Intake_Register;
+  var intakeData = getSheetDataByAliases(ss, ["intakeRegister", "Intake_Register", "IntakeRegister", "Intake Register", "Intake"]);
+  result.intakeRegister = intakeData;
+  result.Intake_Register = intakeData;
+  result.intakes = intakeData;
 
-  result.Course_Ledger = getSheetDataAsArray(ss, "Course_Ledger");
-  result.courseLedger = result.Course_Ledger;
+  var ledgerData = getSheetDataByAliases(ss, ["courseLedger", "Course_Ledger", "CourseLedger", "Course Ledger"]);
+  result.courseLedger = ledgerData;
+  result.Course_Ledger = ledgerData;
 
-  result.Evaluators_Master = getSheetDataAsArray(ss, "Evaluators_Master");
-  result.evaluatorsMaster = result.Evaluators_Master;
+  var evalData = getSheetDataByAliases(ss, ["evaluatorsMaster", "Evaluators_Master", "EvaluatorsMaster", "Evaluators"]);
+  result.evaluatorsMaster = evalData;
+  result.Evaluators_Master = evalData;
 
-  result.Award_Sheets = getSheetDataAsArray(ss, "Award_Sheets");
-  result.awardSheets = result.Award_Sheets;
+  var awardData = getSheetDataByAliases(ss, ["awardSheets", "Award_Sheets", "AwardSheets"]);
+  result.awardSheets = awardData;
+  result.Award_Sheets = awardData;
 
   // -------------------------------------------------------------
   // GROUP (B): STUDENT STATUS ONLY (Admission & Re-Registration)
@@ -1537,18 +1544,22 @@ function doGet(e) {
     var sheetName = sheet.getName();
     var lower = sheetName.toLowerCase();
 
-    // Identify student admission / re-registration tabs
+    // Skip Group (A) operational sheets
+    if (
+      lower.includes("intake") ||
+      lower.includes("ledger") ||
+      lower.includes("evaluator") ||
+      lower.includes("award")
+    ) {
+      continue;
+    }
+
     var isFresh = lower.includes("fresh");
     var isRR = lower.includes("rr") || lower.includes("re-reg") || lower.includes("rereg");
     var isAdmission = lower.includes("admission") || lower.includes("registration") || lower.includes("student");
 
-    // Skip Group (A) operational sheets
-    if (sheetName === "Intake_Register" || sheetName === "Course_Ledger" || sheetName === "Evaluators_Master" || sheetName === "Award_Sheets") {
-      continue;
-    }
-
     if (isFresh || isRR || isAdmission) {
-      var rows = getSheetDataAsArray(ss, sheetName);
+      var rows = getSheetDataAsArray(sheet);
       result[sheetName] = rows;
 
       var defaultCadre = isRR ? "RE_REGISTRATION" : "FRESH";
@@ -1562,11 +1573,10 @@ function doGet(e) {
         var r = rows[j];
         if (!r.cadre && !r.Cadre) r.cadre = defaultCadre;
         if (!r.session && !r.Session) r.session = defaultSession;
-        
-        // Preserve exact Contact and Email fields
+
         var emailVal = r["Email"] || r["Email ID"] || r["Email_ID"] || r["email"] || r["studentEmail"] || r["Candidate Email"] || r["Email Address"] || "";
         if (emailVal) r.studentEmail = String(emailVal).trim();
-        
+
         var phoneVal = r["Mobile Number"] || r["Mobile No."] || r["Mobile No"] || r["Mobile"] || r["Contact"] || r["studentPhone"] || r["phone"] || "";
         if (phoneVal) r.studentPhone = String(phoneVal).trim();
 
@@ -1594,60 +1604,141 @@ function doPost(e) {
   var action = body.action || "UNKNOWN";
   var payload = body.payload || body;
 
-  // -------------------------------------------------------------
-  // GROUP (A): ASSIGNMENT OPERATIONS & ACADEMIC INTAKE
-  // -------------------------------------------------------------
+  // 1. Connection Ping & Health Diagnostics
+  if (action === "PING" || action === "TEST_CONNECTION") {
+    var sheetNames = [];
+    var all = ss.getSheets();
+    for (var i = 0; i < all.length; i++) {
+      sheetNames.push(all[i].getName());
+    }
+    var intakeSheet = findSheetByAliases(ss, ["intakeRegister", "Intake_Register", "IntakeRegister"]);
+    var ledgerSheet = findSheetByAliases(ss, ["courseLedger", "Course_Ledger", "CourseLedger"]);
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "success",
+      action: action,
+      message: "Google Apps Script connection active and ready.",
+      sheets: sheetNames,
+      intakeTab: intakeSheet ? intakeSheet.getName() : "None",
+      ledgerTab: ledgerSheet ? ledgerSheet.getName() : "None",
+      totalIntakes: intakeSheet ? Math.max(0, intakeSheet.getLastRow() - 1) : 0,
+      totalCourseRows: ledgerSheet ? Math.max(0, ledgerSheet.getLastRow() - 1) : 0,
+      timestamp: new Date().toISOString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 2. Student Intake Submission & Automatic Course Unpacking
   if (action === "ADD_INTAKE" || action === "SUBMIT_INTAKE") {
-    var intakeSheet = getOrCreateSheet(ss, "Intake_Register", [
-      "Token No", "Date", "Enrollment No", "Candidate Name", "Programme", "Courses", "Mobile No", "Email ID", "Submission Mode", "Session", "Status"
+    var intakeSheet = getOrCreateSheet(ss, ["intakeRegister", "Intake_Register", "IntakeRegister"], [
+      "Timestamp", "Session", "Enrollment_No", "Candidate_Name", "Contact", "Programme", "Courses", "Official"
     ]);
 
     var item = payload;
-    var coursesStr = Array.isArray(item.courses || item.courseCodes) 
-      ? (item.courses || item.courseCodes).join(", ") 
-      : String(item.courses || item.courseCodes || "");
+    var enrollment = String(item.enrollmentNo || item.Enrollment_No || "").trim();
+    var candidate = String(item.candidateName || item.studentName || item.Candidate_Name || "").trim();
+    var prog = String(item.programme || item.programmeCode || item.Programme || "").trim().toUpperCase();
+    var contact = String(item.contact || item.studentPhone || item.mobile || item.Contact || "").trim();
+    var email = String(item.email || item.studentEmail || item.Email_ID || "").trim();
+    var session = String(item.session || item.Session || "July 2026").trim();
+    var official = String(item.handledBy || item.official || item.Official || "Desk Official").trim();
+    var tokenNo = String(item.tokenNo || item.token || item.Token_No || "").trim();
+    var timestamp = item.timestamp || item.submissionDate || item.date || new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
 
-    intakeSheet.appendRow([
-      item.tokenNo || item.token || "",
-      item.submissionDate || item.date || new Date().toISOString().split("T")[0],
-      item.enrollmentNo || "",
-      item.candidateName || item.studentName || "",
-      item.programme || item.programmeCode || "",
-      coursesStr,
-      item.contact || item.studentPhone || item.mobile || "",
-      item.email || item.studentEmail || "",
-      item.submissionMode || "In-Person",
-      item.session || "July 2026",
-      "Received"
+    // Normalize courses list
+    var rawCourses = item.rawCourses || item.courses || item.courseCodes || [];
+    var courseList = Array.isArray(rawCourses)
+      ? rawCourses.flatMap(function(c) { return String(c).split(","); })
+      : String(rawCourses).split(",");
+
+    var cleanCourses = [];
+    for (var c = 0; c < courseList.length; c++) {
+      var cleanCode = String(courseList[c]).replace(/\\s*[\\[\\(](Practical|TMA|Both|P|Asgn)[\\]\\)]\\s*/gi, "").trim().toUpperCase();
+      if (cleanCode && cleanCourses.indexOf(cleanCode) === -1) {
+        cleanCourses.push(cleanCode);
+      }
+    }
+    var coursesStr = cleanCourses.join(", ");
+
+    // Dynamic header mapping for intake row
+    var lastCol = intakeSheet.getLastColumn() || 1;
+    var headers = intakeSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var rowData = new Array(headers.length);
+
+    for (var h = 0; h < headers.length; h++) {
+      var col = String(headers[h]).trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (col.indexOf("time") !== -1 || col === "date") rowData[h] = timestamp;
+      else if (col.indexOf("token") !== -1) rowData[h] = tokenNo;
+      else if (col.indexOf("session") !== -1) rowData[h] = session;
+      else if (col.indexOf("enrol") !== -1) rowData[h] = "'" + enrollment;
+      else if (col.indexOf("name") !== -1 || col.indexOf("cand") !== -1) rowData[h] = candidate;
+      else if (col.indexOf("contact") !== -1 || col.indexOf("mobile") !== -1 || col.indexOf("phone") !== -1) rowData[h] = contact;
+      else if (col.indexOf("email") !== -1) rowData[h] = email;
+      else if (col.indexOf("prog") !== -1) rowData[h] = prog;
+      else if (col.indexOf("course") !== -1) rowData[h] = coursesStr;
+      else if (col.indexOf("offic") !== -1 || col.indexOf("handle") !== -1 || col.indexOf("by") !== -1) rowData[h] = official;
+      else if (col.indexOf("mode") !== -1) rowData[h] = item.submissionMode || "In-Person (Desk)";
+      else if (col.indexOf("status") !== -1) rowData[h] = "Received";
+      else rowData[h] = "";
+    }
+
+    intakeSheet.appendRow(rowData);
+
+    // Auto-unpack courses to Course Ledger
+    var ledgerSheet = getOrCreateSheet(ss, ["courseLedger", "Course_Ledger", "CourseLedger"], [
+      "Sub_ID", "Session", "Enrollment_No", "Candidate_Name", "Contact_No", "Email_ID", "Programme_Code", "Course_Code", "Allotted_Evaluator", "Marks", "Grade", "Status"
     ]);
+
+    var lHeaders = ledgerSheet.getRange(1, 1, 1, ledgerSheet.getLastColumn() || 1).getValues()[0];
+    for (var k = 0; k < cleanCourses.length; k++) {
+      var cCode = cleanCourses[k];
+      var subId = "SUB_" + enrollment + "_" + cCode + "_" + session.replace(/\\s+/g, "").toUpperCase();
+
+      var lRow = new Array(lHeaders.length);
+      for (var lh = 0; lh < lHeaders.length; lh++) {
+        var lCol = String(lHeaders[lh]).trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (lCol.indexOf("sub") !== -1 && lCol.indexOf("id") !== -1) lRow[lh] = subId;
+        else if (lCol.indexOf("session") !== -1) lRow[lh] = session;
+        else if (lCol.indexOf("enrol") !== -1) lRow[lh] = "'" + enrollment;
+        else if (lCol.indexOf("name") !== -1 || lCol.indexOf("cand") !== -1) lRow[lh] = candidate;
+        else if (lCol.indexOf("contact") !== -1 || lCol.indexOf("phone") !== -1 || lCol.indexOf("mobile") !== -1) lRow[lh] = contact;
+        else if (lCol.indexOf("email") !== -1) lRow[lh] = email;
+        else if (lCol.indexOf("prog") !== -1) lRow[lh] = prog;
+        else if (lCol.indexOf("course") !== -1) lRow[lh] = cCode;
+        else if (lCol.indexOf("eval") !== -1 || lCol.indexOf("allot") !== -1) lRow[lh] = "Unallotted";
+        else if (lCol.indexOf("mark") !== -1) lRow[lh] = "";
+        else if (lCol.indexOf("grade") !== -1) lRow[lh] = "—";
+        else if (lCol.indexOf("status") !== -1) lRow[lh] = "Pending Allotment";
+        else lRow[lh] = "";
+      }
+      ledgerSheet.appendRow(lRow);
+    }
 
     return ContentService.createTextOutput(JSON.stringify({
       status: "success",
       action: action,
-      message: "Intake record saved to Intake_Register."
+      message: "Intake record and unpacked courses saved to Google Sheets.",
+      tokenNo: tokenNo,
+      coursesCount: cleanCourses.length
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
+  // 3. Edit Intake
   if (action === "EDIT_INTAKE") {
-    var intakeSheet = ss.getSheetByName("Intake_Register");
+    var intakeSheet = findSheetByAliases(ss, ["intakeRegister", "Intake_Register", "IntakeRegister"]);
     if (intakeSheet) {
       var data = intakeSheet.getDataRange().getValues();
       var targetToken = String(payload.tokenNo || payload.id || "").trim();
       var targetEnr = String(payload.enrollmentNo || "").trim();
 
       for (var i = 1; i < data.length; i++) {
-        var rowToken = String(data[i][0]).trim();
-        var rowEnr = String(data[i][2]).trim();
-
-        if ((targetToken && rowToken === targetToken) || (targetEnr && rowEnr === targetEnr)) {
+        var rowEnr = String(data[i][2] || data[i][0]).replace(/^'/, '').trim();
+        if (targetEnr && rowEnr === targetEnr) {
           if (payload.candidateName) intakeSheet.getRange(i + 1, 4).setValue(payload.candidateName);
-          if (payload.programme) intakeSheet.getRange(i + 1, 5).setValue(payload.programme);
+          if (payload.contact) intakeSheet.getRange(i + 1, 5).setValue(payload.contact);
+          if (payload.programme) intakeSheet.getRange(i + 1, 6).setValue(payload.programme);
           if (payload.courses) {
             var cStr = Array.isArray(payload.courses) ? payload.courses.join(", ") : payload.courses;
-            intakeSheet.getRange(i + 1, 6).setValue(cStr);
+            intakeSheet.getRange(i + 1, 7).setValue(cStr);
           }
-          if (payload.contact) intakeSheet.getRange(i + 1, 7).setValue(payload.contact);
-          if (payload.email) intakeSheet.getRange(i + 1, 8).setValue(payload.email);
           break;
         }
       }
@@ -1656,36 +1747,71 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
-  if (action === "DELETE_INTAKE") {
-    var intakeSheet = ss.getSheetByName("Intake_Register");
-    if (intakeSheet) {
-      var data = intakeSheet.getDataRange().getValues();
-      var targetToken = String(payload.tokenNo || payload.id || "").trim();
-      for (var i = 1; i < data.length; i++) {
-        if (String(data[i][0]).trim() === targetToken) {
-          intakeSheet.deleteRow(i + 1);
-          break;
-        }
-      }
-    }
-    return ContentService.createTextOutput(JSON.stringify({ status: "success", action: action }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-
+  // 4. Allot Evaluator & Update Marks
   if (action === "ALLOT_EVALUATOR" || action === "UPDATE_MARKS") {
-    return ContentService.createTextOutput(JSON.stringify({ status: "success", action: action, message: "Updated." }))
+    var ledgerSheet = findSheetByAliases(ss, ["courseLedger", "Course_Ledger", "CourseLedger"]);
+    if (ledgerSheet) {
+      var data = ledgerSheet.getDataRange().getValues();
+      var targetSubId = String(payload.subId || "").trim();
+      var targetEnr = String(payload.enrollmentNo || "").replace(/^'/, '').trim();
+      var targetCourse = String(payload.courseCode || "").trim().toUpperCase();
+
+      for (var i = 1; i < data.length; i++) {
+        var rowSubId = String(data[i][0] || "").trim();
+        var rowEnr = String(data[i][2] || "").replace(/^'/, '').trim();
+        var rowCourse = String(data[i][7] || "").trim().toUpperCase();
+
+        if ((targetSubId && rowSubId === targetSubId) || (targetEnr && targetCourse && rowEnr === targetEnr && rowCourse === targetCourse)) {
+          if (action === "ALLOT_EVALUATOR" && payload.evaluator) {
+            ledgerSheet.getRange(i + 1, 9).setValue(payload.evaluator);
+            ledgerSheet.getRange(i + 1, 12).setValue("Allotted");
+          } else if (action === "UPDATE_MARKS") {
+            ledgerSheet.getRange(i + 1, 10).setValue(payload.marks !== undefined ? payload.marks : "");
+            ledgerSheet.getRange(i + 1, 11).setValue(payload.grade || "");
+            ledgerSheet.getRange(i + 1, 12).setValue("Marks Locked");
+          }
+          break;
+        }
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ status: "success", action: action, message: "Ledger updated." }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
   return ContentService.createTextOutput(JSON.stringify({
     status: "success",
     action: action,
-    message: "Action received and acknowledged."
+    message: "Action received and processed."
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
-function getSheetDataAsArray(ss, sheetName) {
-  var sheet = ss.getSheetByName(sheetName);
+function findSheetByAliases(ss, aliases) {
+  for (var i = 0; i < aliases.length; i++) {
+    var s = ss.getSheetByName(aliases[i]);
+    if (s) return s;
+  }
+  return null;
+}
+
+function getOrCreateSheet(ss, aliases, defaultHeaders) {
+  var s = findSheetByAliases(ss, aliases);
+  if (!s) {
+    s = ss.insertSheet(aliases[0]);
+    if (defaultHeaders && defaultHeaders.length > 0) {
+      s.appendRow(defaultHeaders);
+      s.getRange(1, 1, 1, defaultHeaders.length).setFontWeight("bold").setBackground("#f1f5f9");
+    }
+  }
+  return s;
+}
+
+function getSheetDataByAliases(ss, aliases) {
+  var sheet = findSheetByAliases(ss, aliases);
+  if (!sheet) return [];
+  return getSheetDataAsArray(sheet);
+}
+
+function getSheetDataAsArray(sheet) {
   if (!sheet) return [];
   var data = sheet.getDataRange().getValues();
   if (data.length < 2) return [];
@@ -1701,18 +1827,6 @@ function getSheetDataAsArray(ss, sheetName) {
     rows.push(obj);
   }
   return rows;
-}
-
-function getOrCreateSheet(ss, sheetName, defaultHeaders) {
-  var sheet = ss.getSheetByName(sheetName);
-  if (!sheet) {
-    sheet = ss.insertSheet(sheetName);
-    if (defaultHeaders && defaultHeaders.length > 0) {
-      sheet.appendRow(defaultHeaders);
-      sheet.getRange(1, 1, 1, defaultHeaders.length).setFontWeight("bold").setBackground("#f1f5f9");
-    }
-  }
-  return sheet;
 }
 `;
 

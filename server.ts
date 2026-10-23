@@ -598,7 +598,43 @@ app.get("/api/sheets", async (req, res) => {
       if (typeof json === 'object' && json !== null && !json.studentRegistrations && store.studentRegistrations) {
         json.studentRegistrations = store.studentRegistrations;
       }
-      // Validate directly from Google Sheets data - Google Sheets is the source of truth!
+
+      // Optimistically merge any store.intakes not yet appended to remote Google Sheet
+      if (typeof json === 'object' && json !== null) {
+        const remoteIntakeList = json.intakeRegister || json.Intake_Register || json.intakes || [];
+        const remoteTokenSet = new Set(remoteIntakeList.map((r: any) => String(r.Token_No || r.tokenNo || r.id || '').trim()));
+        const remoteEnrSet = new Set(remoteIntakeList.map((r: any) => `${String(r.Enrollment_No || r.enrollmentNo || '').trim()}_${String(r.Session || r.session || '').trim()}`));
+
+        const pendingIntakes = (store.intakes || []).filter((loc: any) => {
+          const locToken = String(loc.tokenNo || loc.id || '').trim();
+          if (locToken && remoteTokenSet.has(locToken)) return false;
+          const locEnrKey = `${String(loc.enrollmentNo || '').trim()}_${String(loc.session || '').trim()}`;
+          if (remoteEnrSet.has(locEnrKey)) return false;
+          return true;
+        });
+
+        if (pendingIntakes.length > 0) {
+          const merged = [...remoteIntakeList, ...pendingIntakes];
+          json.intakeRegister = merged;
+          json.Intake_Register = merged;
+          json.intakes = merged;
+        }
+
+        // Optimistically merge courseLedger
+        const remoteLedgerList = json.courseLedger || json.Course_Ledger || [];
+        const remoteSubIdSet = new Set(remoteLedgerList.map((l: any) => String(l.Sub_ID || l.subId || l.id || '').trim()));
+        const pendingLedgers = (store.courseLedger || []).filter((loc: any) => {
+          const locSubId = String(loc.Sub_ID || loc.subId || loc.id || '').trim();
+          return locSubId && !remoteSubIdSet.has(locSubId);
+        });
+
+        if (pendingLedgers.length > 0) {
+          const mergedLedger = [...remoteLedgerList, ...pendingLedgers];
+          json.courseLedger = mergedLedger;
+          json.Course_Ledger = mergedLedger;
+        }
+      }
+
       return res.json(json);
     } catch {
       // If remote returned HTML or non-JSON (e.g. 404 landing or auth page)
@@ -631,6 +667,87 @@ app.post("/api/sheets", async (req, res) => {
   const targetUrl = getTargetAppsScriptUrl(req.body.scriptUrl as string);
   const action = req.body?.action || "UNKNOWN";
   console.log(`[Proxy POST] Action: ${action} -> ${targetUrl}`);
+
+  // Persist ADD_INTAKE in local store immediately for zero-loss guarantee
+  if (action === "ADD_INTAKE" || action === "SUBMIT_INTAKE") {
+    try {
+      const payload = req.body.payload || req.body;
+      const store = loadStore();
+      const enrollmentNo = String(payload.enrollmentNo || payload.intake?.enrollmentNo || "").trim();
+      const studentName = String(payload.candidateName || payload.studentName || payload.intake?.candidateName || "").trim();
+      const programmeCode = String(payload.programme || payload.programmeCode || payload.intake?.programme || "").trim().toUpperCase();
+      const session = payload.session || payload.intake?.session || "July 2026";
+      const studentPhone = String(payload.contact || payload.studentPhone || payload.intake?.contact || "").trim();
+      const submissionDate = payload.submissionDate || payload.date || (payload.timestamp ? String(payload.timestamp).split(' ')[0] : new Date().toISOString().split('T')[0]);
+      const rawCourses = payload.courses || payload.rawCourses || payload.intake?.courses || [];
+      const coursesArray: string[] = (Array.isArray(rawCourses) ? rawCourses : String(rawCourses).split(','))
+        .map((c: string) => String(c).trim().toUpperCase())
+        .filter(Boolean);
+
+      const tokenNo = payload.tokenNo || payload.token || `SC2033-JUL26-${Date.now().toString().slice(-4)}`;
+
+      const intakeRecord = {
+        id: `intake-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        tokenNo,
+        enrollmentNo,
+        studentName,
+        studentPhone,
+        programmeCode,
+        courseCodes: coursesArray,
+        session,
+        submissionDate,
+        receiptDate: submissionDate,
+        submissionMode: payload.submissionMode || "In-Person (Desk)",
+        status: "Received",
+        createdAt: new Date().toISOString(),
+        ...payload,
+      };
+
+      const newLedgerRows: any[] = [];
+      coursesArray.forEach((c) => {
+        const subId = `SUB_${enrollmentNo}_${c}_${session.replace(/\s+/g, "").toUpperCase()}`;
+        newLedgerRows.push({
+          Sub_ID: subId,
+          subId,
+          submissionKey: subId,
+          Session: session,
+          session,
+          Enrollment_No: enrollmentNo,
+          enrollmentNo,
+          Candidate_Name: studentName,
+          studentName,
+          Contact_No: studentPhone,
+          studentPhone,
+          Programme_Code: programmeCode,
+          programmeCode,
+          Programme: programmeCode,
+          Course_Code: c,
+          courseCode: c,
+          Allotted_Evaluator: "Unallotted",
+          Marks: null,
+          Grade: "—",
+          Status: "Pending Allotment",
+          id: subId,
+          tokenNo,
+          submissionDate,
+          receiptDate: submissionDate,
+          submissionMode: payload.submissionMode || "In-Person (Desk)",
+          isLocked: false,
+          status: "Pending Allotment",
+          componentType: "Assignment",
+        });
+      });
+
+      store.intakes = [intakeRecord, ...(store.intakes || []).filter((it: any) => it.tokenNo !== tokenNo)];
+      const existingSubIds = new Set((store.courseLedger || []).map((l: any) => l.subId || l.Sub_ID));
+      const filteredLedgers = newLedgerRows.filter((nl) => !existingSubIds.has(nl.subId));
+      store.courseLedger = [...(store.courseLedger || []), ...filteredLedgers];
+      saveStore(store);
+      console.log(`[Store] ADD_INTAKE persisted locally: ${tokenNo} (${enrollmentNo} - ${coursesArray.join(', ')})`);
+    } catch (saveErr) {
+      console.warn("Failed to persist ADD_INTAKE to store:", saveErr);
+    }
+  }
 
   // If action is SYNC_ADMISSIONS, persist in local store
   if (action === "SYNC_ADMISSIONS" && (req.body.records || req.body.payload?.records)) {

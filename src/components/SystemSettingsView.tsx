@@ -47,7 +47,10 @@ import {
   Activity,
   Check,
   SlidersHorizontal,
+  Code,
+  Copy,
 } from 'lucide-react';
+import { OFFICIAL_APPS_SCRIPT_CODE, SCRIPT_URL } from '../services/sheetsService';
 
 type SettingsTabId = 'general' | 'appearance' | 'rates' | 'sync' | 'rbac';
 
@@ -122,6 +125,62 @@ export const SystemSettingsView: React.FC = () => {
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const [selectedArchiveDetail, setSelectedArchiveDetail] = useState<SessionArchiveRecord | null>(null);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Google Apps Script Diagnostics State
+  const [isTestingScript, setIsTestingScript] = useState(false);
+  const [scriptTestResult, setScriptTestResult] = useState<{
+    status: 'success' | 'error' | null;
+    message?: string;
+    details?: any;
+    testedAt?: string;
+  }>({ status: null });
+  const [hasCopiedScript, setHasCopiedScript] = useState(false);
+  const [showScriptModal, setShowScriptModal] = useState(false);
+
+  const handleTestScriptConnection = async () => {
+    setIsTestingScript(true);
+    try {
+      const res = await fetch('/api/sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'PING' }),
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        setScriptTestResult({
+          status: 'success',
+          message: data.message || 'Connection verified: Google Apps Script responded successfully.',
+          details: data,
+          testedAt: new Date().toLocaleTimeString(),
+        });
+        showToast('Google Apps Script connection verified successfully!', 'success');
+      } else {
+        setScriptTestResult({
+          status: 'error',
+          message: data.message || 'Connection responded but reported an issue.',
+          details: data,
+          testedAt: new Date().toLocaleTimeString(),
+        });
+        showToast('Google Sheets responded with warning', 'info');
+      }
+    } catch (err: any) {
+      setScriptTestResult({
+        status: 'error',
+        message: err.message || 'Failed to connect to Google Apps Script endpoint.',
+        testedAt: new Date().toLocaleTimeString(),
+      });
+      showToast('Could not reach Google Apps Script', 'error');
+    } finally {
+      setIsTestingScript(false);
+    }
+  };
+
+  const handleCopyScriptCode = () => {
+    navigator.clipboard.writeText(OFFICIAL_APPS_SCRIPT_CODE);
+    setHasCopiedScript(true);
+    showToast('Updated Code.gs copied to clipboard!', 'success');
+    setTimeout(() => setHasCopiedScript(false), 3000);
+  };
 
   const [archiveForm, setArchiveForm] = useState({
     name: `${currentSession} Closeout Archive`,
@@ -932,6 +991,119 @@ export const SystemSettingsView: React.FC = () => {
             </div>
           </div>
 
+          {/* Google Apps Script Backend (Code.gs) & Live Sync Diagnostics */}
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-zinc-100 gap-2">
+              <div className="flex items-center gap-2 font-bold text-sm text-zinc-900">
+                <Code className="w-4 h-4 text-indigo-600" />
+                <span>Google Apps Script (Code.gs) & Assignment Persistence Engine</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full border border-indigo-200 font-semibold">
+                  Intake & Course Ledger Parity
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              To guarantee that all student assignment intakes save directly into your Google Sheet and auto-unpack into individual course ledger rows, deploy this updated <strong>Code.gs</strong> script into your connected Google Spreadsheet.
+            </p>
+
+            <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="font-semibold text-zinc-800 flex items-center gap-2">
+                    <span>Connected Apps Script Web App</span>
+                    <span className="text-[10px] font-mono text-zinc-500 bg-zinc-200/60 px-1.5 py-0.2 rounded">
+                      Production Web App
+                    </span>
+                  </div>
+                  <div className="font-mono text-[11px] text-zinc-500 truncate max-w-lg">
+                    {SCRIPT_URL}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleCopyScriptCode}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  >
+                    {hasCopiedScript ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{hasCopiedScript ? 'Copied to Clipboard!' : 'Copy Updated Code.gs'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowScriptModal(true)}
+                    className="px-3 py-1.5 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>View Script</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleTestScriptConnection}
+                    disabled={isTestingScript}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 shadow-2xs"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isTestingScript ? 'animate-spin' : ''}`} />
+                    <span>{isTestingScript ? 'Testing...' : 'Test Connection'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Diagnostic verification report */}
+              {scriptTestResult.status && (
+                <div
+                  className={`mt-2 p-3 rounded-lg border text-xs flex items-start gap-2.5 ${
+                    scriptTestResult.status === 'success'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                      : 'bg-amber-50 border-amber-200 text-amber-900'
+                  }`}
+                >
+                  {scriptTestResult.status === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  )}
+                  <div className="space-y-1">
+                    <div className="font-bold flex items-center gap-2">
+                      <span>{scriptTestResult.message}</span>
+                      <span className="text-[10px] font-mono font-normal opacity-75">
+                        Tested at {scriptTestResult.testedAt}
+                      </span>
+                    </div>
+                    {scriptTestResult.details && (
+                      <div className="text-[11px] font-mono opacity-90">
+                        {scriptTestResult.details.intakeTab && (
+                          <span>Intake Tab: <strong>{scriptTestResult.details.intakeTab}</strong> ({scriptTestResult.details.totalIntakes} rows) · </span>
+                        )}
+                        {scriptTestResult.details.ledgerTab && (
+                          <span>Course Ledger: <strong>{scriptTestResult.details.ledgerTab}</strong> ({scriptTestResult.details.totalCourseRows} rows)</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 4-Step Deployment Instructions */}
+              <div className="border-t border-zinc-200 pt-3 mt-3">
+                <div className="text-[11px] font-bold text-zinc-700 uppercase tracking-wider mb-2">
+                  4-Step Google Spreadsheet Deployment Instructions:
+                </div>
+                <ol className="list-decimal list-inside space-y-1 text-zinc-600 text-[11px] leading-relaxed">
+                  <li>Open your connected Google Spreadsheet, click <strong>Extensions</strong> &gt; <strong>Apps Script</strong>.</li>
+                  <li>Click on <strong>Code.gs</strong> on the left file list, select all existing code (<kbd className="px-1 py-0.5 bg-zinc-200 rounded font-mono text-[10px]">Ctrl+A</kbd>), and paste the copied code.</li>
+                  <li>Click <strong>Deploy</strong> (top right) &gt; <strong>Manage deployments</strong> &gt; Click the <strong>Pencil icon (Edit)</strong> &gt; Select Version: <strong>New version</strong> &gt; Click <strong>Deploy</strong>.</li>
+                  <li>Return here and click <strong>Test Connection</strong> to confirm live data synchronization.</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+
           {/* Academic Session Archival & History Snapshots */}
           <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-zinc-100 gap-2">
@@ -1522,6 +1694,57 @@ export const SystemSettingsView: React.FC = () => {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GOOGLE APPS SCRIPT CODE VIEWER MODAL */}
+      {showScriptModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-zinc-200 rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 bg-zinc-900 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <Code className="w-5 h-5 text-indigo-400" />
+                <div>
+                  <h3 className="font-bold text-sm">Google Apps Script Source Code (Code.gs)</h3>
+                  <p className="text-[11px] text-zinc-400">Master script for Intake, Course Ledger, Evaluators & Admission parity</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowScriptModal(false)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 bg-zinc-950 flex-1 overflow-y-auto font-mono text-xs text-zinc-200 leading-relaxed select-all">
+              <pre className="whitespace-pre-wrap">{OFFICIAL_APPS_SCRIPT_CODE}</pre>
+            </div>
+
+            <div className="px-5 py-3.5 bg-zinc-50 border-t border-zinc-200 flex items-center justify-between shrink-0">
+              <div className="text-xs text-zinc-500">
+                Paste into your Google Spreadsheet's Apps Script editor and deploy as a new version.
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyScriptCode}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xs"
+                >
+                  {hasCopiedScript ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  <span>{hasCopiedScript ? 'Copied Code!' : 'Copy Code'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowScriptModal(false)}
+                  className="px-4 py-2 bg-zinc-200 hover:bg-zinc-300 text-zinc-800 rounded-xl text-xs font-semibold transition cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

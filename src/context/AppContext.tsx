@@ -3030,10 +3030,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         unpackedRows
       )
         .then(async () => {
-          // Always validate from Google Sheets immediately after intake entry
-          if (fetchAllDataRef.current) {
-            await fetchAllDataRef.current(true);
-          }
+          setTimeout(async () => {
+            if (fetchAllDataRef.current) {
+              await fetchAllDataRef.current(false);
+            }
+          }, 1200);
         })
         .catch((err) => {
           console.warn('Google Sheets ADD_INTAKE notification:', err);
@@ -3327,9 +3328,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         unpackedNewRows
       )
         .then(async () => {
-          if (fetchAllDataRef.current) {
-            await fetchAllDataRef.current(true);
-          }
+          setTimeout(async () => {
+            if (fetchAllDataRef.current) {
+              await fetchAllDataRef.current(false);
+            }
+          }, 1200);
         })
         .catch((err) => console.warn('[integrateIntakeWithPrevious Sheets sync warning]:', err));
 
@@ -5100,9 +5103,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
         });
 
-        // 3. Update React State
-        setIntakes(cleanIntake as any);
-        setCourseEvaluations(cleanLedger as any);
+        // 3. Update React State with zero-loss optimistic merge (preserve locally added unconfirmed records)
+        setIntakes((prevIntakes) => {
+          const remoteTokens = new Set((cleanIntake as any[]).map((c: any) => String(c.tokenNo || c.id || '').trim()));
+          const remoteKeys = new Set(
+            (cleanIntake as any[]).map((c: any) => `${c.enrollmentNo}_${norm(c.session)}_${(c.courses || c.courseCodes || []).slice().sort().join(',')}`)
+          );
+          const localPending = (prevIntakes || []).filter((loc: any) => {
+            const tok = String(loc.tokenNo || loc.id || '').trim();
+            if (tok && remoteTokens.has(tok)) return false;
+            const key = `${loc.enrollmentNo}_${norm(loc.session)}_${(loc.courses || loc.courseCodes || []).slice().sort().join(',')}`;
+            if (remoteKeys.has(key)) return false;
+            return true;
+          });
+          return [...cleanIntake, ...localPending];
+        });
+
+        setCourseEvaluations((prevEvals) => {
+          const remoteSubIds = new Set((cleanLedger as any[]).map((c: any) => String(c.subId || c.Sub_ID || c.id || '').trim()));
+          const localPending = (prevEvals || []).filter((loc: any) => {
+            const sId = String(loc.subId || loc.Sub_ID || loc.id || '').trim();
+            return sId && !remoteSubIds.has(sId);
+          });
+          return [...cleanLedger, ...localPending];
+        });
 
         // Also update Registration Receipts so receipts view has latest entries
         // Clean canonical receipts strictly derived from cleanIntake:

@@ -1,118 +1,120 @@
-# Dedicated 'Install App' Banner in Centre Configuration (Desktop & Mobile)
+# Assignment Intake Google Sheets Persistence & Auto-Sync Engine
 
-Restructure the application installation experience by removing the "Install App" button from global headers and sidebars, and establishing a dedicated, high-visibility **"Install App" Banner** exclusively within **Centre Configuration** under the **General Centre Profile** section.
+Fix the student assignment intake persistence failure to ensure all desk intakes save reliably to Google Sheets, are automatically unpacked into individual course ledger rows, never disappear from the screen, and provide an updated copy-ready Apps Script with instant verification in Centre Settings.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following architectural and UX specifications were confirmed during the interactive clarification session:
-
-- **Confirmed Decision 1 (Exclusive Placement)**: The Install App capability will be restricted exclusively to **Centre Configuration** (`SETTINGS` tab) and completely removed from the global top Header (`Header.tsx`), the left Sidebar (`Sidebar.tsx`), and the public home page header (`StudyCentreHomePage.tsx`).
-- **Confirmed Decision 2 (Exact Section Target)**: Mounted directly under the **General Centre Profile / Institutional Centre Details** section within the General tab of Centre Configuration.
-- **Confirmed Decision 3 (Interactive Controls Suite)**: The banner will feature:
-  1. **Direct Native Install Trigger**: Immediately invokes Chromium / Edge / Android `beforeinstallprompt`.
-  2. **Mobile Handoff QR Code**: Displays a scannable QR code generated from the current app URL so coordinators and desk staff can easily install the PWA on companion smartphones and tablets.
-  3. **Guided Installation Modal**: Step-by-step illustrated manual for iOS Safari (*Add to Home Screen*) and desktop dock pinning.
-  4. **Post-Install Standalone Awareness**: Clear badge and status indicating when the application is already running as an installed standalone PWA.
-
----
+> Based on your confirmed choices in Phase 1:
+> - **Data Persistence Strategy**: Save locally first into local storage and server cache, and sync to Google Sheets in the background with automatic retry.
+> - **Backend Apps Script Update**: Provide a copy-ready script with one-click verification and diagnostic status in Centre Configuration / System Settings.
+> - **Course Ledger Unpacking**: Automatically unpack multiple course codes into individual rows in the `Course_Ledger` / `courseLedger` sheet for Stage 2 evaluation tracking.
 
 ## 1. Overview & Core Concept
 
-### What It Does
-Centralizes progressive web application (PWA) management into the administrative **Centre Configuration & Governance** workspace. Rather than cluttering general navigation bars across day-to-day intake operations, system installation is treated as a foundational centre setup task. Coordinators and staff setting up counter terminals or mobile scanning stations can install the desktop dock shortcut, trigger mobile installation via QR code, or review offline operational guides all in one place.
+When a desk official or coordinator enters an assignment intake in Stage 1 (Intake Desk), two issues currently prevent successful recording:
+1. **Google Apps Script Mismatch**: The deployed Google Apps Script does not write incoming POST payloads to the actual sheet tabs (`intakeRegister` / `Intake_Register` and `courseLedger` / `Course_Ledger`) because it lacks dynamic header matching and tab name aliases.
+2. **Client-Side State Overwrite**: When the client app attempts to validate after submission, `fetchAllData` fetches the remote sheet data (which still has only the original rows) and overwrites the local React state, causing newly entered student assignments to vanish from the interface.
 
-### Target Audience & Persona
-- **Study Centre Coordinator (`admin` role)**: Configures desk kiosks and distributes mobile links to counter staff.
-- **Counter Staff & Evaluators**: Scans the setup QR code or installs the desktop workstation app during workstation onboarding.
-
-### Key Value
-- **Zero Global Clutter**: Cleans the top Header and left Sidebar navigation, keeping intake and evaluation workflows uncluttered.
-- **Seamless Desktop-to-Mobile Handoff**: The interactive QR code allows instant transfer from a desktop administration monitor to an operator's mobile smartphone.
-- **Offline & Standalone Preparedness**: Informs operators of the offline caching mechanism and standalone full-screen benefits before deployment.
-
----
+This implementation resolves both problems through a resilient two-tier architecture:
+- **Resilient Client & Server Persistence**: Newly added intake records and unpacked course rows are immediately committed to local memory, browser storage, and the local backend JSON store. When `fetchAllData` refreshes data, it optimistically preserves any local records that have not yet appeared in the remote spreadsheet, guaranteeing **zero data loss**.
+- **Updated Universal Google Apps Script (`Code.gs`)**: An enhanced, self-healing script supporting all tab naming variations (`intakeRegister`, `Intake_Register`), flexible column headers (`Timestamp`, `Session`, `Enrollment_No`, `Candidate_Name`, `Contact`, `Programme`, `Courses`, `Official`), and automatic course ledger row creation.
+- **In-App Script Generator & Verification**: A dedicated control panel in System Settings providing the exact updated script with copy-to-clipboard, a "Test Connection & Verify Sync" button, and step-by-step deployment instructions.
 
 ## 2. User Experience & Visual Design
 
 ### Key User Flows
+1. **Assignment Intake Registration (Stage 1)**:
+   - Desk official enters student enrollment number, selects/enters candidate name, contact, programme, and courses.
+   - Upon clicking "Save & Issue Receipt", the intake record and its unpacked course assignments are immediately rendered on screen and printed/downloaded without delay.
+   - A quiet toast confirms "Saved locally & queued for Google Sheets sync".
+   - Subsequent sheet data refreshes will **never** wipe or overwrite the newly entered record.
 
-#### A. Global Navigation State
-1. **Header Navigation Bar (`Header.tsx`)**: The install button is cleanly removed, restoring a streamlined header containing only the academic seal, cycle selector, role switcher, home link, and sign-out action.
-2. **Left Sidebar (`Sidebar.tsx`)**: The install card is removed from the sidebar rail and footer, preserving the clean two-stage focus for Desk Officials and institutional registers for Coordinators.
+2. **Apps Script Update & Verification (Centre Configuration)**:
+   - Coordinator opens **Centre Configuration > System Settings**.
+   - Under the "Google Sheets Integration" section, a clean card displays:
+     - Current connection status and last sync timestamp.
+     - "Copy Updated Apps Script (Code.gs)" button with copy feedback.
+     - "Test & Verify Connection" button that sends a ping to the Apps Script URL and reports exact sheet readiness (e.g. "Connected: 33 intakes, 145 course ledger rows ready").
+     - 4-step deployment instructions (Extensions > Apps Script > Paste > Deploy as New Version).
 
-#### B. Centre Configuration View (`SystemSettingsView.tsx`)
-1. User navigates to **Centre Configuration** (via sidebar or settings shortcut).
-2. Under the **General** tab, beneath the **Institutional Centre Details (Host Institution, Code, Regional Centre)** form, a dedicated **PWA Installation Banner** is rendered:
-   - **Banner Header**: Academic Seal / PWA badge, clear headline *"Install IGNOU SC-2033 Terminal Application"*, and explanatory subtext highlighting offline execution and zero-address-bar productivity.
-   - **Action Strip**:
-     - **"Install to This Device"** button: Primary warm amber / indigo action with download icon. Triggers native browser install or guided modal.
-     - **"Show Mobile QR Code"** toggle: Expands an inline scannable QR code with instructions to scan with an iPhone or Android camera to install immediately on mobile.
-     - **"Setup Guide & Instructions"** button: Opens the multi-device illustrated guide modal.
-   - **Status Badge**: If already launched in standalone mode, highlights *"Application Installed & Running Standalone (Offline Ready)"*.
+3. **Stage 2 Evaluation Master Reflects New Intake**:
+   - As soon as the assignment intake is registered, each course in the intake (e.g., `BEGC-101`, `BEGC-102`) immediately surfaces in the Course Ledger table ready for evaluator allotment and marks entry.
 
----
+### Visual Styling & Restraint
+- Strict adherence to the universal design constitution: no generic purple gradients, no decorative status dots, no pill badges on metadata.
+- Clean unboxed metadata with subtle typographic separators (`·`).
+- Monospace tabular numerals (`tabular-nums font-mono`) for enrollment numbers, token numbers, and timestamps.
+- Action buttons adhere to the single-line contract (`whitespace-nowrap shrink-0`).
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Removal from Global Navigation**
-  - *Chosen Approach*: Fully remove install buttons from Header and Sidebar.
-  - *Why*: User explicitly confirmed *"Yes, display exclusively in Centre Configuration and remove elsewhere"*. This keeps operational views focused on core academic tasks.
-- **Decision 2: Dual Desktop & Mobile QR Code Integration**
-  - *Chosen Approach*: Embed a high-contrast QR code directly in the banner using the existing `qrcode` library.
-  - *Why*: Makes mobile onboarding frictionless. A coordinator on a desktop terminal can open Centre Configuration and have counter staff scan the QR code with their phones in seconds.
-- **Decision 3: Reusable Modal Support**
-  - *Chosen Approach*: Keep the existing detailed step-by-step instructions (iOS Safari and Desktop browser) intact within the banner's guide trigger.
-  - *Why*: Ensures users on browsers without `beforeinstallprompt` (such as Safari) receive clear, accurate guidance.
+- **Decision 1: Optimistic Local Preservation vs. Blocking UI on Remote Confirmation**
+  - *Chosen Approach*: Save locally first into React state, localStorage, and server store; background sync to Google Sheets with automatic retry.
+  - *Why*: Desk officials often operate during high-traffic admissions/intake periods where network latency or Google Apps Script execution limits could cause delays. The official should never be blocked from issuing a student receipt.
+  - *Alternatives Considered*: Blocking submission until Google Sheets responds with 200 OK was rejected because network flakiness would stall the intake queue.
 
----
+- **Decision 2: Course Unpacking in Apps Script + Client-Side Fallback**
+  - *Chosen Approach*: Handle course unpacking in both the client proxy and the Google Apps Script.
+  - *Why*: Redundancy ensures that even if the Google Apps Script update is delayed, the local app immediately has individual course rows in Stage 2 evaluation master.
 
-## 4. Technical Architecture & Component Layout
+- **Decision 3: Flexible Schema Matching in Google Apps Script**
+  - *Chosen Approach*: The script dynamically scans row 1 headers of the target sheet to map field names to column indexes, falling back to canonical column order if empty.
+  - *Why*: Users may have slightly different header spellings (`Enrollment_No` vs `Enrollment No`, `Candidate_Name` vs `Candidate Name`, `Contact` vs `Mobile No`). Flexible matching prevents silent append failures.
 
-### Component Hierarchy Diagram
+## 4. Technical Architecture & Data Strategy
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│               Centre Configuration (SystemSettingsView.tsx)            │
-├────────────────────────────────────────────────────────────────────────┤
-│ Tabs: [General] [Appearance] [Rates] [Governance] [Database]           │
-├────────────────────────────────────────────────────────────────────────┤
-│ [Institutional Centre Details Form]                                    │
-│ - Centre Code, Regional Centre, Host Institution, Coordinator Contact  │
-├────────────────────────────────────────────────────────────────────────┤
-│ ▼ NEW: Dedicated Install App Banner (Desktop & Mobile)                │
-│ ┌────────────────────────────────────────────────────────────────────┐ │
-│ │ ⬡ IGNOU SC-2033 Terminal Application · PWA Installation            │ │
-│ │                                                                    │ │
-│ │ [ Install App on This Device ]  [ 📱 Scan Mobile QR ]  [ 📖 Guide ]│ │
-│ │                                                                    │ │
-│ │ ┌───────────────────┐  ┌─────────────────────────────────────────┐ │ │
-│ │ │  Scannable QR     │  │ Features:                               │ │ │
-│ │ │  Code for Mobile  │  │ • 100% Offline Counter Operation        │ │ │
-│ │ │  Handoff          │  │ • Dedicated Desktop Dock / Home Screen   │ │ │
-│ │ └───────────────────┘  └─────────────────────────────────────────┘ │ │
-│ └────────────────────────────────────────────────────────────────────┘ │
-├────────────────────────────────────────────────────────────────────────┤
-│ [Gatekeeper PIN Security Settings]                                     │
-└────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      Stage 1: Intake Desk                   │
+│   (User enters enrollment, student name, courses, session)   │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     AppContext.tsx                          │
+│  1. setIntakes(prev => [newRecord, ...prev])                │
+│  2. setCourseEvaluations(prev => [...unpackedRows, ...prev])│
+│  3. localStorage.setItem(...)                               │
+│  4. dispatch postAddIntake()                                │
+└──────────────┬───────────────────────────────┬──────────────┘
+               │                               │
+               ▼                               ▼
+┌──────────────────────────────┐ ┌────────────────────────────┐
+│      server.ts Proxy         │ │   fetchAllData(preserve)   │
+│  - Saves intake to local     │ │  - Merges remote sheet rows│
+│    store (sheets_store.json) │ │    with local unconfirmed  │
+│  - Proxies to Apps Script    │ │    entries (no data wipe)  │
+└──────────────┬───────────────┘ └────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────────────────────┐
+│             Google Apps Script (Code.gs)                    │
+│  - Matches sheet tab: "Intake_Register" / "intakeRegister"  │
+│  - Appends intake row based on dynamic header positions     │
+│  - Unpacks courses into "Course_Ledger" / "courseLedger"    │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### File Modification Blueprint
+### Key Changes
+1. **`src/context/AppContext.tsx`**:
+   - In `fetchAllData`, update `cleanIntake` and `cleanLedger` reconciliation so locally added records that have not yet appeared in remote Google Sheets data are preserved rather than overwritten.
+   - Prevent `fetchAllDataRef.current(true)` in `addIntakeRecord` from wiping optimistic state.
+2. **`server.ts`**:
+   - In `/api/sheets` (POST), handle `action === "ADD_INTAKE"` by saving intake records and unpacked course entries to `data/sheets_store.json`.
+   - In `/api/sheets` (GET), merge local store records with remote data so the proxy always reflects recent entries.
+3. **`src/services/sheetsService.ts`**:
+   - Update `OFFICIAL_APPS_SCRIPT_CODE` to handle tab aliases (`Intake_Register` / `intakeRegister`, `Course_Ledger` / `courseLedger`), dynamic header lookup, and automatic course unpacking.
+   - Update `postAddIntake` to pass complete normalized payloads and retry on network disruption.
+4. **`src/components/SystemSettingsView.tsx`**:
+   - Add a "Google Apps Script Backend & Sync Diagnostics" section with a "Copy Updated Code.gs" button, connection tester, and clear instructions.
 
-1. **`src/components/CentreInstallAppBanner.tsx`** (New Component):
-   - Handles `beforeinstallprompt` and `appinstalled` events.
-   - Detects standalone mode via `display-mode: standalone`.
-   - Generates canvas QR code for `window.location.origin` or current URL.
-   - Renders responsive desktop/mobile action bar with guided instructions modal.
-2. **`src/components/SystemSettingsView.tsx`**:
-   - Mount `<CentreInstallAppBanner />` under the General Centre Details form in `activeTab === 'general'`.
-3. **`src/components/Header.tsx`**:
-   - Remove `<PWAInstallButton />` from the header toolbar.
-4. **`src/components/Sidebar.tsx`**:
-   - Remove `<PWAInstallButton />` from the sidebar rail.
-5. **`src/components/StudyCentreHomePage.tsx`**:
-   - Remove `<PWAInstallButton />` from the public homepage navigation.
-6. **`src/components/Navigation.tsx`**:
-   - Clean up export references.
-7. **Verification**:
-   - Verify compilation with `compile_applet` and type check with `lint_applet`.
+## 5. Verification Plan
+1. **Automated Verification**:
+   - Compile applet with `compile_applet`.
+   - Lint applet with `lint_applet`.
+2. **Functional Testing**:
+   - Submit a new student assignment intake with multiple courses (e.g. `BEGC-101`, `BEGC-102`).
+   - Confirm intake appears in Intake Register and never disappears upon refresh.
+   - Confirm individual courses appear in Course Ledger / Evaluation Master.
+   - Verify connection tester in System Settings passes and returns sheet status.
