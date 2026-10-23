@@ -140,13 +140,14 @@ export const SystemSettingsView: React.FC = () => {
   const handleTestScriptConnection = async () => {
     setIsTestingScript(true);
     try {
+      const activeUrl = settings.appsScriptUrl || settings.googleSheetScriptUrl || SCRIPT_URL;
       const res = await fetch('/api/sheets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'PING' }),
+        body: JSON.stringify({ action: 'PING', scriptUrl: activeUrl }),
       });
       const data = await res.json();
-      if (res.ok && data.status === 'success') {
+      if (res.ok && data.status === 'success' && data.reachable) {
         setScriptTestResult({
           status: 'success',
           message: data.message || 'Connection verified: Google Apps Script responded successfully.',
@@ -157,19 +158,22 @@ export const SystemSettingsView: React.FC = () => {
       } else {
         setScriptTestResult({
           status: 'error',
-          message: data.message || 'Connection responded but reported an issue.',
+          message: data.message || 'Google Apps Script endpoint pending or unreachable. Operating in local storage mode with zero data loss.',
           details: data,
           testedAt: new Date().toLocaleTimeString(),
         });
-        showToast('Google Sheets responded with warning', 'info');
+        showToast(
+          data.localMode ? 'Local storage mode active (zero data loss)' : 'Google Sheets responded with warning',
+          'info'
+        );
       }
     } catch (err: any) {
       setScriptTestResult({
         status: 'error',
-        message: err.message || 'Failed to connect to Google Apps Script endpoint.',
+        message: 'Could not connect to Google Apps Script. Operating in local storage mode with zero data loss.',
         testedAt: new Date().toLocaleTimeString(),
       });
-      showToast('Could not reach Google Apps Script', 'error');
+      showToast('Operating in local storage mode with zero data loss', 'info');
     } finally {
       setIsTestingScript(false);
     }
@@ -1019,7 +1023,7 @@ export const SystemSettingsView: React.FC = () => {
                     </span>
                   </div>
                   <div className="font-mono text-[11px] text-zinc-500 truncate max-w-lg">
-                    {SCRIPT_URL}
+                    {settings.appsScriptUrl || settings.googleSheetScriptUrl || SCRIPT_URL}
                   </div>
                 </div>
 
@@ -1049,7 +1053,7 @@ export const SystemSettingsView: React.FC = () => {
                     className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 shadow-2xs"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isTestingScript ? 'animate-spin' : ''}`} />
-                    <span>{isTestingScript ? 'Testing...' : 'Test Connection'}</span>
+                    <span>{isTestingScript ? 'Testing (5s)...' : 'Test Connection'}</span>
                   </button>
                 </div>
               </div>
@@ -1057,7 +1061,7 @@ export const SystemSettingsView: React.FC = () => {
               {/* Diagnostic verification report */}
               {scriptTestResult.status && (
                 <div
-                  className={`mt-2 p-3 rounded-lg border text-xs flex items-start gap-2.5 ${
+                  className={`mt-2 p-3.5 rounded-xl border text-xs flex items-start gap-2.5 ${
                     scriptTestResult.status === 'success'
                       ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
                       : 'bg-amber-50 border-amber-200 text-amber-900'
@@ -1068,20 +1072,32 @@ export const SystemSettingsView: React.FC = () => {
                   ) : (
                     <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   )}
-                  <div className="space-y-1">
-                    <div className="font-bold flex items-center gap-2">
-                      <span>{scriptTestResult.message}</span>
+                  <div className="space-y-1.5 flex-1">
+                    <div className="font-bold flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span>{scriptTestResult.message}</span>
+                        {scriptTestResult.details?.latencyMs !== undefined && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 bg-white/70 border rounded text-zinc-700">
+                            {scriptTestResult.details.latencyMs}ms
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[10px] font-mono font-normal opacity-75">
                         Tested at {scriptTestResult.testedAt}
                       </span>
                     </div>
                     {scriptTestResult.details && (
-                      <div className="text-[11px] font-mono opacity-90">
+                      <div className="text-[11px] font-mono opacity-90 flex flex-wrap gap-2 items-center">
+                        {scriptTestResult.details.localMode && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200/80 text-amber-950 border border-amber-300">
+                            Zero Data Loss Local Mode Active
+                          </span>
+                        )}
                         {scriptTestResult.details.intakeTab && (
-                          <span>Intake Tab: <strong>{scriptTestResult.details.intakeTab}</strong> ({scriptTestResult.details.totalIntakes} rows) · </span>
+                          <span>Intake Tab: <strong>{scriptTestResult.details.intakeTab}</strong> ({scriptTestResult.details.totalIntakes ?? 0} rows) · </span>
                         )}
                         {scriptTestResult.details.ledgerTab && (
-                          <span>Course Ledger: <strong>{scriptTestResult.details.ledgerTab}</strong> ({scriptTestResult.details.totalCourseRows} rows)</span>
+                          <span>Course Ledger: <strong>{scriptTestResult.details.ledgerTab}</strong> ({scriptTestResult.details.totalCourseRows ?? 0} rows)</span>
                         )}
                       </div>
                     )}

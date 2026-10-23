@@ -153,6 +153,8 @@ export interface SystemSettings {
   defaultSession: string;
   adminPin?: string; // 4-digit Administrator PIN (default: '2033')
   lastBackupDate?: string;
+  appsScriptUrl?: string;
+  googleSheetScriptUrl?: string;
 }
 
 export interface IGNOUCourse {

@@ -27,7 +27,7 @@ export const AppsScriptSetupModal: React.FC<AppsScriptSetupModalProps> = ({
 }) => {
   const { showToast, syncGoogleSheets, isSyncingSheets } = useApp();
   const [copied, setCopied] = useState<boolean>(false);
-  const [activeStepTab, setActiveStepTab] = useState<'DEPLOY_STEPS' | 'CODE' | 'ARCHITECTURE'>('DEPLOY_STEPS');
+  const [activeStepTab, setActiveStepTab] = useState<'DEPLOY_STEPS' | 'CODE'>('DEPLOY_STEPS');
 
   if (!isOpen) return null;
 
@@ -62,7 +62,7 @@ export const AppsScriptSetupModal: React.FC<AppsScriptSetupModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Complete guide to install or update Code.gs in your Google Sheet for Group (A) & (B) operations
+                Complete guide to install or update Code.gs in your Google Sheet for Assignment Operations & Course Ledger
               </p>
             </div>
           </div>
@@ -101,17 +101,6 @@ export const AppsScriptSetupModal: React.FC<AppsScriptSetupModalProps> = ({
               }`}
             >
               View Full Code.gs Source
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveStepTab('ARCHITECTURE')}
-              className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
-                activeStepTab === 'ARCHITECTURE'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Separation of (A) & (B) Rules
             </button>
           </div>
 
@@ -265,7 +254,7 @@ export const AppsScriptSetupModal: React.FC<AppsScriptSetupModalProps> = ({
                 <div>
                   <span className="font-bold text-slate-900 text-xs">Complete Drop-in Code.gs:</span>
                   <p className="text-[11px] text-slate-500">
-                    Paste this entire file into Google Apps Script. It handles both Group (A) intake saving and Group (B) multi-tab reading.
+                    Paste this entire file into Google Apps Script. It handles Assignment Intake Desk, Course Ledger auto-unpacking, and marks evaluation.
                   </p>
                 </div>
                 <button
@@ -284,60 +273,13 @@ export const AppsScriptSetupModal: React.FC<AppsScriptSetupModalProps> = ({
             </div>
           )}
 
-          {/* TAB 3: SEPARATION OF A & B RULES */}
-          {activeStepTab === 'ARCHITECTURE' && (
-            <div className="space-y-4">
-              <div className="font-bold text-slate-900 text-xs">
-                Architectural Separation Policy: Group (A) vs Group (B)
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Group A Box */}
-                <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-2xl space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-lg bg-indigo-900 text-white font-bold flex items-center justify-center text-xs">A</span>
-                    <h4 className="font-bold text-indigo-950 text-xs">Assignment Operations & Academic</h4>
-                  </div>
-                  <p className="text-[11px] text-indigo-900 leading-relaxed">
-                    <strong>1. Student Intake & Desk</strong>, <strong>2. Evaluation Master</strong>, and <strong>3. SED Award Sheets & Remuneration</strong>.
-                  </p>
-                  <ul className="text-[11px] text-indigo-800 list-disc pl-4 space-y-1">
-                    <li>Saves intake records to Google Sheet (<code>Intake_Register</code>) upon receipt.</li>
-                    <li>Always stays in two-way synchronization with Google Sheets.</li>
-                    <li>Generates official computerized acknowledgment tokens and SED award sheets.</li>
-                  </ul>
-                </div>
-
-                {/* Group B Box */}
-                <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-lg bg-amber-600 text-white font-bold flex items-center justify-center text-xs">B</span>
-                    <h4 className="font-bold text-amber-950 text-xs">Student Status (Admission & Re-Registration)</h4>
-                  </div>
-                  <p className="text-[11px] text-amber-900 leading-relaxed">
-                    Recorded separately to verify official student registration status and course eligibility.
-                  </p>
-                  <ul className="text-[11px] text-amber-800 list-disc pl-4 space-y-1">
-                    <li><strong>Strict Read-Only:</strong> Web app never pushes, clears, or overwrites admission tabs.</li>
-                    <li><strong>Exact Values:</strong> Enrollment No., Name, Programme, Mobile, and Email are preserved verbatim.</li>
-                    <li>No fake fallback emails (e.g. <code>@ignou.ac.in</code>) or mock phone generators.</li>
-                  </ul>
-                </div>
-              </div>
-
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-600">
-                <strong>Result:</strong> Group (A) operations do not corrupt or overwrite Group (B) admission records. Your Google Sheets remains the authoritative, uncorrupted master database.
-              </div>
-            </div>
-          )}
-
         </div>
 
         {/* Modal Footer */}
         <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>Strict Read-Only mode active for Admission & Re-Registration tabs</span>
+            <span>Direct synchronized mode active for Assignment Intake & Course Ledger</span>
           </div>
 
           <div className="flex items-center gap-2">

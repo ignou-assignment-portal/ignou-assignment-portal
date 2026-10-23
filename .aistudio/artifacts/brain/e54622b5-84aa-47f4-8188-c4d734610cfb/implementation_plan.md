@@ -1,120 +1,116 @@
-# Assignment Intake Google Sheets Persistence & Auto-Sync Engine
+# Complete Removal of Group (B) Student Status & Google Apps Script Connectivity Fix
 
-Fix the student assignment intake persistence failure to ensure all desk intakes save reliably to Google Sheets, are automatically unpacked into individual course ledger rows, never disappear from the screen, and provide an updated copy-ready Apps Script with instant verification in Centre Settings.
+Streamline the system to focus strictly on **Assignment Operations & Academic Management** by completely removing Group (B) Student Status (Admission & Re-Registration) from the codebase and Google Apps Script, while resolving Google Apps Script reachability issues with an automated 5-second timeout, resilient local fallback, and detailed connection diagnostics.
 
-## User Review & Critical Decisions
+---
+
+### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> Based on your confirmed choices in Phase 1:
-> - **Data Persistence Strategy**: Save locally first into local storage and server cache, and sync to Google Sheets in the background with automatic retry.
-> - **Backend Apps Script Update**: Provide a copy-ready script with one-click verification and diagnostic status in Centre Configuration / System Settings.
-> - **Course Ledger Unpacking**: Automatically unpack multiple course codes into individual rows in the `Course_Ledger` / `courseLedger` sheet for Stage 2 evaluation tracking.
+> The following requirements have been confirmed based on your input:
+> - **Google Apps Script Handling**: Automatic 5-second timeout on requests, with seamless fallback to local zero-data-loss storage and an instant connection health diagnostic in Settings.
+> - **Group (B) Removal**: Completely remove Option/Section "(B) STUDENT STATUS ONLY (Admission & Re-Registration)" from the Apps Script template, setup guide, and interface. Student profiles, course history, and search will be derived purely from verified Assignment Intake and Course Ledger records.
 
-## 1. Overview & Core Concept
+---
 
-When a desk official or coordinator enters an assignment intake in Stage 1 (Intake Desk), two issues currently prevent successful recording:
-1. **Google Apps Script Mismatch**: The deployed Google Apps Script does not write incoming POST payloads to the actual sheet tabs (`intakeRegister` / `Intake_Register` and `courseLedger` / `Course_Ledger`) because it lacks dynamic header matching and tab name aliases.
-2. **Client-Side State Overwrite**: When the client app attempts to validate after submission, `fetchAllData` fetches the remote sheet data (which still has only the original rows) and overwrites the local React state, causing newly entered student assignments to vanish from the interface.
+### 1. Overview & Core Concept
 
-This implementation resolves both problems through a resilient two-tier architecture:
-- **Resilient Client & Server Persistence**: Newly added intake records and unpacked course rows are immediately committed to local memory, browser storage, and the local backend JSON store. When `fetchAllData` refreshes data, it optimistically preserves any local records that have not yet appeared in the remote spreadsheet, guaranteeing **zero data loss**.
-- **Updated Universal Google Apps Script (`Code.gs`)**: An enhanced, self-healing script supporting all tab naming variations (`intakeRegister`, `Intake_Register`), flexible column headers (`Timestamp`, `Session`, `Enrollment_No`, `Candidate_Name`, `Contact`, `Programme`, `Courses`, `Official`), and automatic course ledger row creation.
-- **In-App Script Generator & Verification**: A dedicated control panel in System Settings providing the exact updated script with copy-to-clipboard, a "Test Connection & Verify Sync" button, and step-by-step deployment instructions.
+- **What It Does**:
+  1. **Complete Removal of Group (B)**: Strips out all Admission and Re-Registration tabs, rules, and synchronization logic from Google Apps Script (`Code.gs`), the deployment modals, and the app state. The system is dedicated 100% to **Assignment Operations** (Intake Desk, Course Ledger, Evaluators Master, and Award Sheets).
+  2. **Student Profile Unification**: All student search (Ctrl+K), auto-fill, and history tracking will seamlessly index directly from actual Assignment Intake submissions and Course Ledger records.
+  3. **Google Apps Script Reachability Resolution**: Replaces indefinite hanging requests and unhandled CORS/HTML error redirects with an enforced 5-second timeout, smart URL normalization, proxy error handling, and a diagnostic health check tool in Settings.
 
-## 2. User Experience & Visual Design
+- **Target Persona**: Study Centre 2033 Desk Officials and Centre Coordinators who require instant, reliable desk intake and marks management without stalling when Google Sheets is unreachable or slow.
 
-### Key User Flows
-1. **Assignment Intake Registration (Stage 1)**:
-   - Desk official enters student enrollment number, selects/enters candidate name, contact, programme, and courses.
-   - Upon clicking "Save & Issue Receipt", the intake record and its unpacked course assignments are immediately rendered on screen and printed/downloaded without delay.
-   - A quiet toast confirms "Saved locally & queued for Google Sheets sync".
-   - Subsequent sheet data refreshes will **never** wipe or overwrite the newly entered record.
+---
 
-2. **Apps Script Update & Verification (Centre Configuration)**:
-   - Coordinator opens **Centre Configuration > System Settings**.
-   - Under the "Google Sheets Integration" section, a clean card displays:
-     - Current connection status and last sync timestamp.
-     - "Copy Updated Apps Script (Code.gs)" button with copy feedback.
-     - "Test & Verify Connection" button that sends a ping to the Apps Script URL and reports exact sheet readiness (e.g. "Connected: 33 intakes, 145 course ledger rows ready").
-     - 4-step deployment instructions (Extensions > Apps Script > Paste > Deploy as New Version).
+### 2. User Experience & Visual Design
 
-3. **Stage 2 Evaluation Master Reflects New Intake**:
-   - As soon as the assignment intake is registered, each course in the intake (e.g., `BEGC-101`, `BEGC-102`) immediately surfaces in the Course Ledger table ready for evaluator allotment and marks entry.
+- **Settings Connection Diagnostics**:
+  - The "Test Google Apps Script Connection" tool in **Settings** will now test both the proxy route and target script URL with an active 5-second countdown.
+  - Returns clear, actionable status cards:
+    - **Green (Verified)**: Shows HTTP 200, latency in ms, and detected tabs (`Intake_Register`, `Course_Ledger`, `Evaluators_Master`).
+    - **Amber (Local Fallback Active)**: Displays informative diagnostic (e.g., *"Apps Script endpoint did not respond within 5s. Zero-data-loss local persistence is active and saving all records to `/data/sheets_store.json`"*).
+    - **Red (Invalid URL)**: Identifies if the provided URL is malformed or returning Google account login HTML rather than JSON Web App output, with instructions on setting Web App access to *"Anyone"*.
+- **Deployment Modal Refinement (`AppsScriptSetupModal.tsx`)**:
+  - Tab 3 ("Separation of (A) & (B) Rules") is removed.
+  - The modal now displays a simplified 2-tab view:
+    1. **Step-by-Step Deployment Guide** (Copying Code.gs into Google Sheets).
+    2. **View Full Code.gs Source** (Updated clean script focusing solely on Assignment Operations).
+- **Intake Desk & Student Search (Ctrl+K)**:
+  - Instant lookup seamlessly aggregates past assignment submissions and evaluation grades by enrollment number and name directly from the verified intake register.
 
-### Visual Styling & Restraint
-- Strict adherence to the universal design constitution: no generic purple gradients, no decorative status dots, no pill badges on metadata.
-- Clean unboxed metadata with subtle typographic separators (`·`).
-- Monospace tabular numerals (`tabular-nums font-mono`) for enrollment numbers, token numbers, and timestamps.
-- Action buttons adhere to the single-line contract (`whitespace-nowrap shrink-0`).
+---
 
-## 3. Key Product Decisions & Trade-Offs
+### 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Optimistic Local Preservation vs. Blocking UI on Remote Confirmation**
-  - *Chosen Approach*: Save locally first into React state, localStorage, and server store; background sync to Google Sheets with automatic retry.
-  - *Why*: Desk officials often operate during high-traffic admissions/intake periods where network latency or Google Apps Script execution limits could cause delays. The official should never be blocked from issuing a student receipt.
-  - *Alternatives Considered*: Blocking submission until Google Sheets responds with 200 OK was rejected because network flakiness would stall the intake queue.
+- **Decision 1: Removal of Group (B) Admission & Re-Registration**
+  - *Chosen Approach*: Fully remove Group (B) from the Apps Script template, documentation modals, and store synchronization. Replaced with dynamic indexing of students from `allIntakes` and `allCourseEvaluations`.
+  - *Why*: Eliminates clutter, removes script scanning overhead on unrelated sheets, and aligns with the operational focus of the assignment intake cell.
+  - *Alternatives Considered*: Retaining passive read-only admission tabs in the background was rejected to honor the requirement to remove Section (B) completely.
 
-- **Decision 2: Course Unpacking in Apps Script + Client-Side Fallback**
-  - *Chosen Approach*: Handle course unpacking in both the client proxy and the Google Apps Script.
-  - *Why*: Redundancy ensures that even if the Google Apps Script update is delayed, the local app immediately has individual course rows in Stage 2 evaluation master.
+- **Decision 2: 5-Second Timeout with Resilient Local Persistence**
+  - *Chosen Approach*: Add `AbortController` timeout (5000ms) to all `/api/sheets` requests in `server.ts`. When remote Google Apps Script fails, times out, or returns Google Drive HTML error pages, the server immediately returns a structured fallback payload with local records and diagnostic status.
+  - *Why*: Prevents the UI from hanging or displaying raw `Could not reach Google Apps Script` errors during desk operations. Student intake is always recorded locally with zero data loss.
+  - *Alternatives Considered*: Direct browser fetches to `script.google.com` (which fail with browser CORS blocks) are replaced by the Express server proxy.
 
-- **Decision 3: Flexible Schema Matching in Google Apps Script**
-  - *Chosen Approach*: The script dynamically scans row 1 headers of the target sheet to map field names to column indexes, falling back to canonical column order if empty.
-  - *Why*: Users may have slightly different header spellings (`Enrollment_No` vs `Enrollment No`, `Candidate_Name` vs `Candidate Name`, `Contact` vs `Mobile No`). Flexible matching prevents silent append failures.
+---
 
-## 4. Technical Architecture & Data Strategy
+### 4. Technical Architecture & Implementation Steps
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      Stage 1: Intake Desk                   │
-│   (User enters enrollment, student name, courses, session)   │
+│                      Web Browser UI                         │
+│  Intake Desk │ Course Ledger │ Settings Diagnostic │ Search  │
 └──────────────────────────────┬──────────────────────────────┘
                                │
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     AppContext.tsx                          │
-│  1. setIntakes(prev => [newRecord, ...prev])                │
-│  2. setCourseEvaluations(prev => [...unpackedRows, ...prev])│
-│  3. localStorage.setItem(...)                               │
-│  4. dispatch postAddIntake()                                │
-└──────────────┬───────────────────────────────┬──────────────┘
-               │                               │
-               ▼                               ▼
-┌──────────────────────────────┐ ┌────────────────────────────┐
-│      server.ts Proxy         │ │   fetchAllData(preserve)   │
-│  - Saves intake to local     │ │  - Merges remote sheet rows│
-│    store (sheets_store.json) │ │    with local unconfirmed  │
-│  - Proxies to Apps Script    │ │    entries (no data wipe)  │
-└──────────────┬───────────────┘ └────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────────────────────┐
-│             Google Apps Script (Code.gs)                    │
-│  - Matches sheet tab: "Intake_Register" / "intakeRegister"  │
-│  - Appends intake row based on dynamic header positions     │
-│  - Unpacks courses into "Course_Ledger" / "courseLedger"    │
-└─────────────────────────────────────────────────────────────┘
+                       Fetch /api/sheets
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
+│                    Express Server Proxy                     │
+│  - 5-Second AbortController Timeout                         │
+│  - Optimistic Local Persistence (/data/sheets_store.json)    │
+│  - Automatic JSON / Error / HTML Detection                  │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ (5s timeout)
+             ┌─────────────────┴─────────────────┐
+             │                                   │
+      [Remote Success]                    [Timeout / Error]
+             ▼                                   ▼
+┌─────────────────────────┐         ┌─────────────────────────┐
+│ Google Apps Script Exec │         │ Local Store Fallback    │
+│ (Group A Assignment Ops)│         │ (Status: 'fallback')    │
+│ - Intake_Register       │         │ - Zero Data Loss        │
+│ - Course_Ledger         │         │ - Pending Sync Queue    │
+│ - Evaluators_Master     │         │ - Diagnostic Details    │
+└─────────────────────────┘         └─────────────────────────┘
 ```
 
-### Key Changes
-1. **`src/context/AppContext.tsx`**:
-   - In `fetchAllData`, update `cleanIntake` and `cleanLedger` reconciliation so locally added records that have not yet appeared in remote Google Sheets data are preserved rather than overwritten.
-   - Prevent `fetchAllDataRef.current(true)` in `addIntakeRecord` from wiping optimistic state.
-2. **`server.ts`**:
-   - In `/api/sheets` (POST), handle `action === "ADD_INTAKE"` by saving intake records and unpacked course entries to `data/sheets_store.json`.
-   - In `/api/sheets` (GET), merge local store records with remote data so the proxy always reflects recent entries.
-3. **`src/services/sheetsService.ts`**:
-   - Update `OFFICIAL_APPS_SCRIPT_CODE` to handle tab aliases (`Intake_Register` / `intakeRegister`, `Course_Ledger` / `courseLedger`), dynamic header lookup, and automatic course unpacking.
-   - Update `postAddIntake` to pass complete normalized payloads and retry on network disruption.
-4. **`src/components/SystemSettingsView.tsx`**:
-   - Add a "Google Apps Script Backend & Sync Diagnostics" section with a "Copy Updated Code.gs" button, connection tester, and clear instructions.
+#### Step 1: Clean Google Apps Script Template (`OFFICIAL_APPS_SCRIPT_CODE`)
+- In `src/services/sheetsService.ts`:
+  - Remove all Group (B) code, comments, and multi-sheet registration loops.
+  - Retain strictly Assignment Operations: `doGet()` for `intakeRegister`, `courseLedger`, `evaluatorsMaster`, and `awardSheets`.
+  - Retain `doPost()` for `PING`, `ADD_INTAKE` (with auto-unpacking to `courseLedger`), `UPDATE_MARKS`, `ALLOT_EVALUATOR`, and PDF generation.
 
-## 5. Verification Plan
-1. **Automated Verification**:
-   - Compile applet with `compile_applet`.
-   - Lint applet with `lint_applet`.
-2. **Functional Testing**:
-   - Submit a new student assignment intake with multiple courses (e.g. `BEGC-101`, `BEGC-102`).
-   - Confirm intake appears in Intake Register and never disappears upon refresh.
-   - Confirm individual courses appear in Course Ledger / Evaluation Master.
-   - Verify connection tester in System Settings passes and returns sheet status.
+#### Step 2: Update Setup Modal & Documentation (`AppsScriptSetupModal.tsx`)
+- Remove Tab 3 ("Separation of (A) & (B) Rules") and remove Group (B) badges.
+- Update footer notes to reflect pure Assignment Operations.
+
+#### Step 3: Server Proxy Timeout & Reachability Fix (`server.ts`)
+- Implement 5-second `AbortSignal.timeout(5000)` on all `fetch(targetUrl)` calls.
+- In `POST /api/sheets` and `GET /api/sheets`:
+  - When target URL is unreachable, times out, or returns HTML ("Page not found" / "Google Sign In"):
+    - Catch error and return `{ status: 'fallback', reachable: false, latencyMs, message: 'Apps Script unreachable; running in resilient local mode' }`.
+  - In `action === 'PING'`:
+    - Send clean ping with timeout, measure roundtrip latency, and return structured diagnostics including whether Google responded with JSON.
+
+#### Step 4: Settings View & Diagnostics Integration (`SystemSettingsView.tsx`)
+- In `handleTestScriptConnection`:
+  - Pass configured `scriptUrl` in the test request.
+  - Display diagnostic status: online/offline, latency in ms, active tabs, or exact reason for fallback with a one-click guide to redeploy the clean `Code.gs`.
+
+#### Step 5: Student Profile Indexing Clean Up (`StudentSearchModal.tsx`)
+- Ensure search indexes candidate details solely from `allIntakes` and `allCourseEvaluations`.
+
+#### Step 6: Verification & Compilation
+- Run `compile_applet` and `lint_applet` to verify clean build without regressions.

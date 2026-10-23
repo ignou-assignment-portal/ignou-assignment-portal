@@ -22,7 +22,7 @@ function loadStore() {
   } catch (e) {
     console.error("Error reading sheets_store.json:", e);
   }
-  return { intakes: [], courseLedger: [], registrationReceipts: [], assignmentSubmissions: [], studentRegistrations: [] };
+  return { intakes: [], courseLedger: [], registrationReceipts: [], assignmentSubmissions: [] };
 }
 
 function saveStore(data: any) {
@@ -584,6 +584,7 @@ app.get("/api/sheets", async (req, res) => {
       },
       cache: "no-store",
       redirect: "follow",
+      signal: AbortSignal.timeout(5000),
     });
 
     console.log(`[Proxy GET] Apps Script status: ${remoteResponse.status}`);
@@ -594,9 +595,6 @@ app.get("/api/sheets", async (req, res) => {
       const store = loadStore();
       if (store.dateOverrides && typeof json === 'object' && json !== null) {
         json.dateOverrides = { ...(json.dateOverrides || {}), ...store.dateOverrides };
-      }
-      if (typeof json === 'object' && json !== null && !json.studentRegistrations && store.studentRegistrations) {
-        json.studentRegistrations = store.studentRegistrations;
       }
 
       // Optimistically merge any store.intakes not yet appended to remote Google Sheet
@@ -641,11 +639,11 @@ app.get("/api/sheets", async (req, res) => {
       const store = loadStore();
       return res.status(200).json({
         status: "fallback",
+        reachable: false,
         remoteStatus: remoteResponse.status,
-        message: "Google Apps Script returned non-JSON response.",
+        message: "Google Apps Script returned non-JSON response. Local storage fallback active.",
         intakes: store.intakes || [],
         courseLedger: store.courseLedger || [],
-        studentRegistrations: store.studentRegistrations || [],
       });
     }
   } catch (error: any) {
@@ -653,20 +651,85 @@ app.get("/api/sheets", async (req, res) => {
     const store = loadStore();
     return res.status(200).json({
       status: "fallback",
+      reachable: false,
       error: error.message,
+      message: error.name === 'TimeoutError' ? 'Google Apps Script timed out (5s exceeded). Using local storage.' : error.message,
       intakes: store.intakes || [],
       courseLedger: store.courseLedger || [],
-      studentRegistrations: store.studentRegistrations || [],
     });
   }
 });
 
 // 3. Google Sheets doPost() Proxy
-// Handles ADD_INTAKE, UPDATE_MARKS, GENERATE_SED_PDF, GENERATE_CLAIM_PDF, SYNC_ADMISSIONS
+// Handles PING, ADD_INTAKE, UPDATE_MARKS, GENERATE_SED_PDF, GENERATE_CLAIM_PDF
 app.post("/api/sheets", async (req, res) => {
   const targetUrl = getTargetAppsScriptUrl(req.body.scriptUrl as string);
   const action = req.body?.action || "UNKNOWN";
   console.log(`[Proxy POST] Action: ${action} -> ${targetUrl}`);
+
+  // Diagnostic Ping Handler with 5s timeout & reachability evaluation
+  if (action === "PING" || action === "TEST_CONNECTION") {
+    const startTime = Date.now();
+    try {
+      const pingResponse = await fetch(targetUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "PING" }),
+        redirect: "follow",
+        signal: AbortSignal.timeout(5000),
+      });
+
+      const latencyMs = Date.now() - startTime;
+      const text = await pingResponse.text();
+
+      try {
+        const json = JSON.parse(text);
+        if (json && (json.status === "success" || json.message)) {
+          return res.json({
+            status: "success",
+            action: "PING",
+            reachable: true,
+            latencyMs,
+            message: json.message || "Google Apps Script connection active and ready.",
+            intakeTab: json.intakeTab || "Intake_Register",
+            ledgerTab: json.ledgerTab || "Course_Ledger",
+            totalIntakes: json.totalIntakes !== undefined ? json.totalIntakes : null,
+            totalCourseRows: json.totalCourseRows !== undefined ? json.totalCourseRows : null,
+            sheets: json.sheets || [],
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } catch {
+        // Non-JSON response (e.g. 404 Google Drive page or HTML landing)
+        return res.json({
+          status: "fallback",
+          action: "PING",
+          reachable: false,
+          latencyMs,
+          httpStatus: pingResponse.status,
+          message: pingResponse.status === 404
+            ? "Remote Web App returned 404 (File does not exist). Deploy the updated Code.gs in Google Apps Script and choose 'New version'."
+            : `Remote endpoint returned HTTP ${pingResponse.status} HTML. Operating safely in local storage fallback mode with zero data loss.`,
+          localMode: true,
+          sheets: ["Intake_Register", "Course_Ledger", "Evaluators_Master"],
+        });
+      }
+    } catch (pingErr: any) {
+      const latencyMs = Date.now() - startTime;
+      const isTimeout = pingErr.name === "TimeoutError" || String(pingErr.message).includes("timeout");
+      return res.json({
+        status: "fallback",
+        action: "PING",
+        reachable: false,
+        latencyMs,
+        message: isTimeout
+          ? "Google Apps Script connection timed out (exceeded 5s). System is operating with zero data loss in local study centre database mode."
+          : `Could not connect to Google Apps Script (${pingErr.message}). Local storage active with zero data loss.`,
+        localMode: true,
+        sheets: ["Intake_Register", "Course_Ledger", "Evaluators_Master"],
+      });
+    }
+  }
 
   // Persist ADD_INTAKE in local store immediately for zero-loss guarantee
   if (action === "ADD_INTAKE" || action === "SUBMIT_INTAKE") {
@@ -749,19 +812,6 @@ app.post("/api/sheets", async (req, res) => {
     }
   }
 
-  // If action is SYNC_ADMISSIONS, persist in local store
-  if (action === "SYNC_ADMISSIONS" && (req.body.records || req.body.payload?.records)) {
-    try {
-      const records = req.body.records || req.body.payload?.records || [];
-      const store = loadStore();
-      store.studentRegistrations = records;
-      saveStore(store);
-      console.log(`[Store] Synced ${records.length} student registrations in local backup.`);
-    } catch (e) {
-      console.warn("Failed to save studentRegistrations in store:", e);
-    }
-  }
-
   try {
     const outgoingBody = {
       action,
@@ -779,6 +829,7 @@ app.post("/api/sheets", async (req, res) => {
       },
       body: JSON.stringify(outgoingBody),
       redirect: "follow",
+      signal: AbortSignal.timeout(5000),
     });
 
     console.log(`[Proxy POST] Apps Script response status: ${remoteResponse.status}`);
@@ -794,7 +845,7 @@ app.post("/api/sheets", async (req, res) => {
           status: "success",
           action,
           message: "Remote PDF generator executed. Fallback document link generated.",
-          downloadUrl: null, // Client will invoke the document renderer
+          downloadUrl: null,
         });
       }
 
@@ -802,7 +853,7 @@ app.post("/api/sheets", async (req, res) => {
         status: "success",
         action,
         saved: true,
-        message: "Action recorded successfully.",
+        message: "Action recorded successfully in local store.",
       });
     }
   } catch (error: any) {
@@ -812,7 +863,7 @@ app.post("/api/sheets", async (req, res) => {
       action,
       saved: true,
       error: error.message,
-      message: "Synced to local queue.",
+      message: "Synced to local queue (remote script offline).",
     });
   }
 });

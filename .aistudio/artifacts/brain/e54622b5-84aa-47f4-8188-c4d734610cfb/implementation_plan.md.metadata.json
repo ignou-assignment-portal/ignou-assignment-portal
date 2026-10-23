@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to fix the assignment intake Google Sheets persistence issue, ensure zero data loss with optimistic local caching and auto-retry, unpack course rows automatically, and provide an updated Code.gs script with in-app verification.",
-  "updatedAt":  "2026-10-23T10:21:20.229307564Z",
+  "summary":  "Plan to completely remove Group (B) Student Status (Admission & Re-Registration) from the system, derive student search profiles strictly from Assignment Intake and Course Ledger records, and implement a robust 5-second timeout with automated local fallback and diagnostic health check for Google Apps Script connectivity.",
+  "updatedAt":  "2026-10-23T10:55:59.588255641Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

@@ -66,9 +66,10 @@ export interface HydrationResult {
   intakes?: any[];
   courseLedger?: any[];
   evaluatorsMaster?: any[];
-  studentRegistrations?: any[];
   source: 'google_sheets' | 'local_cache' | 'offline_fallback';
   message?: string;
+  reachable?: boolean;
+  latencyMs?: number;
 }
 
 export interface ApiResponse<T = any> {
@@ -115,6 +116,7 @@ export async function sendScriptPost(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(5000),
     });
     if (proxyRes.ok) {
       const result = await proxyRes.json();
@@ -136,6 +138,7 @@ export async function sendScriptPost(
           "Content-Type": "text/plain;charset=utf-8",
         },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(5000),
       });
       sent = true;
     } catch (err) {
@@ -172,243 +175,23 @@ export async function executeQueuedMutation(item: SyncQueueItem): Promise<boolea
 }
 
 /**
- * Extracts and maps student admissions and re-registrations from Google Sheets payloads,
- * supporting multi-tab structures (e.g. "Fresh Jan 2025", "RR Jan 2025", "RR July 2025", "RR Jan 2026")
- * and master deduplication by composite key.
+ * Legacy payload extractor kept for type compatibility
  */
-export function extractRegistrationsFromSheetsPayload(json: Record<string, any>): any[] {
-  if (!json || typeof json !== 'object') return [];
-
-  const records: any[] = [];
-  const compositeKeySet = new Set<string>();
-
-  const addParsedRow = (item: any, defaultCadre?: string, defaultSession?: string) => {
-    if (!item || typeof item !== 'object') return;
-    const rawEnr = item.enrollmentNo || item['Enrollment No'] || item['Enrollment No.'] || item.Enrollment_No || item['Enrolment No'] || item['Enrolment No.'] || item.enrolmentNo || item.rollNo || item.studentId || '';
-    const cleanEnr = String(rawEnr).replace(/[^0-9a-zA-Z]/g, '').trim().toUpperCase();
-    if (!cleanEnr || cleanEnr.length < 5) return;
-
-    // Filter out legacy synthetic dummy emails/numbers from previous turns
-    const rawEmailCheck = String(item.studentEmail || item.email || item['Email Address'] || item['Email ID'] || item.Email || '').trim().toLowerCase();
-    const isSyntheticEmail = rawEmailCheck.endsWith('@ignou.ac.in') && /\.\d{4}@ignou\.ac\.in$/.test(rawEmailCheck);
-    const isSyntheticPhone = /^9862[1234][12]\d{4}$/.test(String(item.studentPhone || item['Mobile Number'] || item.Contact || item.mobile || '').trim());
-    if (isSyntheticEmail && isSyntheticPhone) {
-      return; // Skip synthetic generated record
-    }
-
-    const studentName = String(item.studentName || item['Student Name'] || item.Candidate_Name || item['Candidate Name'] || item['Candidate Name.'] || item.name || item.Name || item.student_name || '').trim();
-    const programmeCode = String(item.programmeCode || item['Programme Code'] || item.Programme || item['Programme'] || item.programme || '').trim().toUpperCase();
-
-    // Determine Cadre (FRESH vs RE_REGISTRATION)
-    let cadre: 'FRESH' | 'RE_REGISTRATION' = (defaultCadre === 'RE_REGISTRATION' ? 'RE_REGISTRATION' : 'FRESH');
-    const rawCadre = String(item.cadre || item.Cadre || item.registrationType || item.admissionType || '').toLowerCase();
-    if (rawCadre.includes('re') || rawCadre.includes('rr') || rawCadre.includes('2nd') || rawCadre.includes('3rd')) {
-      cadre = 'RE_REGISTRATION';
-    } else if (rawCadre.includes('fresh') || rawCadre.includes('1st') || rawCadre.includes('new')) {
-      cadre = 'FRESH';
-    }
-
-    // Determine Session
-    const rawSession = item.session || item.Session || item.admissionSession || defaultSession || 'July 2026';
-    const session = normalizeSessionName(rawSession);
-    const sessionCycle = session.toLowerCase().includes('jan') ? 'January' : 'July';
-    const yearMatch = session.match(/\d{4}/);
-    const sessionYear = yearMatch ? parseInt(yearMatch[0], 10) : new Date().getFullYear();
-
-    // Determine Academic Year
-    let academicYear: '1st Year' | '2nd Year' | '3rd Year' | 'Semester' = cadre === 'FRESH' ? '1st Year' : '2nd Year';
-    const rawYear = String(item.academicYear || item.Academic_Year || item['Academic Year'] || item.year || item.level || '').toLowerCase();
-    if (rawYear.includes('3') || rawYear.includes('third') || rawYear.includes('3rd')) academicYear = '3rd Year';
-    else if (rawYear.includes('2') || rawYear.includes('second') || rawYear.includes('2nd')) academicYear = '2nd Year';
-    else if (rawYear.includes('1') || rawYear.includes('first') || rawYear.includes('1st')) academicYear = '1st Year';
-    else if (rawYear.includes('sem')) academicYear = 'Semester';
-
-    // Parse course codes
-    const rawCourses = item.courseCodes || item.Courses || item['Course Codes'] || item.courses || item.subjects || [];
-    let courseCodes: string[] = [];
-    if (Array.isArray(rawCourses)) {
-      courseCodes = rawCourses.map((c) => String(c).trim().toUpperCase()).filter(Boolean);
-    } else if (typeof rawCourses === 'string') {
-      courseCodes = rawCourses.split(/[,;\/|\n]+/).map((c) => c.trim().toUpperCase()).filter((c) => c.length >= 3);
-    }
-
-    const cleanPhone = String(
-      item.studentPhone ||
-      item['Student Phone'] ||
-      item['Student_Phone'] ||
-      item['Mobile Number'] ||
-      item['Mobile No.'] ||
-      item['Mobile No'] ||
-      item['Mobile'] ||
-      item.mobile ||
-      item.Mobile ||
-      item.Contact ||
-      item['Contact'] ||
-      item['Contact No'] ||
-      item['Contact No.'] ||
-      item.phone ||
-      item.Phone ||
-      item['Phone Number'] ||
-      item.contactNo ||
-      ''
-    ).trim();
-
-    const rawEmail = (
-      item.studentEmail ||
-      item.student_email ||
-      item['Student Email'] ||
-      item['Student_Email'] ||
-      item['student email'] ||
-      item.Email ||
-      item.email ||
-      item.Email_ID ||
-      item['Email ID'] ||
-      item['Email Id'] ||
-      item['Email_ID'] ||
-      item.email_id ||
-      item['Email Address'] ||
-      item.Email_Address ||
-      item['Email_address'] ||
-      item['email address'] ||
-      item['Candidate Email'] ||
-      item.candidate_email ||
-      item.candidateEmail ||
-      item['Learner Email'] ||
-      item.learner_email ||
-      item.learnerEmail ||
-      item['E-mail'] ||
-      item['E-mail ID'] ||
-      item['e-mail id'] ||
-      item.Mail ||
-      item.mail ||
-      item['Mail ID'] ||
-      item.mail_id ||
-      ''
-    );
-    const hasInvalidDefault = String(rawEmail || '').toLowerCase().includes('not provided') || String(rawEmail || '').toLowerCase().includes('default email');
-    const cleanEmail = (!hasInvalidDefault && String(rawEmail || '').trim()) || '';
-
-    // Composite key deduplication
-    const compKey = `${cleanEnr}__${session.toUpperCase()}__${academicYear.toUpperCase()}__${cadre}`;
-    if (!compositeKeySet.has(compKey)) {
-      compositeKeySet.add(compKey);
-      records.push({
-        id: item.id || `REG-${cleanEnr}-${session.replace(/\s+/g, '')}-${academicYear.replace(/\s+/g, '')}-${cadre}`,
-        cadre,
-        academicYear,
-        enrollmentNo: cleanEnr,
-        studentName,
-        programmeCode,
-        programmeName: item.programmeName || '',
-        session,
-        sessionCycle,
-        sessionYear,
-        courseCodes,
-        studentPhone: cleanPhone,
-        studentEmail: cleanEmail,
-        registrationDate: item.registrationDate || new Date().toISOString().split('T')[0],
-        status: (item.status === 'Provisional' || item.status === 'Cancelled') ? item.status : 'Confirmed',
-        studyCentreCode: '2033',
-        regionalCentreCode: 'RC-20',
-        createdAt: item.createdAt || new Date().toISOString(),
-        updatedAt: item.updatedAt || new Date().toISOString(),
-      });
-    }
-  };
-
-  // 1. Direct intake registers (Authentic desk admissions)
-  const intakeList = json.intakeRegister || json.intakes || json.Intake_Register || [];
-  if (Array.isArray(intakeList)) {
-    intakeList.forEach((r) => {
-      if (!r) return;
-      const rawEnr = r.Enrollment_No || r.enrollmentNo || r['Enrollment No'] || '';
-      const cleanEnr = String(rawEnr).replace(/[^0-9a-zA-Z]/g, '').trim().toUpperCase();
-      if (!cleanEnr || cleanEnr.length < 5) return;
-      const studentName = String(r.Candidate_Name || r.candidateName || r['Candidate Name'] || r.studentName || '').trim();
-      const programmeCode = String(r.Programme || r.programme || r.programmeCode || '').trim().toUpperCase();
-      const rawContact = r.Contact || r.contact || r.studentPhone || r['Mobile Number'] || '';
-      const cleanPhone = String(rawContact).replace(/^'/, '').trim();
-      const rawEmail = String(r.Email || r.email || r['Email ID'] || r.studentEmail || '').trim();
-      const hasInvalidDefault = rawEmail.toLowerCase().includes('not provided') || rawEmail.toLowerCase().includes('default email');
-      const cleanEmail = hasInvalidDefault ? '' : rawEmail;
-      const session = normalizeSessionName(r.Session || r.session || 'July 2026');
-      const rawCourses = r.Courses || r.courses || r.courseCodes || '';
-      const courseCodes = Array.isArray(rawCourses)
-        ? rawCourses.map((c: any) => String(c).trim().toUpperCase()).filter(Boolean)
-        : String(rawCourses).split(',').map((c) => c.trim().toUpperCase()).filter(Boolean);
-
-      const compKey = `${cleanEnr}__${session.toUpperCase()}__1ST YEAR__FRESH`;
-      if (!compositeKeySet.has(compKey)) {
-        compositeKeySet.add(compKey);
-        records.push({
-          id: `REG-${cleanEnr}-${session.replace(/\s+/g, '')}-1stYear-FRESH`,
-          cadre: 'FRESH',
-          academicYear: '1st Year',
-          enrollmentNo: cleanEnr,
-          studentName,
-          programmeCode,
-          programmeName: programmeCode,
-          session,
-          sessionCycle: session.toLowerCase().includes('jan') ? 'January' : 'July',
-          sessionYear: parseInt(session.match(/\d{4}/)?.[0] || '2026', 10),
-          courseCodes,
-          studentPhone: cleanPhone,
-          studentEmail: cleanEmail,
-          registrationDate: String(r.Submission_Date || r.submissionDate || r.Date || r.date || new Date().toISOString()).split('T')[0],
-          status: 'Confirmed',
-          studyCentreCode: '2033',
-          regionalCentreCode: 'RC-20',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-      }
-    });
-  }
-
-  // 2. Direct arrays under standard keys
-  const directList = json.studentRegistrations || json.student_registrations || json.admissions || json.Admissions || [];
-  if (Array.isArray(directList)) {
-    directList.forEach((r) => addParsedRow(r));
-  }
-
-  // 3. Scan multi-tab session keys: "Fresh July 2026", "Fresh Jan 2026", "RR Jan 2026", etc.
-  Object.keys(json).forEach((key) => {
-    if (['intakes', 'intakeRegister', 'Intake_Register', 'courseLedger', 'Course_Ledger', 'evaluatorsMaster', 'Evaluators_Master', 'studentRegistrations', 'admissions'].includes(key)) {
-      return;
-    }
-    const val = json[key];
-    if (Array.isArray(val) && val.length > 0) {
-      const lowerKey = key.toLowerCase();
-      const isFresh = lowerKey.includes('fresh');
-      const isRR = lowerKey.includes('rr') || lowerKey.includes('re-reg') || lowerKey.includes('rereg');
-      const isAdmissions = lowerKey.includes('admission');
-
-      if (isFresh || isRR || isAdmissions) {
-        const inferredCadre: 'FRESH' | 'RE_REGISTRATION' = isRR ? 'RE_REGISTRATION' : 'FRESH';
-        let inferredSession = 'July 2026';
-        if (lowerKey.includes('jan') && lowerKey.includes('2025')) inferredSession = 'January 2025';
-        else if (lowerKey.includes('jul') && lowerKey.includes('2025')) inferredSession = 'July 2025';
-        else if (lowerKey.includes('jan') && lowerKey.includes('2026')) inferredSession = 'January 2026';
-        else if (lowerKey.includes('jul') && lowerKey.includes('2026')) inferredSession = 'July 2026';
-        else if (lowerKey.includes('jan') && lowerKey.includes('2027')) inferredSession = 'January 2027';
-
-        val.forEach((row) => addParsedRow(row, inferredCadre, inferredSession));
-      }
-    }
-  });
-
-  return records;
+export function extractRegistrationsFromSheetsPayload(_json: Record<string, any>): any[] {
+  return [];
 }
 
 /**
  * 1. On Load:
  * Call doGet() to hydrate IntakeRegister and CourseLedger state from Google Sheets.
- * Always passes timestamp & cache: 'no-store' to guarantee fresh data without stale caches.
+ * Uses 5-second automatic timeout with seamless local storage fallback.
  */
 export async function doGet(): Promise<HydrationResult> {
   const timestamp = Date.now();
+  const startTime = Date.now();
+
   try {
-    // Try via full-stack Express proxy first with cache-busting
+    // Try via full-stack Express proxy first with cache-busting and 5-second timeout
     const response = await fetch(`/api/sheets?action=doGet&scriptUrl=${encodeURIComponent(SCRIPT_URL)}&_t=${timestamp}`, {
       method: 'GET',
       headers: {
@@ -417,6 +200,7 @@ export async function doGet(): Promise<HydrationResult> {
         'Pragma': 'no-cache',
       },
       cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
     });
 
     if (response.ok) {
@@ -424,53 +208,58 @@ export async function doGet(): Promise<HydrationResult> {
       const rawIntakes = json.intakeRegister || json.intakes || json.Intake_Register || [];
       const rawLedger = json.courseLedger || json.course_ledger || json.Course_Ledger || [];
       const rawEvaluators = json.evaluatorsMaster || json.evaluators_master || json.Evaluators_Master || json.evaluators || [];
-      const rawRegistrations = extractRegistrationsFromSheetsPayload(json);
-      if (rawIntakes.length > 0 || rawLedger.length > 0 || rawEvaluators.length > 0 || rawRegistrations.length > 0) {
-        return {
-          success: true,
-          intakes: rawIntakes,
-          courseLedger: rawLedger,
-          evaluatorsMaster: rawEvaluators,
-          studentRegistrations: rawRegistrations,
-          source: 'google_sheets',
-          message: 'Hydrated successfully from Google Sheets.',
-        };
-      }
+      const isReachable = json.status !== 'fallback';
+
+      return {
+        success: true,
+        intakes: rawIntakes,
+        courseLedger: rawLedger,
+        evaluatorsMaster: rawEvaluators,
+        source: isReachable ? 'google_sheets' : 'local_cache',
+        reachable: isReachable,
+        latencyMs: Date.now() - startTime,
+        message: isReachable
+          ? 'Hydrated successfully from Google Sheets.'
+          : 'Operating in local store fallback mode (5s timeout/unreachable).',
+      };
     }
   } catch (err: any) {
-    console.warn('[Google Sheets] Express proxy doGet failed, trying direct fetch:', err);
+    console.warn('[Google Sheets] Express proxy doGet failed or timed out:', err);
   }
 
-  // Direct client fetch fallback with cache-busting
+  // Direct client fetch fallback with cache-busting and 5s timeout
   try {
     const directRes = await fetch(`${SCRIPT_URL}?_t=${timestamp}`, {
       method: 'GET',
       cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
     });
     if (directRes.ok) {
       const data = await directRes.json();
       const rawIntakes = data.intakeRegister || data.intakes || data.Intake_Register || [];
       const rawLedger = data.courseLedger || data.course_ledger || data.Course_Ledger || [];
       const rawEvaluators = data.evaluatorsMaster || data.evaluators_master || data.Evaluators_Master || data.evaluators || [];
-      const rawRegistrations = extractRegistrationsFromSheetsPayload(data);
       return {
         success: true,
         intakes: rawIntakes,
         courseLedger: rawLedger,
         evaluatorsMaster: rawEvaluators,
-        studentRegistrations: rawRegistrations,
         source: 'google_sheets',
+        reachable: true,
+        latencyMs: Date.now() - startTime,
         message: 'Hydrated via direct Google Apps Script call.',
       };
     }
   } catch (directErr: any) {
-    console.warn('[Google Sheets] Direct doGet failed:', directErr);
+    console.warn('[Google Sheets] Direct doGet failed or timed out:', directErr);
   }
 
   return {
-    success: false,
+    success: true,
     source: 'local_cache',
-    message: `Google Sheets endpoint pending or offline. Using local storage state.`,
+    reachable: false,
+    latencyMs: Date.now() - startTime,
+    message: 'Google Sheets script endpoint pending or offline. Local storage active.',
   };
 }
 
@@ -1484,26 +1273,21 @@ function createFallbackClaimBillPdfBlob(details: {
 
 /**
  * Master Google Apps Script (Code.gs) template for IGNOU SC-2033
- * Supports Group (A) Assignment Operations (Intake, Evaluation, Award Sheets)
- * and Group (B) Read-Only Multi-Tab Admission & Re-Registration Student Status.
+ * Dedicated Assignment Operations (Intake Desk, Course Ledger, Evaluation Master, Award Sheets)
  */
 export const OFFICIAL_APPS_SCRIPT_CODE = `/**
  * =========================================================================
  * IGNOU STUDY CENTRE 2033 - MASTER GOOGLE APPS SCRIPT (Code.gs)
  * =========================================================================
  * 
- * ARCHITECTURAL SPECIFICATION:
- * (A) ASSIGNMENT OPERATIONS & ACADEMIC:
- *     1. Student Intake & Desk (intakeRegister / Intake_Register)
- *     2. Evaluation Master & Course Ledger (courseLedger / Course_Ledger)
- *     3. Evaluators Master (evaluatorsMaster / Evaluators_Master)
- *     4. SED Award Sheets (awardSheets / Award_Sheets)
- *     --> Data from Intake Desk is saved to Google Sheets (doPost) and kept in sync.
- *     --> Each intake row is appended and auto-unpacked into Course Ledger rows.
+ * ASSIGNMENT OPERATIONS & ACADEMIC LEDGER:
+ * 1. Student Intake & Desk (intakeRegister / Intake_Register)
+ * 2. Evaluation Master & Course Ledger (courseLedger / Course_Ledger)
+ * 3. Evaluators Master (evaluatorsMaster / Evaluators_Master)
+ * 4. SED Award Sheets (awardSheets / Award_Sheets)
  * 
- * (B) STUDENT STATUS ONLY (Admission & Re-Registration):
- *     --> Read-Only from Google Sheets (doGet) or imported Excel.
- *     --> Never overwritten by web app! Exact values preserved verbatim.
+ * Data submitted at Intake Desk is saved to Google Sheets (doPost) and
+ * auto-unpacked into individual course rows in Course_Ledger.
  * =========================================================================
  */
 
@@ -1511,10 +1295,7 @@ function doGet(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var result = {};
 
-  // -------------------------------------------------------------
-  // GROUP (A): ASSIGNMENT OPERATIONS & ACADEMIC (Synchronized Data)
-  // Supports both snake_case and camelCase sheet names
-  // -------------------------------------------------------------
+  // ASSIGNMENT OPERATIONS & ACADEMIC DATA
   var intakeData = getSheetDataByAliases(ss, ["intakeRegister", "Intake_Register", "IntakeRegister", "Intake Register", "Intake"]);
   result.intakeRegister = intakeData;
   result.Intake_Register = intakeData;
@@ -1531,61 +1312,6 @@ function doGet(e) {
   var awardData = getSheetDataByAliases(ss, ["awardSheets", "Award_Sheets", "AwardSheets"]);
   result.awardSheets = awardData;
   result.Award_Sheets = awardData;
-
-  // -------------------------------------------------------------
-  // GROUP (B): STUDENT STATUS ONLY (Admission & Re-Registration)
-  // Dynamic multi-tab reader: Reads all student registration sheets
-  // -------------------------------------------------------------
-  var allSheets = ss.getSheets();
-  var allRegistrations = [];
-
-  for (var i = 0; i < allSheets.length; i++) {
-    var sheet = allSheets[i];
-    var sheetName = sheet.getName();
-    var lower = sheetName.toLowerCase();
-
-    // Skip Group (A) operational sheets
-    if (
-      lower.includes("intake") ||
-      lower.includes("ledger") ||
-      lower.includes("evaluator") ||
-      lower.includes("award")
-    ) {
-      continue;
-    }
-
-    var isFresh = lower.includes("fresh");
-    var isRR = lower.includes("rr") || lower.includes("re-reg") || lower.includes("rereg");
-    var isAdmission = lower.includes("admission") || lower.includes("registration") || lower.includes("student");
-
-    if (isFresh || isRR || isAdmission) {
-      var rows = getSheetDataAsArray(sheet);
-      result[sheetName] = rows;
-
-      var defaultCadre = isRR ? "RE_REGISTRATION" : "FRESH";
-      var defaultSession = "July 2026";
-      if (lower.includes("jan") && lower.includes("2025")) defaultSession = "January 2025";
-      else if (lower.includes("jul") && lower.includes("2025")) defaultSession = "July 2025";
-      else if (lower.includes("jan") && lower.includes("2026")) defaultSession = "January 2026";
-      else if (lower.includes("jul") && lower.includes("2026")) defaultSession = "July 2026";
-
-      for (var j = 0; j < rows.length; j++) {
-        var r = rows[j];
-        if (!r.cadre && !r.Cadre) r.cadre = defaultCadre;
-        if (!r.session && !r.Session) r.session = defaultSession;
-
-        var emailVal = r["Email"] || r["Email ID"] || r["Email_ID"] || r["email"] || r["studentEmail"] || r["Candidate Email"] || r["Email Address"] || "";
-        if (emailVal) r.studentEmail = String(emailVal).trim();
-
-        var phoneVal = r["Mobile Number"] || r["Mobile No."] || r["Mobile No"] || r["Mobile"] || r["Contact"] || r["studentPhone"] || r["phone"] || "";
-        if (phoneVal) r.studentPhone = String(phoneVal).trim();
-
-        allRegistrations.push(r);
-      }
-    }
-  }
-
-  result.studentRegistrations = allRegistrations;
 
   return ContentService.createTextOutput(JSON.stringify(result))
     .setMimeType(ContentService.MimeType.JSON);
@@ -1616,7 +1342,8 @@ function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({
       status: "success",
       action: action,
-      message: "Google Apps Script connection active and ready.",
+      reachable: true,
+      message: "Google Apps Script connected: Assignment Operations active.",
       sheets: sheetNames,
       intakeTab: intakeSheet ? intakeSheet.getName() : "None",
       ledgerTab: ledgerSheet ? ledgerSheet.getName() : "None",
@@ -1830,15 +1557,10 @@ function getSheetDataAsArray(sheet) {
 }
 `;
 
-/**
- * Group (B) Admission & Re-Registration data is STRICT READ-ONLY.
- * The application reads from Google Sheets tabs or uploaded Excel without overwriting or pushing changes,
- * ensuring zero data corruption or default values.
- */
-export async function postSyncAdmissions(records: any[]): Promise<ApiResponse> {
+export async function postSyncAdmissions(_records: any[]): Promise<ApiResponse> {
   return {
     status: 'success',
-    message: 'Admissions & Re-registrations operate in strict Read-Only mode to preserve all student data verbatim without overwriting Google Sheets.',
+    message: 'Assignment Operations are active.',
   };
 }
 
