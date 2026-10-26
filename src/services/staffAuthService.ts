@@ -286,6 +286,9 @@ export async function authenticateStaff(
     }
     saveLocalStaffAccounts(accounts);
 
+    // Ensure Last_Login timestamp is synchronized in Google Sheets
+    notifyRemoteStatusUpdate(cleanId, 'Active', 0, scriptUrl);
+
     return {
       success: true,
       user: updatedUser,

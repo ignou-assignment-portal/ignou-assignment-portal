@@ -45,15 +45,6 @@ export const GatekeeperLockScreen: React.FC<GatekeeperLockScreenProps> = ({ onBa
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loginSuccessNotice, setLoginSuccessNotice] = useState<string | null>(null);
 
-  // Quick preset helper for testing
-  const handleSelectPreset = (presetId: string, presetPass: string) => {
-    setStaffId(presetId);
-    setPassword(presetPass);
-    setErrorMessage(null);
-    setRemainingAttempts(null);
-    setIsLocked(false);
-  };
-
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -350,40 +341,6 @@ export const GatekeeperLockScreen: React.FC<GatekeeperLockScreenProps> = ({ onBa
                 )}
               </button>
             </form>
-
-            {/* Quick-Fill Presets for Easy Evaluation */}
-            <div className="pt-2 border-t border-zinc-800/80">
-              <div className="text-[11px] font-semibold text-zinc-400 mb-2 flex items-center justify-between">
-                <span>Quick-Select Demo Accounts:</span>
-                <span className="text-[10px] text-zinc-500 font-mono">SC-2033 Credentials</span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleSelectPreset('coordinator', 'Coordinator@2033')}
-                  className="p-2 bg-zinc-950/70 hover:bg-zinc-800/80 border border-zinc-800 hover:border-indigo-500/50 rounded-md text-left transition cursor-pointer"
-                >
-                  <div className="text-[11px] font-bold text-indigo-400 truncate">Coordinator</div>
-                  <div className="text-[10px] font-mono text-zinc-400">admin role</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSelectPreset('desk01', 'Desk@2033')}
-                  className="p-2 bg-zinc-950/70 hover:bg-zinc-800/80 border border-zinc-800 hover:border-teal-500/50 rounded-md text-left transition cursor-pointer"
-                >
-                  <div className="text-[11px] font-bold text-teal-400 truncate">Counter 1</div>
-                  <div className="text-[10px] font-mono text-zinc-400">desk01</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSelectPreset('desk02', 'Desk@2033')}
-                  className="p-2 bg-zinc-950/70 hover:bg-zinc-800/80 border border-zinc-800 hover:border-teal-500/50 rounded-md text-left transition cursor-pointer"
-                >
-                  <div className="text-[11px] font-bold text-teal-400 truncate">Counter 2</div>
-                  <div className="text-[10px] font-mono text-zinc-400">desk02</div>
-                </button>
-              </div>
-            </div>
 
             {/* Institutional Information Notice */}
             <div className="p-3 bg-zinc-950/70 border border-zinc-800 rounded-md text-center space-y-1">

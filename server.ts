@@ -812,6 +812,21 @@ app.post("/api/sheets", async (req, res) => {
       user.status = "Active";
       user.lastLogin = new Date().toISOString();
       saveStore(store);
+
+      // Asynchronously sync successful login and Last_Login to Google Sheets
+      fetch(targetUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "UPDATE_STAFF_STATUS",
+          staffId: user.staffId,
+          status: "Active",
+          failedAttempts: 0,
+          lastLogin: user.lastLogin,
+        }),
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => {});
+
       return res.status(200).json({
         status: "success",
         user: {

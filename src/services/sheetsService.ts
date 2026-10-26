@@ -1577,107 +1577,176 @@ function doPost(e) {
   }
 
   // 5. Staff Authentication & Account Governance
-  if (action === "VERIFY_STAFF_LOGIN") {
-    var staffSheet = getOrCreateSheet(ss, ["Staff_Users", "StaffUsers", "Staff"], ["Staff_ID", "Full_Name", "Role", "Password", "Account_Status", "Failed_Attempts", "Last_Login"]);
-    var staffData = getSheetDataAsArray(staffSheet);
-    var targetId = String(payload.staffId || "").trim().toLowerCase();
-    var enteredPass = String(payload.password || "").trim();
+  // 5. Staff Authentication & Account Governance (Dynamic Header Mapping & Reliable Last_Login Updates)
+  if (action === "VERIFY_STAFF_LOGIN" || action === "UPDATE_STAFF_STATUS") {
+    var staffSheet = getOrCreateSheet(ss, ["Staff_Users", "StaffUsers", "Staff"], [
+      "Staff_ID", "Full_Name", "Role", "Password", "Account_Status", "Failed_Attempts", "Last_Login"
+    ]);
 
-    var userRow = null;
+    var allValues = staffSheet.getDataRange().getValues();
+    var headers = allValues[0] || [];
+
+    // Dynamically locate column indices from sheet headers
+    var idCol = 0;
+    var nameCol = 1;
+    var roleCol = 2;
+    var passCol = 3;
+    var statusCol = 4;
+    var failedCol = 5;
+    var lastLoginCol = -1;
+
+    for (var h = 0; h < headers.length; h++) {
+      var hClean = String(headers[h]).trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (hClean.indexOf("staffid") !== -1 || hClean === "id" || hClean.indexOf("username") !== -1) idCol = h;
+      else if (hClean.indexOf("name") !== -1) nameCol = h;
+      else if (hClean.indexOf("role") !== -1) roleCol = h;
+      else if (hClean.indexOf("pass") !== -1) passCol = h;
+      else if (hClean.indexOf("status") !== -1) statusCol = h;
+      else if (hClean.indexOf("fail") !== -1 || hClean.indexOf("attempt") !== -1) failedCol = h;
+      else if (hClean.indexOf("last") !== -1 || hClean.indexOf("login") !== -1) lastLoginCol = h;
+    }
+
+    // Auto-create Last_Login column if missing from sheet
+    if (lastLoginCol === -1) {
+      lastLoginCol = headers.length;
+      staffSheet.getRange(1, lastLoginCol + 1).setValue("Last_Login").setFontWeight("bold");
+    }
+
+    var targetId = String(payload.staffId || "").trim().toLowerCase();
     var rowIndex = -1;
-    for (var i = 0; i < staffData.length; i++) {
-      if (String(staffData[i].Staff_ID || staffData[i].staffId || "").trim().toLowerCase() === targetId) {
-        userRow = staffData[i];
-        rowIndex = i + 2;
+    var userRowValues = null;
+
+    for (var r = 1; r < allValues.length; r++) {
+      var rowStaffId = String(allValues[r][idCol] || "").trim().toLowerCase();
+      if (rowStaffId === targetId) {
+        rowIndex = r + 1; // 1-indexed row in Sheet
+        userRowValues = allValues[r];
         break;
       }
     }
 
-    if (!userRow) {
-      return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "Staff ID not found in Staff_Users sheet" }))
-        .setMimeType(ContentService.MimeType.JSON);
+    var nowTimestamp;
+    try {
+      nowTimestamp = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd HH:mm:ss");
+    } catch (e) {
+      nowTimestamp = new Date().toISOString();
     }
 
-    var status = String(userRow.Account_Status || userRow.status || "Active").trim();
-    if (status.toLowerCase() === "locked") {
-      return ContentService.createTextOutput(JSON.stringify({ status: "locked", message: "Account is locked in Google Sheets. Contact Centre Coordinator to unlock." }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
+    if (action === "VERIFY_STAFF_LOGIN") {
+      var enteredPass = String(payload.password || "").trim();
+      if (rowIndex === -1 || !userRowValues) {
+        return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "Staff ID not found in Staff_Users sheet" }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
 
-    var correctPass = String(userRow.Password || userRow.password || "").trim();
-    if (enteredPass === correctPass) {
-      staffSheet.getRange(rowIndex, 5).setValue("Active");
-      staffSheet.getRange(rowIndex, 6).setValue(0);
-      staffSheet.getRange(rowIndex, 7).setValue(new Date().toISOString());
+      var currentStatus = String(userRowValues[statusCol] || "Active").trim();
+      if (currentStatus.toLowerCase() === "locked") {
+        return ContentService.createTextOutput(JSON.stringify({ status: "locked", message: "Account is locked in Google Sheets. Contact Centre Coordinator to unlock." }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
 
-      return ContentService.createTextOutput(JSON.stringify({
-        status: "success",
-        user: {
-          staffId: targetId,
-          fullName: userRow.Full_Name || userRow.fullName || targetId,
-          role: String(userRow.Role || userRow.role || "OFFICIAL").toUpperCase(),
-          status: "Active"
-        }
-      })).setMimeType(ContentService.MimeType.JSON);
-    } else {
-      var failed = Number(userRow.Failed_Attempts || 0) + 1;
-      var newStatus = failed >= 5 ? "Locked" : status;
-      staffSheet.getRange(rowIndex, 5).setValue(newStatus);
-      staffSheet.getRange(rowIndex, 6).setValue(failed);
+      var correctPass = String(userRowValues[passCol] || "").trim();
+      if (enteredPass === correctPass) {
+        staffSheet.getRange(rowIndex, statusCol + 1).setValue("Active");
+        staffSheet.getRange(rowIndex, failedCol + 1).setValue(0);
+        staffSheet.getRange(rowIndex, lastLoginCol + 1).setValue(nowTimestamp);
 
-      return ContentService.createTextOutput(JSON.stringify({
-        status: newStatus === "Locked" ? "locked" : "error",
-        remainingAttempts: Math.max(0, 5 - failed),
-        message: newStatus === "Locked" ? "Account locked after 5 failed attempts." : "Incorrect password."
-      })).setMimeType(ContentService.MimeType.JSON);
-    }
-  }
+        return ContentService.createTextOutput(JSON.stringify({
+          status: "success",
+          user: {
+            staffId: targetId,
+            fullName: userRowValues[nameCol] || targetId,
+            role: String(userRowValues[roleCol] || "OFFICIAL").toUpperCase(),
+            status: "Active",
+            lastLogin: nowTimestamp
+          }
+        })).setMimeType(ContentService.MimeType.JSON);
+      } else {
+        var failed = Number(userRowValues[failedCol] || 0) + 1;
+        var newStatus = failed >= 5 ? "Locked" : currentStatus;
+        staffSheet.getRange(rowIndex, statusCol + 1).setValue(newStatus);
+        staffSheet.getRange(rowIndex, failedCol + 1).setValue(failed);
 
-  if (action === "UPDATE_STAFF_STATUS") {
-    var staffSheet = findSheetByAliases(ss, ["Staff_Users", "StaffUsers", "Staff"]);
-    if (staffSheet) {
-      var staffData = getSheetDataAsArray(staffSheet);
-      var targetId = String(payload.staffId || "").trim().toLowerCase();
-      for (var i = 0; i < staffData.length; i++) {
-        if (String(staffData[i].Staff_ID || "").trim().toLowerCase() === targetId) {
-          if (payload.status) staffSheet.getRange(i + 2, 5).setValue(payload.status);
-          if (payload.failedAttempts !== undefined) staffSheet.getRange(i + 2, 6).setValue(payload.failedAttempts);
-          if (payload.lastLogin) staffSheet.getRange(i + 2, 7).setValue(payload.lastLogin);
-          break;
-        }
+        return ContentService.createTextOutput(JSON.stringify({
+          status: newStatus === "Locked" ? "locked" : "error",
+          remainingAttempts: Math.max(0, 5 - failed),
+          message: newStatus === "Locked" ? "Account locked after 5 failed attempts." : "Incorrect password."
+        })).setMimeType(ContentService.MimeType.JSON);
       }
     }
-    return ContentService.createTextOutput(JSON.stringify({ status: "success", action: action }))
-      .setMimeType(ContentService.MimeType.JSON);
+
+    if (action === "UPDATE_STAFF_STATUS") {
+      if (rowIndex !== -1) {
+        if (payload.status) staffSheet.getRange(rowIndex, statusCol + 1).setValue(payload.status);
+        if (payload.failedAttempts !== undefined) staffSheet.getRange(rowIndex, failedCol + 1).setValue(payload.failedAttempts);
+        var loginVal = payload.lastLogin || nowTimestamp;
+        staffSheet.getRange(rowIndex, lastLoginCol + 1).setValue(loginVal);
+      }
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "success",
+        action: action,
+        message: "Staff status and Last_Login updated in Google Sheets."
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
   }
 
   if (action === "SAVE_STAFF_USER") {
-    var staffSheet = getOrCreateSheet(ss, ["Staff_Users", "StaffUsers", "Staff"], ["Staff_ID", "Full_Name", "Role", "Password", "Account_Status", "Failed_Attempts", "Last_Login"]);
-    var staffData = getSheetDataAsArray(staffSheet);
+    var staffSheet = getOrCreateSheet(ss, ["Staff_Users", "StaffUsers", "Staff"], [
+      "Staff_ID", "Full_Name", "Role", "Password", "Account_Status", "Failed_Attempts", "Last_Login"
+    ]);
+    var allValues = staffSheet.getDataRange().getValues();
+    var headers = allValues[0] || [];
+
+    var idCol = 0;
+    var nameCol = 1;
+    var roleCol = 2;
+    var passCol = 3;
+    var statusCol = 4;
+    var failedCol = 5;
+    var lastLoginCol = 6;
+
+    for (var h = 0; h < headers.length; h++) {
+      var hClean = String(headers[h]).trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (hClean.indexOf("staffid") !== -1 || hClean === "id") idCol = h;
+      else if (hClean.indexOf("name") !== -1) nameCol = h;
+      else if (hClean.indexOf("role") !== -1) roleCol = h;
+      else if (hClean.indexOf("pass") !== -1) passCol = h;
+      else if (hClean.indexOf("status") !== -1) statusCol = h;
+      else if (hClean.indexOf("fail") !== -1 || hClean.indexOf("attempt") !== -1) failedCol = h;
+      else if (hClean.indexOf("last") !== -1 || hClean.indexOf("login") !== -1) lastLoginCol = h;
+    }
+
     var targetId = String(payload.staffId || "").trim().toLowerCase();
-    var foundIndex = -1;
-    for (var i = 0; i < staffData.length; i++) {
-      if (String(staffData[i].Staff_ID || "").trim().toLowerCase() === targetId) {
-        foundIndex = i + 2;
+    var foundRow = -1;
+
+    for (var i = 1; i < allValues.length; i++) {
+      if (String(allValues[i][idCol] || "").trim().toLowerCase() === targetId) {
+        foundRow = i + 1;
         break;
       }
     }
 
-    if (foundIndex >= 2) {
-      if (payload.fullName) staffSheet.getRange(foundIndex, 2).setValue(payload.fullName);
-      if (payload.role) staffSheet.getRange(foundIndex, 3).setValue(payload.role);
-      if (payload.password) staffSheet.getRange(foundIndex, 4).setValue(payload.password);
-      if (payload.status) staffSheet.getRange(foundIndex, 5).setValue(payload.status);
+    if (foundRow >= 2) {
+      if (payload.fullName) staffSheet.getRange(foundRow, nameCol + 1).setValue(payload.fullName);
+      if (payload.role) staffSheet.getRange(foundRow, roleCol + 1).setValue(payload.role);
+      if (payload.password) staffSheet.getRange(foundRow, passCol + 1).setValue(payload.password);
+      if (payload.status) staffSheet.getRange(foundRow, statusCol + 1).setValue(payload.status);
     } else {
-      staffSheet.appendRow([
-        targetId,
-        payload.fullName || targetId,
-        payload.role || "OFFICIAL",
-        payload.password || "Desk@2033",
-        payload.status || "Active",
-        0,
-        new Date().toISOString()
-      ]);
+      var newStaffRow = new Array(Math.max(headers.length, 7));
+      newStaffRow[idCol] = targetId;
+      newStaffRow[nameCol] = payload.fullName || targetId;
+      newStaffRow[roleCol] = payload.role || "OFFICIAL";
+      newStaffRow[passCol] = payload.password || "Desk@2033";
+      newStaffRow[statusCol] = payload.status || "Active";
+      newStaffRow[failedCol] = 0;
+      var initTime;
+      try {
+        initTime = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd HH:mm:ss");
+      } catch (e) {
+        initTime = new Date().toISOString();
+      }
+      newStaffRow[lastLoginCol] = initTime;
+      staffSheet.appendRow(newStaffRow);
     }
     return ContentService.createTextOutput(JSON.stringify({ status: "success", action: action }))
       .setMimeType(ContentService.MimeType.JSON);
@@ -1686,11 +1755,20 @@ function doPost(e) {
   if (action === "DELETE_STAFF_USER") {
     var staffSheet = findSheetByAliases(ss, ["Staff_Users", "StaffUsers", "Staff"]);
     if (staffSheet) {
-      var staffData = getSheetDataAsArray(staffSheet);
+      var allValues = staffSheet.getDataRange().getValues();
+      var idCol = 0;
+      var headers = allValues[0] || [];
+      for (var h = 0; h < headers.length; h++) {
+        var hClean = String(headers[h]).trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (hClean.indexOf("staffid") !== -1 || hClean === "id") {
+          idCol = h;
+          break;
+        }
+      }
       var targetId = String(payload.staffId || "").trim().toLowerCase();
-      for (var i = 0; i < staffData.length; i++) {
-        if (String(staffData[i].Staff_ID || staffData[i].staffId || "").trim().toLowerCase() === targetId) {
-          staffSheet.deleteRow(i + 2);
+      for (var i = 1; i < allValues.length; i++) {
+        if (String(allValues[i][idCol] || "").trim().toLowerCase() === targetId) {
+          staffSheet.deleteRow(i + 1);
           break;
         }
       }
@@ -1743,7 +1821,17 @@ function getSheetDataAsArray(sheet) {
     var obj = {};
     for (var h = 0; h < headers.length; h++) {
       var key = String(headers[h]).trim();
-      if (key) obj[key] = row[h];
+      if (key) {
+        var val = row[h];
+        if (val instanceof Date) {
+          try {
+            val = Utilities.formatDate(val, "Asia/Kolkata", "yyyy-MM-dd HH:mm:ss");
+          } catch (e) {
+            val = String(val);
+          }
+        }
+        obj[key] = val;
+      }
     }
     rows.push(obj);
   }

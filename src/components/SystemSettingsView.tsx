@@ -976,7 +976,7 @@ export const SystemSettingsView: React.FC = () => {
                             {account.failedAttempts || 0} / 5
                           </td>
                           <td className="py-2.5 px-3 text-[11px] text-zinc-500 font-mono">
-                            {account.lastLogin ? formatDate(account.lastLogin) : '—'}
+                            {account.lastLogin ? formatDateTime(account.lastLogin) : '—'}
                           </td>
                           <td className="py-2.5 px-3 text-right">
                             <div className="flex items-center justify-end gap-1.5">
