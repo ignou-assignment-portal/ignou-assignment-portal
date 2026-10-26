@@ -1777,6 +1777,54 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
+  // 6. Course Ledger Full Reconciliation & Deduplication (208 Canonical Rows)
+  if (action === "RECONCILE_COURSE_LEDGER") {
+    var ledgerSheet = getOrCreateSheet(ss, ["courseLedger", "Course_Ledger", "CourseLedger"], [
+      "Sub_ID", "Session", "Enrollment_No", "Candidate_Name", "Contact_No", "Email_ID", "Programme_Code", "Course_Code", "Allotted_Evaluator", "Marks", "Grade", "Status", "Component"
+    ]);
+
+    var rows = payload.ledgerRows || [];
+    if (Array.isArray(rows) && rows.length > 0) {
+      // Clear existing non-header rows
+      var lastRow = ledgerSheet.getLastRow();
+      var lastCol = Math.max(ledgerSheet.getLastColumn(), 13);
+      if (lastRow > 1) {
+        ledgerSheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+      }
+
+      var newRows = [];
+      for (var r = 0; r < rows.length; r++) {
+        var row = rows[r];
+        newRows.push([
+          row.Sub_ID || row.subId || "",
+          row.Session || row.session || "",
+          row.Enrollment_No || row.enrollmentNo || "",
+          row.Candidate_Name || row.studentName || row.candidateName || "",
+          row.Contact_No || row.contact || row.studentPhone || "",
+          row.Email_ID || row.email || row.studentEmail || "",
+          row.Programme_Code || row.programme || row.programmeCode || "",
+          row.Course_Code || row.courseCode || "",
+          row.Allotted_Evaluator || row.allottedEvaluator || "Unallotted",
+          row.Marks !== undefined && row.Marks !== null ? row.Marks : "",
+          row.Grade || row.grade || "",
+          row.Status || row.status || "Pending Allotment",
+          row.Component || row.componentType || "Assignment"
+        ]);
+      }
+
+      if (newRows.length > 0) {
+        ledgerSheet.getRange(2, 1, newRows.length, 13).setValues(newRows);
+      }
+
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "success",
+        action: action,
+        rowsReconciled: newRows.length,
+        message: "Course_Ledger tab in Google Sheets cleanly reconciled to " + newRows.length + " canonical rows."
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
   return ContentService.createTextOutput(JSON.stringify({
     status: "success",
     action: action,

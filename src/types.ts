@@ -27,11 +27,17 @@ export interface IntakeRecord {
   session: string; // Strict session isolation: e.g., 'July 2026'
   tokenNo: string; // e.g., 'SC2033-JUL26-0001'
   enrollmentNo: string;
+  Enrollment_No?: string;
   studentName: string;
+  candidateName?: string;
+  Candidate_Name?: string;
   studentPhone?: string;
   studentEmail?: string;
   programmeCode: string;
+  programme?: string;
+  Programme?: string;
   courseCodes: string[];
+  courses?: string[];
   submissionDate: string; // YYYY-MM-DD
   receiptDate?: string;
   Submission_Date?: string;
@@ -265,9 +271,11 @@ export interface CourseEvaluationRecord {
   Course_Code?: string;
   Course_Title?: string;
   Allotted_Evaluator?: string | null;
+  allottedEvaluator?: string | null;
   Marks?: number | null;
   Grade?: string | null;
   Status?: string;
+  Component?: string;
 
   id: string; // Deterministic Primary Key format: SUB_ENR_COURSE_TERM (e.g. SUB_2401928371_MEG01_JUL2026)
   submissionKey: string; // Same as id
@@ -275,9 +283,11 @@ export interface CourseEvaluationRecord {
   tokenNo: string; // Intake Token e.g., SC2033-JUL26-0001
   enrollmentNo: string;
   studentName: string;
+  candidateName?: string;
   studentPhone?: string;
   studentEmail?: string;
   programmeCode: string;
+  programme?: string;
   courseCode: string; // e.g. MEG-01
   courseTitle?: string;
   session: string; // e.g. July 2026
@@ -395,7 +405,8 @@ export type AuditActionType =
   | 'FAILED_LOGIN_ATTEMPT'
   | 'STAFF_ACCOUNT_UNLOCKED'
   | 'STAFF_ACCOUNT_MODIFIED'
-  | 'STAFF_ACCOUNT_DELETED';
+  | 'STAFF_ACCOUNT_DELETED'
+  | 'LEDGER_RECONCILED';
 
 export type AuditTargetCategory =
   | 'AUTHENTICATION'

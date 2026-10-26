@@ -142,6 +142,7 @@ interface AppContextType {
   extendSession: () => void;
 
   // Intake Master (Strictly Session Filtered)
+  intakes: IntakeRecord[];
   sessionIntakes: IntakeRecord[];
   allIntakes: IntakeRecord[];
   intakeRegister: IntakeRecord[];
@@ -6115,6 +6116,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateRbacConfig,
         resetRbacToDefaults,
         canPerformOperation,
+        intakes,
         sessionIntakes,
         allIntakes: intakes,
         intakeRegister: intakes,

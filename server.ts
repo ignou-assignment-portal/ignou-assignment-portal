@@ -543,6 +543,23 @@ app.post("/api/intake/delete", (req, res) => {
   });
 });
 
+// 1c. Reconcile Course Ledger Endpoint
+app.post("/api/intake/reconcile-ledger", (req, res) => {
+  const { ledgerRows, session } = req.body || {};
+  if (!Array.isArray(ledgerRows)) {
+    return res.status(400).json({ status: "error", message: "ledgerRows array is required" });
+  }
+  const store = loadStore();
+  store.courseLedger = ledgerRows;
+  saveStore(store);
+  console.log(`[Store] Reconciled Course Ledger locally with ${ledgerRows.length} canonical records for session '${session || "active"}'.`);
+  return res.json({
+    status: "success",
+    count: ledgerRows.length,
+    message: `Reconciled ledger with ${ledgerRows.length} canonical records.`,
+  });
+});
+
 // 1b. IGNOU Course Lookup API (GET and POST)
 app.get("/api/ignou/course-lookup", async (req, res) => {
   const code = (req.query.code as string) || "";
@@ -923,6 +940,22 @@ app.post("/api/sheets", async (req, res) => {
       }).catch(() => {});
     }
     return res.json({ status: "success", action });
+  }
+
+  // Handle Course Ledger Full Reconciliation & Deduplication
+  if (action === "RECONCILE_COURSE_LEDGER") {
+    try {
+      const payload = req.body.payload || req.body;
+      const ledgerRows = payload.ledgerRows || req.body.ledgerRows || [];
+      const store = loadStore();
+      if (Array.isArray(ledgerRows) && ledgerRows.length > 0) {
+        store.courseLedger = ledgerRows;
+        saveStore(store);
+        console.log(`[Store] RECONCILE_COURSE_LEDGER: Replaced store.courseLedger with ${ledgerRows.length} canonical rows.`);
+      }
+    } catch (recErr) {
+      console.warn("Failed to persist RECONCILE_COURSE_LEDGER to store:", recErr);
+    }
   }
 
   // Persist ADD_INTAKE in local store immediately for zero-loss guarantee
