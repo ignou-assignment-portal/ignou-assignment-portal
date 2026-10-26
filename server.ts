@@ -991,6 +991,82 @@ app.post("/api/sheets", async (req, res) => {
     }
   }
 
+  // Persist EDIT_INTAKE and UPDATE_INTAKE_DATE in local store immediately
+  if (action === "EDIT_INTAKE" || action === "UPDATE_INTAKE" || action === "UPDATE_INTAKE_DATE") {
+    try {
+      const payload = req.body.payload || req.body;
+      const store = loadStore();
+      const newDate = payload.submissionDate || payload.receiptDate || payload.date || payload.timestamp;
+      const cleanEnr = String(payload.enrollmentNo || payload.originalEnrollmentNo || "").replace(/\D/g, "").trim();
+      const cleanToken = String(payload.tokenNo || payload.token || "").trim();
+      const cleanId = String(payload.id || "").trim();
+
+      if (newDate) {
+        const cleanDate = String(newDate).split('T')[0].trim();
+        store.dateOverrides = store.dateOverrides || {};
+        if (cleanEnr) {
+          store.dateOverrides[`enr_${cleanEnr}`] = cleanDate;
+          store.dateOverrides[`enrollment_${cleanEnr}`] = cleanDate;
+        }
+        if (cleanToken) {
+          store.dateOverrides[`token_${cleanToken}`] = cleanDate;
+          store.dateOverrides[`tok_${cleanToken}`] = cleanDate;
+        }
+        if (cleanId) store.dateOverrides[`id_${cleanId}`] = cleanDate;
+
+        const isMatch = (item: any) => {
+          if (cleanId && (item.id === cleanId || item.intakeId === cleanId)) return true;
+          if (cleanToken && (item.tokenNo === cleanToken || item.receiptNumber === cleanToken)) return true;
+          if (cleanEnr) {
+            const itemEnr = String(item.enrollmentNo || item.Enrollment_No || item.studentId || "").replace(/\D/g, "").trim();
+            if (itemEnr === cleanEnr) return true;
+          }
+          return false;
+        };
+
+        store.intakes = (store.intakes || []).map((it: any) => {
+          if (isMatch(it)) {
+            return {
+              ...it,
+              submissionDate: cleanDate,
+              receiptDate: cleanDate,
+              Submission_Date: cleanDate,
+              Timestamp: `${cleanDate}T10:00:00.000Z`,
+              timestamp: `${cleanDate}T10:00:00.000Z`,
+              createdAt: `${cleanDate}T10:00:00.000Z`,
+              candidateName: payload.candidateName || it.candidateName || it.studentName,
+              studentName: payload.candidateName || it.candidateName || it.studentName,
+              programme: payload.programme || it.programme || it.programmeCode,
+              programmeCode: payload.programme || it.programme || it.programmeCode,
+              studentPhone: payload.contact || it.studentPhone || it.contact,
+              contact: payload.contact || it.studentPhone || it.contact,
+            };
+          }
+          return it;
+        });
+
+        store.courseLedger = (store.courseLedger || []).map((ce: any) => {
+          if (isMatch(ce)) {
+            return {
+              ...ce,
+              submissionDate: cleanDate,
+              receiptDate: cleanDate,
+              Submission_Date: cleanDate,
+              receivedDate: cleanDate,
+              intakeDate: cleanDate,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return ce;
+        });
+
+        saveStore(store);
+      }
+    } catch (editErr) {
+      console.warn("Failed to persist EDIT_INTAKE to store:", editErr);
+    }
+  }
+
   try {
     const outgoingBody = {
       action,

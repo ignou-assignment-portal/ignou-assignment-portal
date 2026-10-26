@@ -65,6 +65,8 @@ export interface IntakeRecord {
     receiptNumber?: string;
   }>;
   createdAt: string;
+  registeredAt?: string;
+  updatedAt?: string;
   registeredBy: string;
 }
 

@@ -3055,7 +3055,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         Submission_Date: intakeDate,
         Timestamp: `${intakeDate}T10:00:00.000Z`,
         timestamp: `${intakeDate}T10:00:00.000Z`,
-        createdAt: `${intakeDate}T10:00:00.000Z`,
+        createdAt: new Date().toISOString(),
+        registeredAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         marks: data.marks || data.courseCodes.reduce((acc, code) => ({ ...acc, [code]: null }), {}),
       };
 
@@ -5151,7 +5153,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } else {
             subDate = new Date().toISOString().split('T')[0];
           }
-          const timestamp = rawTimestamp || `${subDate}T10:00:00.000Z`;
+          // If an explicit override or sheet explicit date exists, ensure timestamp reflects subDate
+          const timestamp = (explicitOverride || sheetExplicitDate) ? `${subDate}T10:00:00.000Z` : (rawTimestamp || `${subDate}T10:00:00.000Z`);
           const official = r.Official || r.handledBy || r.official || "Desk Official";
 
           const isPurePractical = practicalCourses.length > 0 && assignmentCourses.length === 0;
@@ -5209,6 +5212,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             status: r.status || r.Status || 'Received',
             marks: r.marks || {},
             createdAt: timestamp,
+            registeredAt: r.registeredAt || (rawTimestamp && rawTimestamp.includes('T') ? rawTimestamp : undefined),
+            updatedAt: explicitOverride ? new Date().toISOString() : r.updatedAt,
             receiptNumber: r.receiptNumber || tokenNo,
           };
         });

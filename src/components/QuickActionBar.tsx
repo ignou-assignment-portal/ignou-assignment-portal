@@ -28,6 +28,7 @@ export const QuickActionBar: React.FC<QuickActionBarProps> = ({
 }) => {
   const {
     sessionIntakes,
+    allIntakes,
     sessionCourseEvaluations,
     currentSession,
     openReceiptModal,
@@ -57,15 +58,86 @@ export const QuickActionBar: React.FC<QuickActionBarProps> = ({
   }, [sessionCourseEvaluations]);
 
   // Extract recent 4 intakes for the fast desk strip
+  // Uses multi-factor recency score (registration timestamp, ID timestamp, token sequence, and date)
+  // so newly entered student intakes always appear immediately at the top bar regardless of whether
+  // their assignment was submitted today or backdated.
   const recentIntakes = useMemo(() => {
-    return [...sessionIntakes]
+    // Start with current session intakes
+    const intakePool: IntakeRecord[] = [...sessionIntakes];
+    const poolKeys = new Set(intakePool.map((i) => i.id || i.tokenNo));
+
+    // Also include any intake recorded or modified at the desk within the last 48 hours across all sessions
+    const cutoff48h = Date.now() - 48 * 60 * 60 * 1000;
+    (allIntakes || []).forEach((it) => {
+      const key = it.id || it.tokenNo;
+      if (!poolKeys.has(key)) {
+        const regTime = (it as any).registeredAt ? new Date((it as any).registeredAt).getTime() : 0;
+        const upTime = it.updatedAt ? new Date(it.updatedAt).getTime() : 0;
+        const idMatch = (it.id || '').match(/(\d{12,14})/);
+        const idTime = idMatch ? parseInt(idMatch[1], 10) : 0;
+        if (Math.max(regTime, upTime, idTime) > cutoff48h) {
+          intakePool.push(it);
+          poolKeys.add(key);
+        }
+      }
+    });
+
+    const getRecencyScore = (item: IntakeRecord) => {
+      // 1. Desk entry / update wall-clock time
+      const regTime = (item as any).registeredAt ? new Date((item as any).registeredAt).getTime() : 0;
+      const upTime = item.updatedAt ? new Date(item.updatedAt).getTime() : 0;
+
+      // 2. Timestamp encoded in ID (e.g. intake-17482910... or REG-17482910...)
+      let idTime = 0;
+      const idMatch = (item.id || '').match(/(\d{12,14})/);
+      if (idMatch) {
+        idTime = parseInt(idMatch[1], 10);
+      }
+
+      // 3. Sequential Token Sequence Number (e.g. SC2033-JUL26-0042 -> 42)
+      let tokenSeq = 0;
+      const tokMatch = (item.tokenNo || '').match(/(\d{3,5})$/);
+      if (tokMatch) {
+        tokenSeq = parseInt(tokMatch[1], 10);
+      }
+
+      // 4. Submission / Receipt date fallback
+      const createdTime = item.createdAt ? new Date(item.createdAt).getTime() : 0;
+      const subTime = item.submissionDate ? new Date(item.submissionDate).getTime() : 0;
+
+      // Primary desk recency: wall clock registration or ID creation timestamp
+      const wallTime = Math.max(regTime, upTime, idTime);
+      return {
+        wallTime,
+        tokenSeq,
+        dateFallback: Math.max(createdTime, subTime),
+      };
+    };
+
+    return intakePool
       .sort((a, b) => {
-        const timeA = new Date(a.createdAt || a.submissionDate || 0).getTime();
-        const timeB = new Date(b.createdAt || b.submissionDate || 0).getTime();
-        return timeB - timeA;
+        const pA = getRecencyScore(a);
+        const pB = getRecencyScore(b);
+
+        // If either has a valid desk registration wall-time, sort by that first
+        if (pA.wallTime > 0 || pB.wallTime > 0) {
+          if (pA.wallTime !== pB.wallTime) {
+            return pB.wallTime - pA.wallTime;
+          }
+        }
+
+        // If sequential token is available, higher token means entered later
+        if (pA.tokenSeq > 0 || pB.tokenSeq > 0) {
+          if (pA.tokenSeq !== pB.tokenSeq) {
+            return pB.tokenSeq - pA.tokenSeq;
+          }
+        }
+
+        // Otherwise fallback to submission date
+        return pB.dateFallback - pA.dateFallback;
       })
       .slice(0, 4);
-  }, [sessionIntakes]);
+  }, [sessionIntakes, allIntakes]);
 
   const handleNewIntakeClick = () => {
     setActiveTab('INTAKE_DESK');

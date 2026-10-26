@@ -1314,7 +1314,13 @@ function doGet(e) {
   result.Award_Sheets = awardData;
 
   // STAFF ACCOUNTS & GOVERNANCE
-  var staffData = getSheetDataByAliases(ss, ["staffUsers", "Staff_Users", "StaffUsers", "Staff"]);
+  var staffSheet = getOrCreateSheet(ss, ["Staff_Users", "StaffUsers", "Staff"], ["Staff_ID", "Full_Name", "Role", "Password", "Account_Status", "Failed_Attempts", "Last_Login"]);
+  if (staffSheet.getLastRow() <= 1) {
+    staffSheet.appendRow(["coordinator", "Centre Coordinator", "ADMIN", "Coord@2033", "Active", 0, new Date().toISOString()]);
+    staffSheet.appendRow(["staff_desk1", "Desk Official (Terminal 1)", "OFFICIAL", "Desk@2033", "Active", 0, new Date().toISOString()]);
+    staffSheet.appendRow(["staff_eval", "Evaluation Assistant", "OFFICIAL", "Eval@2033", "Active", 0, new Date().toISOString()]);
+  }
+  var staffData = getSheetDataAsArray(staffSheet);
   result.staffUsers = staffData;
   result.Staff_Users = staffData;
 
@@ -1453,30 +1459,90 @@ function doPost(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  // 3. Edit Intake
-  if (action === "EDIT_INTAKE") {
+  // 3. Edit Intake & Date Updates (Guarantees zero date reversion in Google Sheets)
+  if (action === "EDIT_INTAKE" || action === "UPDATE_INTAKE" || action === "UPDATE_INTAKE_DATE") {
     var intakeSheet = findSheetByAliases(ss, ["intakeRegister", "Intake_Register", "IntakeRegister"]);
     if (intakeSheet) {
       var data = intakeSheet.getDataRange().getValues();
-      var targetToken = String(payload.tokenNo || payload.id || "").trim();
-      var targetEnr = String(payload.enrollmentNo || "").trim();
+      var headers = data[0] || [];
+      var targetToken = String(payload.tokenNo || payload.token || payload.id || "").trim().toLowerCase();
+      var targetEnr = String(payload.enrollmentNo || payload.originalEnrollmentNo || payload.Enrollment_No || "").replace(/^'/, '').trim().toLowerCase();
+      var targetSession = String(payload.session || payload.Session || "").trim().toLowerCase();
+      var newDate = payload.submissionDate || payload.receiptDate || payload.date || payload.timestamp || payload.Timestamp;
+
+      // Locate column indices dynamically from headers
+      var dateCol = -1;
+      var sessionCol = -1;
+      var enrCol = 2; // default
+      var nameCol = 3;
+      var contactCol = 4;
+      var progCol = 5;
+      var coursesCol = 6;
+      var tokenCol = -1;
+
+      for (var h = 0; h < headers.length; h++) {
+        var hName = String(headers[h]).trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (hName.indexOf("time") !== -1 || hName === "date" || hName.indexOf("submissiondate") !== -1 || hName.indexOf("receiptdate") !== -1) {
+          dateCol = h;
+        } else if (hName.indexOf("session") !== -1) {
+          sessionCol = h;
+        } else if (hName.indexOf("enrol") !== -1) {
+          enrCol = h;
+        } else if (hName.indexOf("token") !== -1) {
+          tokenCol = h;
+        } else if (hName.indexOf("name") !== -1 || hName.indexOf("cand") !== -1) {
+          nameCol = h;
+        } else if (hName.indexOf("contact") !== -1 || hName.indexOf("phone") !== -1 || hName.indexOf("mobile") !== -1) {
+          contactCol = h;
+        } else if (hName.indexOf("prog") !== -1) {
+          progCol = h;
+        } else if (hName.indexOf("course") !== -1) {
+          coursesCol = h;
+        }
+      }
 
       for (var i = 1; i < data.length; i++) {
-        var rowEnr = String(data[i][2] || data[i][0]).replace(/^'/, '').trim();
-        if (targetEnr && rowEnr === targetEnr) {
-          if (payload.candidateName) intakeSheet.getRange(i + 1, 4).setValue(payload.candidateName);
-          if (payload.contact) intakeSheet.getRange(i + 1, 5).setValue(payload.contact);
-          if (payload.programme) intakeSheet.getRange(i + 1, 6).setValue(payload.programme);
-          if (payload.courses) {
+        var rowEnr = String(data[i][enrCol] || "").replace(/^'/, '').trim().toLowerCase();
+        var rowToken = tokenCol !== -1 ? String(data[i][tokenCol] || "").trim().toLowerCase() : "";
+        var rowId = String(data[i][0] || "").trim().toLowerCase();
+        var rowSession = sessionCol !== -1 ? String(data[i][sessionCol] || "").trim().toLowerCase() : "";
+
+        var sessionMatch = !targetSession || !rowSession || rowSession === targetSession;
+        var isMatch = false;
+
+        if (targetToken && (rowToken === targetToken || rowId === targetToken)) {
+          isMatch = true;
+        } else if (targetEnr && rowEnr === targetEnr && sessionMatch) {
+          isMatch = true;
+        }
+
+        if (isMatch) {
+          // 1. Always update Date / Timestamp in Google Sheets
+          if (newDate && dateCol !== -1) {
+            intakeSheet.getRange(i + 1, dateCol + 1).setValue(newDate);
+          }
+          if (payload.candidateName && nameCol !== -1) {
+            intakeSheet.getRange(i + 1, nameCol + 1).setValue(payload.candidateName);
+          }
+          if (payload.contact && contactCol !== -1) {
+            intakeSheet.getRange(i + 1, contactCol + 1).setValue(payload.contact);
+          }
+          if (payload.programme && progCol !== -1) {
+            intakeSheet.getRange(i + 1, progCol + 1).setValue(payload.programme);
+          }
+          if (payload.courses && coursesCol !== -1) {
             var cStr = Array.isArray(payload.courses) ? payload.courses.join(", ") : payload.courses;
-            intakeSheet.getRange(i + 1, 7).setValue(cStr);
+            intakeSheet.getRange(i + 1, coursesCol + 1).setValue(cStr);
           }
           break;
         }
       }
     }
-    return ContentService.createTextOutput(JSON.stringify({ status: "success", action: action }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "success",
+      action: action,
+      message: "Intake record and assignment date updated in Google Sheets."
+    })).setMimeType(ContentService.MimeType.JSON);
   }
 
   // 4. Allot Evaluator & Update Marks
@@ -1612,6 +1678,22 @@ function doPost(e) {
         0,
         new Date().toISOString()
       ]);
+    }
+    return ContentService.createTextOutput(JSON.stringify({ status: "success", action: action }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === "DELETE_STAFF_USER") {
+    var staffSheet = findSheetByAliases(ss, ["Staff_Users", "StaffUsers", "Staff"]);
+    if (staffSheet) {
+      var staffData = getSheetDataAsArray(staffSheet);
+      var targetId = String(payload.staffId || "").trim().toLowerCase();
+      for (var i = 0; i < staffData.length; i++) {
+        if (String(staffData[i].Staff_ID || staffData[i].staffId || "").trim().toLowerCase() === targetId) {
+          staffSheet.deleteRow(i + 2);
+          break;
+        }
+      }
     }
     return ContentService.createTextOutput(JSON.stringify({ status: "success", action: action }))
       .setMimeType(ContentService.MimeType.JSON);
