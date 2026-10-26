@@ -1016,5 +1016,36 @@
       "createdAt": "2026-07-01T10:00:00.000Z",
       "updatedAt": "2026-07-01T10:00:00.000Z"
     }
+  ],
+  "staffUsers": [
+    {
+      "staffId": "coordinator",
+      "fullName": "Dr. Sant Kumar Gupta (Centre Coordinator)",
+      "role": "ADMIN",
+      "password": "Coordinator@2033",
+      "status": "Active",
+      "failedAttempts": 0,
+      "createdAt": "2026-07-01T09:00:00.000Z",
+      "lastLogin": "2026-10-26T13:23:13.295Z"
+    },
+    {
+      "staffId": "desk01",
+      "fullName": "Counter 1 Desk Official",
+      "role": "OFFICIAL",
+      "password": "Desk@2033",
+      "status": "Active",
+      "failedAttempts": 0,
+      "createdAt": "2026-07-01T09:00:00.000Z",
+      "lastLogin": "2026-10-26T13:22:48.934Z"
+    },
+    {
+      "staffId": "desk02",
+      "fullName": "Counter 2 Desk Official",
+      "role": "OFFICIAL",
+      "password": "Desk@2033",
+      "status": "Active",
+      "failedAttempts": 0,
+      "createdAt": "2026-07-01T09:00:00.000Z"
+    }
   ]
 }

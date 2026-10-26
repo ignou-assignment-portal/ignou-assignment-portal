@@ -14,15 +14,49 @@ const PORT = 3000;
 
 const STORE_PATH = path.join(process.cwd(), "data", "sheets_store.json");
 
+const DEFAULT_STORE_STAFF_USERS = [
+  {
+    staffId: "coordinator",
+    fullName: "Dr. Sant Kumar Gupta (Centre Coordinator)",
+    role: "ADMIN",
+    password: "Coordinator@2033",
+    status: "Active",
+    failedAttempts: 0,
+    createdAt: "2026-07-01T09:00:00.000Z",
+  },
+  {
+    staffId: "desk01",
+    fullName: "Counter 1 Desk Official",
+    role: "OFFICIAL",
+    password: "Desk@2033",
+    status: "Active",
+    failedAttempts: 0,
+    createdAt: "2026-07-01T09:00:00.000Z",
+  },
+  {
+    staffId: "desk02",
+    fullName: "Counter 2 Desk Official",
+    role: "OFFICIAL",
+    password: "Desk@2033",
+    status: "Active",
+    failedAttempts: 0,
+    createdAt: "2026-07-01T09:00:00.000Z",
+  },
+];
+
 function loadStore() {
   try {
     if (fs.existsSync(STORE_PATH)) {
-      return JSON.parse(fs.readFileSync(STORE_PATH, "utf-8"));
+      const data = JSON.parse(fs.readFileSync(STORE_PATH, "utf-8"));
+      if (!Array.isArray(data.staffUsers) || data.staffUsers.length === 0) {
+        data.staffUsers = DEFAULT_STORE_STAFF_USERS;
+      }
+      return data;
     }
   } catch (e) {
     console.error("Error reading sheets_store.json:", e);
   }
-  return { intakes: [], courseLedger: [], registrationReceipts: [], assignmentSubmissions: [] };
+  return { intakes: [], courseLedger: [], registrationReceipts: [], assignmentSubmissions: [], staffUsers: DEFAULT_STORE_STAFF_USERS };
 }
 
 function saveStore(data: any) {
@@ -631,6 +665,9 @@ app.get("/api/sheets", async (req, res) => {
           json.courseLedger = mergedLedger;
           json.Course_Ledger = mergedLedger;
         }
+
+        // Attach staffUsers from remote or local store
+        json.staffUsers = json.staffUsers || json.Staff_Users || store.staffUsers || DEFAULT_STORE_STAFF_USERS;
       }
 
       return res.json(json);
@@ -644,6 +681,7 @@ app.get("/api/sheets", async (req, res) => {
         message: "Google Apps Script returned non-JSON response. Local storage fallback active.",
         intakes: store.intakes || [],
         courseLedger: store.courseLedger || [],
+        staffUsers: store.staffUsers || DEFAULT_STORE_STAFF_USERS,
       });
     }
   } catch (error: any) {
@@ -656,6 +694,7 @@ app.get("/api/sheets", async (req, res) => {
       message: error.name === 'TimeoutError' ? 'Google Apps Script timed out (5s exceeded). Using local storage.' : error.message,
       intakes: store.intakes || [],
       courseLedger: store.courseLedger || [],
+      staffUsers: store.staffUsers || DEFAULT_STORE_STAFF_USERS,
     });
   }
 });
@@ -729,6 +768,146 @@ app.post("/api/sheets", async (req, res) => {
         sheets: ["Intake_Register", "Course_Ledger", "Evaluators_Master"],
       });
     }
+  }
+
+  // Staff Authentication & Status Updates
+  if (action === "VERIFY_STAFF_LOGIN") {
+    const payload = req.body.payload || req.body;
+    const targetId = String(payload.staffId || "").trim().toLowerCase();
+    const enteredPass = String(payload.password || "").trim();
+
+    // 1. Try remote Apps Script first (with 3.5s timeout)
+    try {
+      const remoteResp = await fetch(targetUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "VERIFY_STAFF_LOGIN", staffId: targetId, password: enteredPass }),
+        redirect: "follow",
+        signal: AbortSignal.timeout(3500),
+      });
+      const text = await remoteResp.text();
+      const json = JSON.parse(text);
+      if (json && (json.user || json.status === "locked" || (json.status === "error" && json.remainingAttempts !== undefined))) {
+        return res.json(json);
+      }
+    } catch {
+      // Offline fallback
+    }
+
+    // 2. Local fallback from store
+    const store = loadStore();
+    const staffList = store.staffUsers || DEFAULT_STORE_STAFF_USERS;
+    const user = staffList.find((u: any) => String(u.staffId || "").toLowerCase() === targetId);
+
+    if (!user) {
+      return res.status(200).json({ status: "error", message: `Staff ID '${targetId}' not found.` });
+    }
+
+    if (String(user.status || "").toLowerCase() === "locked") {
+      return res.status(200).json({ status: "locked", message: "Account is locked. Contact Centre Coordinator to unlock." });
+    }
+
+    if (user.password === enteredPass) {
+      user.failedAttempts = 0;
+      user.status = "Active";
+      user.lastLogin = new Date().toISOString();
+      saveStore(store);
+      return res.status(200).json({
+        status: "success",
+        user: {
+          staffId: user.staffId,
+          fullName: user.fullName,
+          role: user.role,
+          status: "Active",
+        },
+      });
+    } else {
+      user.failedAttempts = (user.failedAttempts || 0) + 1;
+      const isNowLocked = user.failedAttempts >= 5;
+      if (isNowLocked) {
+        user.status = "Locked";
+      }
+      saveStore(store);
+      return res.status(200).json({
+        status: isNowLocked ? "locked" : "error",
+        remainingAttempts: Math.max(0, 5 - user.failedAttempts),
+        message: isNowLocked ? "Account locked after 5 failed attempts." : "Incorrect password.",
+      });
+    }
+  }
+
+  if (action === "UPDATE_STAFF_STATUS") {
+    const payload = req.body.payload || req.body;
+    const store = loadStore();
+    const staffList = store.staffUsers || DEFAULT_STORE_STAFF_USERS;
+    const targetId = String(payload.staffId || "").trim().toLowerCase();
+    const user = staffList.find((u: any) => String(u.staffId || "").toLowerCase() === targetId);
+    if (user) {
+      if (payload.status) user.status = payload.status;
+      if (payload.failedAttempts !== undefined) user.failedAttempts = payload.failedAttempts;
+      if (payload.lastLogin) user.lastLogin = payload.lastLogin;
+      store.staffUsers = staffList;
+      saveStore(store);
+    }
+    // Also asynchronously forward to remote script
+    fetch(targetUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action, ...req.body }),
+      signal: AbortSignal.timeout(4000),
+    }).catch(() => {});
+    return res.json({ status: "success", action });
+  }
+
+  if (action === "SAVE_STAFF_USER") {
+    const payload = req.body.payload || req.body;
+    const store = loadStore();
+    const staffList = store.staffUsers || DEFAULT_STORE_STAFF_USERS;
+    const targetId = String(payload.staffId || "").trim().toLowerCase();
+    const idx = staffList.findIndex((u: any) => String(u.staffId || "").toLowerCase() === targetId);
+    if (idx >= 0) {
+      staffList[idx] = { ...staffList[idx], ...payload, staffId: targetId };
+    } else {
+      staffList.push({
+        staffId: targetId,
+        fullName: payload.fullName || targetId,
+        role: payload.role || "OFFICIAL",
+        password: payload.password || "Desk@2033",
+        status: payload.status || "Active",
+        failedAttempts: 0,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    store.staffUsers = staffList;
+    saveStore(store);
+
+    fetch(targetUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action, ...req.body }),
+      signal: AbortSignal.timeout(4000),
+    }).catch(() => {});
+    return res.json({ status: "success", action });
+  }
+
+  if (action === "DELETE_STAFF_USER") {
+    const payload = req.body.payload || req.body;
+    const targetId = String(payload.staffId || "").trim().toLowerCase();
+    if (targetId !== "coordinator") {
+      const store = loadStore();
+      store.staffUsers = (store.staffUsers || DEFAULT_STORE_STAFF_USERS).filter(
+        (u: any) => String(u.staffId || "").toLowerCase() !== targetId
+      );
+      saveStore(store);
+
+      fetch(targetUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action, ...req.body }),
+        signal: AbortSignal.timeout(4000),
+      }).catch(() => {});
+    }
+    return res.json({ status: "success", action });
   }
 
   // Persist ADD_INTAKE in local store immediately for zero-loss guarantee

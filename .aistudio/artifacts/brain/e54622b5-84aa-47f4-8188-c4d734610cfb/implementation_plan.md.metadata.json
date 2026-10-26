@@ -1,6 +1,6 @@
 {
-  "summary":  "Plan to completely remove Group (B) Student Status (Admission & Re-Registration) from the system, derive student search profiles strictly from Assignment Intake and Course Ledger records, and implement a robust 5-second timeout with automated local fallback and diagnostic health check for Google Apps Script connectivity.",
-  "updatedAt":  "2026-10-23T10:55:59.588255641Z",
+  "summary":  "Revised implementation plan for Google Sheets-driven Staff Authentication: Admin-managed Staff_Users tab in Google Sheets with real-time verification and resilient offline cached fallback, Username and Password login (no 2FA), 5-attempt lockout policy with Coordinator unlock, 30-minute idle session surveillance with a 2-minute countdown modal, and full synchronization between Google Sheets and the app's System Settings.",
+  "updatedAt":  "2026-10-26T12:56:32.641835301Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

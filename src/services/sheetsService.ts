@@ -1313,6 +1313,11 @@ function doGet(e) {
   result.awardSheets = awardData;
   result.Award_Sheets = awardData;
 
+  // STAFF ACCOUNTS & GOVERNANCE
+  var staffData = getSheetDataByAliases(ss, ["staffUsers", "Staff_Users", "StaffUsers", "Staff"]);
+  result.staffUsers = staffData;
+  result.Staff_Users = staffData;
+
   return ContentService.createTextOutput(JSON.stringify(result))
     .setMimeType(ContentService.MimeType.JSON);
 }
@@ -1502,6 +1507,113 @@ function doPost(e) {
       }
     }
     return ContentService.createTextOutput(JSON.stringify({ status: "success", action: action, message: "Ledger updated." }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 5. Staff Authentication & Account Governance
+  if (action === "VERIFY_STAFF_LOGIN") {
+    var staffSheet = getOrCreateSheet(ss, ["Staff_Users", "StaffUsers", "Staff"], ["Staff_ID", "Full_Name", "Role", "Password", "Account_Status", "Failed_Attempts", "Last_Login"]);
+    var staffData = getSheetDataAsArray(staffSheet);
+    var targetId = String(payload.staffId || "").trim().toLowerCase();
+    var enteredPass = String(payload.password || "").trim();
+
+    var userRow = null;
+    var rowIndex = -1;
+    for (var i = 0; i < staffData.length; i++) {
+      if (String(staffData[i].Staff_ID || staffData[i].staffId || "").trim().toLowerCase() === targetId) {
+        userRow = staffData[i];
+        rowIndex = i + 2;
+        break;
+      }
+    }
+
+    if (!userRow) {
+      return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "Staff ID not found in Staff_Users sheet" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var status = String(userRow.Account_Status || userRow.status || "Active").trim();
+    if (status.toLowerCase() === "locked") {
+      return ContentService.createTextOutput(JSON.stringify({ status: "locked", message: "Account is locked in Google Sheets. Contact Centre Coordinator to unlock." }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var correctPass = String(userRow.Password || userRow.password || "").trim();
+    if (enteredPass === correctPass) {
+      staffSheet.getRange(rowIndex, 5).setValue("Active");
+      staffSheet.getRange(rowIndex, 6).setValue(0);
+      staffSheet.getRange(rowIndex, 7).setValue(new Date().toISOString());
+
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "success",
+        user: {
+          staffId: targetId,
+          fullName: userRow.Full_Name || userRow.fullName || targetId,
+          role: String(userRow.Role || userRow.role || "OFFICIAL").toUpperCase(),
+          status: "Active"
+        }
+      })).setMimeType(ContentService.MimeType.JSON);
+    } else {
+      var failed = Number(userRow.Failed_Attempts || 0) + 1;
+      var newStatus = failed >= 5 ? "Locked" : status;
+      staffSheet.getRange(rowIndex, 5).setValue(newStatus);
+      staffSheet.getRange(rowIndex, 6).setValue(failed);
+
+      return ContentService.createTextOutput(JSON.stringify({
+        status: newStatus === "Locked" ? "locked" : "error",
+        remainingAttempts: Math.max(0, 5 - failed),
+        message: newStatus === "Locked" ? "Account locked after 5 failed attempts." : "Incorrect password."
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  if (action === "UPDATE_STAFF_STATUS") {
+    var staffSheet = findSheetByAliases(ss, ["Staff_Users", "StaffUsers", "Staff"]);
+    if (staffSheet) {
+      var staffData = getSheetDataAsArray(staffSheet);
+      var targetId = String(payload.staffId || "").trim().toLowerCase();
+      for (var i = 0; i < staffData.length; i++) {
+        if (String(staffData[i].Staff_ID || "").trim().toLowerCase() === targetId) {
+          if (payload.status) staffSheet.getRange(i + 2, 5).setValue(payload.status);
+          if (payload.failedAttempts !== undefined) staffSheet.getRange(i + 2, 6).setValue(payload.failedAttempts);
+          if (payload.lastLogin) staffSheet.getRange(i + 2, 7).setValue(payload.lastLogin);
+          break;
+        }
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ status: "success", action: action }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === "SAVE_STAFF_USER") {
+    var staffSheet = getOrCreateSheet(ss, ["Staff_Users", "StaffUsers", "Staff"], ["Staff_ID", "Full_Name", "Role", "Password", "Account_Status", "Failed_Attempts", "Last_Login"]);
+    var staffData = getSheetDataAsArray(staffSheet);
+    var targetId = String(payload.staffId || "").trim().toLowerCase();
+    var foundIndex = -1;
+    for (var i = 0; i < staffData.length; i++) {
+      if (String(staffData[i].Staff_ID || "").trim().toLowerCase() === targetId) {
+        foundIndex = i + 2;
+        break;
+      }
+    }
+
+    if (foundIndex >= 2) {
+      if (payload.fullName) staffSheet.getRange(foundIndex, 2).setValue(payload.fullName);
+      if (payload.role) staffSheet.getRange(foundIndex, 3).setValue(payload.role);
+      if (payload.password) staffSheet.getRange(foundIndex, 4).setValue(payload.password);
+      if (payload.status) staffSheet.getRange(foundIndex, 5).setValue(payload.status);
+    } else {
+      staffSheet.appendRow([
+        targetId,
+        payload.fullName || targetId,
+        payload.role || "OFFICIAL",
+        payload.password || "Desk@2033",
+        payload.status || "Active",
+        0,
+        new Date().toISOString()
+      ]);
+    }
+    return ContentService.createTextOutput(JSON.stringify({ status: "success", action: action }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 

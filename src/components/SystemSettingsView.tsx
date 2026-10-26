@@ -28,6 +28,7 @@ import {
   CalendarPlus,
   Trash2,
   Eye,
+  EyeOff,
   Clock,
   FileText,
   AlertTriangle,
@@ -52,7 +53,7 @@ import {
 } from 'lucide-react';
 import { OFFICIAL_APPS_SCRIPT_CODE, SCRIPT_URL } from '../services/sheetsService';
 
-type SettingsTabId = 'general' | 'appearance' | 'rates' | 'sync' | 'rbac';
+type SettingsTabId = 'general' | 'staff' | 'appearance' | 'rates' | 'sync' | 'rbac';
 
 export const SystemSettingsView: React.FC = () => {
   const {
@@ -76,6 +77,11 @@ export const SystemSettingsView: React.FC = () => {
     showToast,
     securityPins,
     updateSecurityPins,
+    staffAccounts,
+    unlockStaffUser,
+    saveStaffAccountUser,
+    deleteStaffAccountUser,
+    refreshStaffAccounts,
     archives,
     createSessionArchive,
     deleteArchive,
@@ -394,6 +400,113 @@ export const SystemSettingsView: React.FC = () => {
     downloadAnchor.remove();
   };
 
+  // Staff User Management States & Actions (Google Sheets Authority)
+  const [isSyncingStaff, setIsSyncingStaff] = useState(false);
+  const [showStaffPasswords, setShowStaffPasswords] = useState(false);
+  const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
+  const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
+  const [staffFormData, setStaffFormData] = useState<{
+    staffId: string;
+    fullName: string;
+    role: 'ADMIN' | 'OFFICIAL';
+    password: string;
+    status: 'Active' | 'Locked' | 'Suspended';
+  }>({
+    staffId: '',
+    fullName: '',
+    role: 'OFFICIAL',
+    password: '',
+    status: 'Active',
+  });
+
+  const handleManualSyncStaff = async () => {
+    setIsSyncingStaff(true);
+    try {
+      await refreshStaffAccounts();
+      showToast('Staff accounts synchronized with Google Sheets Staff_Users tab', 'success');
+    } catch {
+      showToast('Staff sync encountered an issue, running from local store', 'warning');
+    } finally {
+      setIsSyncingStaff(false);
+    }
+  };
+
+  const handleUnlockStaff = async (staffId: string) => {
+    const res = await unlockStaffUser(staffId);
+    if (res.success) {
+      showToast(`Account '${staffId}' unlocked successfully`, 'success');
+    } else {
+      showToast(res.message || 'Failed to unlock account', 'error');
+    }
+  };
+
+  const handleOpenAddStaff = () => {
+    setEditingStaffId(null);
+    setStaffFormData({
+      staffId: '',
+      fullName: '',
+      role: 'OFFICIAL',
+      password: 'Desk@2033',
+      status: 'Active',
+    });
+    setIsStaffModalOpen(true);
+  };
+
+  const handleOpenEditStaff = (staff: any) => {
+    setEditingStaffId(staff.staffId);
+    setStaffFormData({
+      staffId: staff.staffId,
+      fullName: staff.fullName,
+      role: staff.role,
+      password: staff.password,
+      status: staff.status,
+    });
+    setIsStaffModalOpen(true);
+  };
+
+  const handleSaveStaffForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!staffFormData.staffId.trim()) {
+      alert('Staff ID / Username is required');
+      return;
+    }
+    if (!staffFormData.password.trim()) {
+      alert('Password is required');
+      return;
+    }
+
+    const res = await saveStaffAccountUser({
+      staffId: staffFormData.staffId.trim().toLowerCase(),
+      fullName: staffFormData.fullName.trim() || staffFormData.staffId.trim(),
+      role: staffFormData.role,
+      password: staffFormData.password.trim(),
+      status: staffFormData.status,
+      failedAttempts: 0,
+    });
+
+    if (res.success) {
+      showToast(`Staff account '${staffFormData.staffId}' saved`, 'success');
+      setIsStaffModalOpen(false);
+    } else {
+      showToast(res.message || 'Error saving staff account', 'error');
+    }
+  };
+
+  const handleDeleteStaff = async (staffId: string) => {
+    if (staffId.toLowerCase() === 'coordinator') {
+      alert('The primary Coordinator account cannot be deleted.');
+      return;
+    }
+    if (window.confirm(`Are you sure you want to delete staff account '${staffId}'?`)) {
+      const res = await deleteStaffAccountUser(staffId);
+      if (res.success) {
+        showToast(`Staff account '${staffId}' deleted`, 'success');
+      } else {
+        showToast(res.message || 'Failed to delete account', 'error');
+      }
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       {/* Banner */}
@@ -438,6 +551,23 @@ export const SystemSettingsView: React.FC = () => {
         >
           <Building2 className={`w-4 h-4 ${activeTab === 'general' ? 'text-indigo-600' : 'text-zinc-500'}`} />
           <span>General</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('staff')}
+          id="btn-settings-tab-staff"
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+            activeTab === 'staff'
+              ? 'bg-white text-indigo-950 shadow-xs border border-zinc-200'
+              : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/50'
+          }`}
+        >
+          <Users className={`w-4 h-4 ${activeTab === 'staff' ? 'text-indigo-600' : 'text-zinc-500'}`} />
+          <span>Staff Accounts (Google Sheets)</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-indigo-100 text-indigo-900 border border-indigo-300">
+            {staffAccounts.length}
+          </span>
         </button>
 
         <button
@@ -692,6 +822,319 @@ export const SystemSettingsView: React.FC = () => {
                   <Save className="w-3.5 h-3.5" />
                   <span>Update Institutional PINs</span>
                 </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB: STAFF ACCOUNTS (GOOGLE SHEETS AUTHORITY) */}
+      {activeTab === 'staff' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Overview & Governance Header Card */}
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-50 border border-indigo-100 rounded-xl text-indigo-700">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-zinc-900">
+                    Staff Accounts & Google Sheets Governance
+                  </h3>
+                  <p className="text-xs text-zinc-500">
+                    Individual login accounts synchronized with the <code className="font-mono text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded">Staff_Users</code> tab in your Google Spreadsheet.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleManualSyncStaff}
+                  disabled={isSyncingStaff}
+                  className="px-3.5 py-2 bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-800 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 border border-zinc-200"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-indigo-600 ${isSyncingStaff ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingStaff ? 'Syncing...' : 'Sync from Google Sheet'}</span>
+                </button>
+
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={handleOpenAddStaff}
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-semibold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Add New Staff Account</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Explanatory Guide Card */}
+            <div className="p-4 bg-linear-to-r from-indigo-50/70 via-zinc-50 to-emerald-50/70 border border-indigo-100 rounded-xl text-xs space-y-2">
+              <div className="flex items-center gap-2 font-bold text-indigo-950">
+                <Info className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span>How Google Sheets Authority Works:</span>
+              </div>
+              <ul className="list-disc pl-5 space-y-1 text-zinc-700 text-[11px] leading-relaxed">
+                <li>
+                  <strong>Direct Google Sheets Management:</strong> You can add, edit, or reset staff accounts directly in the <code className="font-mono font-bold text-indigo-700">Staff_Users</code> tab of your Google Spreadsheet (columns: <code className="font-mono">Staff_ID</code>, <code className="font-mono">Full_Name</code>, <code className="font-mono">Role</code>, <code className="font-mono">Password</code>, <code className="font-mono">Account_Status</code>, <code className="font-mono">Failed_Attempts</code>, <code className="font-mono">Last_Login</code>).
+                </li>
+                <li>
+                  <strong>Real-Time Verification + Local Fallback:</strong> Authentication verifies live against Google Sheets. If internet or Apps Script is momentarily unreachable, the app authenticates seamlessly against cached credentials.
+                </li>
+                <li>
+                  <strong>5-Attempt Lockout Defense:</strong> 5 consecutive wrong passwords locks the account. You can unlock it here with one click, or by setting <code className="font-mono">Account_Status</code> to <code className="font-mono">Active</code> in Google Sheets.
+                </li>
+              </ul>
+            </div>
+
+            {/* Staff Accounts Table */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-zinc-800">
+                  Authorized Personnel Accounts ({staffAccounts.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowStaffPasswords(!showStaffPasswords)}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  {showStaffPasswords ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  <span>{showStaffPasswords ? 'Mask Passwords' : 'Show Passwords'}</span>
+                </button>
+              </div>
+
+              <div className="overflow-x-auto border border-zinc-200 rounded-xl">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-zinc-50 border-b border-zinc-200 text-zinc-600 font-semibold uppercase tracking-wider text-[10px]">
+                    <tr>
+                      <th className="py-2.5 px-3">Staff ID</th>
+                      <th className="py-2.5 px-3">Full Name</th>
+                      <th className="py-2.5 px-3">Role</th>
+                      <th className="py-2.5 px-3">Password</th>
+                      <th className="py-2.5 px-3">Status</th>
+                      <th className="py-2.5 px-3">Failed Attempts</th>
+                      <th className="py-2.5 px-3">Last Login</th>
+                      <th className="py-2.5 px-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 text-zinc-800">
+                    {staffAccounts.map((account) => {
+                      const isLocked = account.status === 'Locked' || (account.failedAttempts || 0) >= 5;
+                      const isCoordinator = account.staffId.toLowerCase() === 'coordinator';
+
+                      return (
+                        <tr
+                          key={account.staffId}
+                          className={`hover:bg-zinc-50/80 transition ${
+                            isLocked ? 'bg-rose-50/50' : ''
+                          }`}
+                        >
+                          <td className="py-2.5 px-3 font-mono font-bold text-zinc-900">
+                            {account.staffId}
+                          </td>
+                          <td className="py-2.5 px-3 font-medium">
+                            {account.fullName}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider font-mono ${
+                                account.role === 'ADMIN'
+                                  ? 'bg-indigo-100 text-indigo-900 border border-indigo-200'
+                                  : 'bg-teal-100 text-teal-900 border border-teal-200'
+                              }`}
+                            >
+                              {account.role === 'ADMIN' ? 'Coordinator (Admin)' : 'Desk Official'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 font-mono">
+                            {showStaffPasswords ? (
+                              <span className="text-zinc-900 font-bold bg-zinc-100 px-1.5 py-0.5 rounded">
+                                {account.password}
+                              </span>
+                            ) : (
+                              <span className="text-zinc-400">••••••••</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            {isLocked ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                                <ShieldAlert className="w-3 h-3 text-rose-600" />
+                                <span>Locked</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                <span>Active</span>
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono tabular-nums">
+                            {account.failedAttempts || 0} / 5
+                          </td>
+                          <td className="py-2.5 px-3 text-[11px] text-zinc-500 font-mono">
+                            {account.lastLogin ? formatDate(account.lastLogin) : '—'}
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {isLocked && isAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnlockStaff(account.staffId)}
+                                  className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold rounded-md transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                                  title="Clear lockout and reset failed attempts counter"
+                                >
+                                  <Lock className="w-3 h-3 text-amber-300" />
+                                  <span>Unlock</span>
+                                </button>
+                              )}
+
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditStaff(account)}
+                                  className="px-2 py-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-[11px] font-medium rounded-md transition cursor-pointer border border-zinc-200"
+                                >
+                                  Edit
+                                </button>
+                              )}
+
+                              {isAdmin && !isCoordinator && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteStaff(account.staffId)}
+                                  className="p-1 hover:bg-rose-100 text-zinc-400 hover:text-rose-600 rounded-md transition cursor-pointer"
+                                  title="Delete Staff Account"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Add / Edit Staff Modal */}
+          {isStaffModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+              <div className="relative w-full max-w-md bg-white border border-zinc-200 rounded-2xl shadow-2xl p-6 text-zinc-900 overflow-hidden space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="w-5 h-5 text-indigo-600" />
+                    <h3 className="font-bold text-sm text-zinc-900">
+                      {editingStaffId ? `Edit Staff Account: ${editingStaffId}` : 'Add New Staff Account'}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsStaffModalOpen(false)}
+                    className="p-1 text-zinc-400 hover:text-zinc-600 rounded-lg cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveStaffForm} className="space-y-4 text-xs">
+                  <div>
+                    <label className="block font-semibold text-zinc-700 mb-1">
+                      Staff ID / Username (Lowercase)
+                    </label>
+                    <input
+                      type="text"
+                      disabled={Boolean(editingStaffId)}
+                      value={staffFormData.staffId}
+                      onChange={(e) => setStaffFormData({ ...staffFormData, staffId: e.target.value })}
+                      placeholder="e.g. desk03, evaluator01"
+                      className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono font-bold bg-white disabled:bg-zinc-100 disabled:text-zinc-500 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-zinc-700 mb-1">
+                      Full Personnel Name
+                    </label>
+                    <input
+                      type="text"
+                      value={staffFormData.fullName}
+                      onChange={(e) => setStaffFormData({ ...staffFormData, fullName: e.target.value })}
+                      placeholder="e.g. Counter 3 Desk Official"
+                      className="w-full px-3 py-2 border border-zinc-300 rounded-lg bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-zinc-700 mb-1">
+                        Operational Role
+                      </label>
+                      <select
+                        value={staffFormData.role}
+                        onChange={(e) => setStaffFormData({ ...staffFormData, role: e.target.value as any })}
+                        className="w-full px-3 py-2 border border-zinc-300 rounded-lg bg-white font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="OFFICIAL">Desk Official (OFFICIAL)</option>
+                        <option value="ADMIN">Coordinator (ADMIN)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-zinc-700 mb-1">
+                        Account Status
+                      </label>
+                      <select
+                        value={staffFormData.status}
+                        onChange={(e) => setStaffFormData({ ...staffFormData, status: e.target.value as any })}
+                        className="w-full px-3 py-2 border border-zinc-300 rounded-lg bg-white font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="Active">Active</option>
+                        <option value="Locked">Locked</option>
+                        <option value="Suspended">Suspended</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-zinc-700 mb-1">
+                      Account Password
+                    </label>
+                    <input
+                      type="text"
+                      value={staffFormData.password}
+                      onChange={(e) => setStaffFormData({ ...staffFormData, password: e.target.value })}
+                      placeholder="Enter account password"
+                      className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <p className="text-[10px] text-zinc-500 mt-1">
+                      Stored in plain format in the <code className="font-mono">Staff_Users</code> tab for easy Admin auditing.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
+                    <button
+                      type="button"
+                      onClick={() => setIsStaffModalOpen(false)}
+                      className="px-3.5 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold rounded-xl cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{editingStaffId ? 'Update Account' : 'Create Staff Account'}</span>
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}

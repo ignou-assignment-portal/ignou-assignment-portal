@@ -72,6 +72,17 @@ import {
   getEnrolledCourseComponentsForStudent as getEnrolledCourseComponentsHelper,
   ValidationResult,
 } from '../services/intakeValidationEngine';
+import {
+  StaffUser,
+  getLocalStaffAccounts,
+  saveLocalStaffAccounts,
+  authenticateStaff,
+  unlockStaffAccount,
+  saveStaffUser,
+  deleteStaffAccount,
+  syncStaffFromSheet,
+} from '../services/staffAuthService';
+import { IdleTimeoutModal } from '../components/IdleTimeoutModal';
 
 export { normalizeSessionName, norm };
 export const normalizeSession = (s: any): string => norm(s);
@@ -110,6 +121,25 @@ interface AppContextType {
   updateRbacConfig: (newConfig: Partial<RbacConfiguration>) => void;
   resetRbacToDefaults: () => void;
   canPerformOperation: (operation: RbacOperation) => { allowed: boolean; requiresPin: boolean };
+
+  // Google Sheets Staff Accounts & Security
+  currentUser: StaffUser | null;
+  staffAccounts: StaffUser[];
+  handleStaffLogin: (staffId: string, password: string) => Promise<{
+    success: boolean;
+    user?: StaffUser;
+    error?: string;
+    remainingAttempts?: number;
+    locked?: boolean;
+    lockoutRemainingMinutes?: number;
+    source?: 'google_sheets' | 'local_cache';
+  }>;
+  unlockStaffUser: (staffId: string) => Promise<{ success: boolean; message: string }>;
+  saveStaffAccountUser: (user: StaffUser) => Promise<{ success: boolean; message: string }>;
+  deleteStaffAccountUser: (staffId: string) => Promise<{ success: boolean; message: string }>;
+  refreshStaffAccounts: () => Promise<void>;
+  isIdleWarningOpen: boolean;
+  extendSession: () => void;
 
   // Intake Master (Strictly Session Filtered)
   sessionIntakes: IntakeRecord[];
@@ -638,6 +668,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : { deskPin: "1001", adminPin: "2033" };
   });
 
+  // Current Authenticated Staff User (Google Sheets & Local Store)
+  const [currentUser, setCurrentUser] = useState<StaffUser | null>(() => {
+    try {
+      const raw = sessionStorage.getItem("ignou_sc2033_user");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Staff Accounts Database State
+  const [staffAccounts, setStaffAccounts] = useState<StaffUser[]>(() => {
+    return getLocalStaffAccounts();
+  });
+
   // Granular Role-Based Access Control (RBAC) Governance State
   const [rbacConfig, setRbacConfigState] = useState<RbacConfiguration>(() => {
     try {
@@ -829,36 +874,81 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, [currentRole, settings.coordinatorName, currentSession, logAuditEvent]);
 
+  // 30-Minute Idle Session Surveillance with 2-Minute Preemptive Warning
+  const [isIdleWarningOpen, setIsIdleWarningOpen] = useState(false);
+  const [idleSecondsRemaining, setIdleSecondsRemaining] = useState(120);
+
   const logout = useCallback(() => {
     sessionStorage.removeItem("ignou_sc2033_auth");
     sessionStorage.removeItem("ignou_sc2033_role");
+    sessionStorage.removeItem("ignou_sc2033_user");
     setIsAuthenticated(false);
+    setCurrentUser(null);
+    setIsIdleWarningOpen(false);
     logAuditEvent({
       action: 'USER_LOGOUT',
       category: 'AUTHENTICATION',
-      actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official',
+      actor: currentUser?.fullName || (currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Desk Official'),
       role: currentRole,
       session: currentSession,
       summary: 'Staff member signed out and terminal locked',
       status: 'SUCCESS',
     });
-  }, [currentRole, settings.coordinatorName, currentSession]);
+  }, [currentRole, currentUser, settings.coordinatorName, currentSession, logAuditEvent]);
 
-  // Inactivity Auto-Lock Protection (Mobile & Desktop): 30 minutes
+  const extendSession = useCallback(() => {
+    setIsIdleWarningOpen(false);
+    setIdleSecondsRemaining(120);
+    logAuditEvent({
+      action: 'SESSION_EXTENDED',
+      category: 'AUTHENTICATION',
+      actor: currentUser?.fullName || 'Active Staff',
+      role: currentRole,
+      session: currentSession,
+      summary: 'Staff member extended idle session for 30 minutes',
+      status: 'SUCCESS',
+    });
+  }, [currentUser, currentRole, currentSession, logAuditEvent]);
+
+  // Inactivity Auto-Lock Protection (Mobile & Desktop): 28 min warning -> 30 min lock
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      setIsIdleWarningOpen(false);
+      return;
+    }
 
-    let timer: NodeJS.Timeout;
-    const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+    let warningTimer: NodeJS.Timeout;
+    let autoLockTimer: NodeJS.Timeout;
+    const WARNING_TIMEOUT_MS = 28 * 60 * 1000;
+    const TOTAL_TIMEOUT_MS = 30 * 60 * 1000;
 
     const resetTimer = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
+      if (isIdleWarningOpen) return;
+      if (warningTimer) clearTimeout(warningTimer);
+      if (autoLockTimer) clearTimeout(autoLockTimer);
+
+      warningTimer = setTimeout(() => {
+        setIsIdleWarningOpen(true);
+        setIdleSecondsRemaining(120);
+      }, WARNING_TIMEOUT_MS);
+
+      autoLockTimer = setTimeout(() => {
+        setIsIdleWarningOpen(false);
         sessionStorage.removeItem("ignou_sc2033_auth");
         sessionStorage.removeItem("ignou_sc2033_role");
+        sessionStorage.removeItem("ignou_sc2033_user");
         setIsAuthenticated(false);
-        console.warn("Terminal auto-locked after 30 minutes of user inactivity.");
-      }, INACTIVITY_TIMEOUT_MS);
+        setCurrentUser(null);
+        logAuditEvent({
+          action: 'SESSION_AUTO_LOCKED',
+          category: 'AUTHENTICATION',
+          actor: 'System Watchdog',
+          role: currentRole,
+          session: currentSession,
+          summary: 'Terminal auto-locked after 30 minutes of user inactivity',
+          status: 'SUCCESS',
+        });
+      }, TOTAL_TIMEOUT_MS);
     };
 
     const events = ['mousemove', 'keydown', 'touchstart', 'click'];
@@ -866,10 +956,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     resetTimer();
 
     return () => {
-      if (timer) clearTimeout(timer);
+      if (warningTimer) clearTimeout(warningTimer);
+      if (autoLockTimer) clearTimeout(autoLockTimer);
       events.forEach((evt) => window.removeEventListener(evt, resetTimer));
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isIdleWarningOpen, currentRole, currentSession, logAuditEvent]);
 
   // Admin PIN Protection State
   const [isAdminPinModalOpen, setIsAdminPinModalOpen] = useState<boolean>(false);
@@ -2263,6 +2354,147 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     return false;
   }, [securityPins, logAuditEvent, currentSession, settings.coordinatorName]);
+
+  const activeScriptUrl = settings.scriptUrl || settings.appsScriptUrl || settings.googleSheetScriptUrl || SCRIPT_URL;
+
+  const refreshStaffAccounts = useCallback(async () => {
+    try {
+      const res = await syncStaffFromSheet(activeScriptUrl);
+      if (res && res.accounts) {
+        setStaffAccounts(res.accounts);
+      }
+    } catch (e) {
+      console.warn('Failed to refresh staff accounts:', e);
+    }
+  }, [activeScriptUrl]);
+
+  useEffect(() => {
+    refreshStaffAccounts();
+  }, [refreshStaffAccounts]);
+
+  const handleStaffLogin = useCallback(
+    async (staffId: string, password: string) => {
+      const res = await authenticateStaff(staffId, password, activeScriptUrl);
+      if (res.success && res.user) {
+        let effectiveRole: UserRole = res.user.role;
+        if (isUrlLockedDeskMode) {
+          effectiveRole = 'OFFICIAL';
+        }
+
+        sessionStorage.setItem("ignou_sc2033_auth", "true");
+        sessionStorage.setItem("ignou_sc2033_role", effectiveRole === 'ADMIN' ? 'admin' : 'desk');
+        sessionStorage.setItem("ignou_sc2033_user", JSON.stringify(res.user));
+
+        setIsAuthenticated(true);
+        setUserRoleState(effectiveRole === 'ADMIN' ? 'admin' : 'desk');
+        setCurrentRole(effectiveRole);
+        setCurrentUser(res.user);
+        fetchAllDataRef.current(true);
+
+        logAuditEvent({
+          action: 'USER_LOGIN',
+          category: 'AUTHENTICATION',
+          actor: `${res.user.fullName} (${res.user.staffId})`,
+          role: effectiveRole,
+          session: currentSession,
+          summary: `Staff authenticated (${res.source === 'google_sheets' ? 'Google Sheets' : 'Local Cache'})`,
+          status: 'SUCCESS',
+          details: { staffId: res.user.staffId, role: effectiveRole, source: res.source },
+        });
+
+        setStaffAccounts(getLocalStaffAccounts());
+      } else if (res.locked) {
+        logAuditEvent({
+          action: 'SECURITY_LOCKOUT',
+          category: 'SECURITY',
+          actor: `Unverified (${staffId})`,
+          role: 'OFFICIAL',
+          session: currentSession,
+          summary: `Security Lockout: Account '${staffId}' locked after 5 failed attempts`,
+          status: 'WARNING',
+          details: { staffId },
+        });
+        setStaffAccounts(getLocalStaffAccounts());
+      } else {
+        logAuditEvent({
+          action: 'FAILED_LOGIN_ATTEMPT',
+          category: 'SECURITY',
+          actor: `Unverified (${staffId})`,
+          role: 'OFFICIAL',
+          session: currentSession,
+          summary: `Failed login attempt for Staff ID '${staffId}'`,
+          status: 'FAILED',
+          details: { staffId, remainingAttempts: res.remainingAttempts },
+        });
+        setStaffAccounts(getLocalStaffAccounts());
+      }
+      return res;
+    },
+    [activeScriptUrl, isUrlLockedDeskMode, currentSession, logAuditEvent]
+  );
+
+  const unlockStaffUser = useCallback(
+    async (staffId: string) => {
+      const res = await unlockStaffAccount(staffId, activeScriptUrl);
+      if (res.success) {
+        setStaffAccounts(getLocalStaffAccounts());
+        logAuditEvent({
+          action: 'STAFF_ACCOUNT_UNLOCKED',
+          category: 'SECURITY',
+          actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Administrator',
+          role: currentRole,
+          session: currentSession,
+          summary: `Coordinator unlocked staff account: ${staffId}`,
+          status: 'SUCCESS',
+          details: { unlockedStaffId: staffId },
+        });
+      }
+      return res;
+    },
+    [activeScriptUrl, currentRole, settings.coordinatorName, currentSession, logAuditEvent]
+  );
+
+  const saveStaffAccountUser = useCallback(
+    async (user: StaffUser) => {
+      const res = await saveStaffUser(user, activeScriptUrl);
+      if (res.success) {
+        setStaffAccounts(getLocalStaffAccounts());
+        logAuditEvent({
+          action: 'STAFF_ACCOUNT_MODIFIED',
+          category: 'SECURITY',
+          actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Administrator',
+          role: currentRole,
+          session: currentSession,
+          summary: `Staff account created/updated: ${user.staffId} (${user.role})`,
+          status: 'SUCCESS',
+          details: { staffId: user.staffId, role: user.role },
+        });
+      }
+      return res;
+    },
+    [activeScriptUrl, currentRole, settings.coordinatorName, currentSession, logAuditEvent]
+  );
+
+  const deleteStaffAccountUser = useCallback(
+    async (staffId: string) => {
+      const res = await deleteStaffAccount(staffId, activeScriptUrl);
+      if (res.success) {
+        setStaffAccounts(getLocalStaffAccounts());
+        logAuditEvent({
+          action: 'STAFF_ACCOUNT_DELETED',
+          category: 'SECURITY',
+          actor: currentRole === 'ADMIN' ? `${settings.coordinatorName || 'Coordinator'} (Admin)` : 'Administrator',
+          role: currentRole,
+          session: currentSession,
+          summary: `Staff account deleted: ${staffId}`,
+          status: 'SUCCESS',
+          details: { deletedStaffId: staffId },
+        });
+      }
+      return res;
+    },
+    [activeScriptUrl, currentRole, settings.coordinatorName, currentSession, logAuditEvent]
+  );
 
   // Role switching
   const setRole = useCallback(
@@ -5865,6 +6097,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateSecurityPins,
         handleLogin,
         logout,
+        currentUser,
+        staffAccounts,
+        handleStaffLogin,
+        unlockStaffUser,
+        saveStaffAccountUser,
+        deleteStaffAccountUser,
+        refreshStaffAccounts,
+        isIdleWarningOpen,
+        extendSession,
         rbacConfig,
         updateRbacConfig,
         resetRbacToDefaults,
@@ -6017,6 +6258,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }}
     >
       {children}
+      <IdleTimeoutModal
+        isOpen={isIdleWarningOpen}
+        secondsRemaining={idleSecondsRemaining}
+        onExtendSession={extendSession}
+        onLockNow={logout}
+      />
     </AppContext.Provider>
   );
 };

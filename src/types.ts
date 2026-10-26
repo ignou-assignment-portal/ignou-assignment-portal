@@ -155,6 +155,7 @@ export interface SystemSettings {
   lastBackupDate?: string;
   appsScriptUrl?: string;
   googleSheetScriptUrl?: string;
+  scriptUrl?: string;
 }
 
 export interface IGNOUCourse {
@@ -385,7 +386,14 @@ export type AuditActionType =
   | 'SETTINGS_UPDATED'
   | 'SESSION_ARCHIVED'
   | 'SESSION_RESTORED'
-  | 'SHEETS_SYNCED';
+  | 'SHEETS_SYNCED'
+  | 'SESSION_EXTENDED'
+  | 'SESSION_AUTO_LOCKED'
+  | 'SECURITY_LOCKOUT'
+  | 'FAILED_LOGIN_ATTEMPT'
+  | 'STAFF_ACCOUNT_UNLOCKED'
+  | 'STAFF_ACCOUNT_MODIFIED'
+  | 'STAFF_ACCOUNT_DELETED';
 
 export type AuditTargetCategory =
   | 'AUTHENTICATION'
